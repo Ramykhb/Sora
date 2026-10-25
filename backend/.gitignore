@@ -1,0 +1,11 @@
+.venv/
+.env
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.pytest_cache/
+models/
+data/
+*.pt
+evaluation-report*.json
+.DS_Store

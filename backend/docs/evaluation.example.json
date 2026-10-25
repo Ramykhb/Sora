@@ -1,0 +1,11 @@
+{
+  "language": "en",
+  "images": [
+    {"path": "fixtures/door.jpg", "expected_text": "EXIT", "expected_objects": []},
+    {"path": "fixtures/chair.jpg", "expected_text": "", "expected_objects": ["chair"]}
+  ],
+  "questions": [
+    {"question": "What was written on the door I passed?", "relevant_images": ["fixtures/door.jpg"], "expected_answer_terms": ["EXIT"]},
+    {"question": "Quel objet ai-je vu ?", "language": "fr", "relevant_images": ["fixtures/chair.jpg"], "expected_answer_terms": ["chaise"]}
+  ]
+}
