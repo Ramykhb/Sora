@@ -65,9 +65,16 @@ async def check_webrtc(client, base, image_path):
 async def run(args):
     async with httpx.AsyncClient(
         base_url=args.url.rstrip("/") + settings.api_prefix,
-        headers={"X-API-Key": settings.api_key.get_secret_value()},
         timeout=300,
     ) as client:
+        from getpass import getpass
+
+        email = args.email or input("Account email: ").strip()
+        response = await client.post(
+            "/auth/login", json={"email": email, "password": getpass("Password: ")}
+        )
+        response.raise_for_status()
+        client.headers["Authorization"] = "Bearer " + response.json()["access_token"]
         response = await client.post(
             "/sessions", json={"consent": True, "language": "en", "alerts_enabled": True}
         )
@@ -130,6 +137,7 @@ async def run(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--email", help="Registered account email; password is prompted securely")
     parser.add_argument("image", type=Path)
     parser.add_argument(
         "--audio",

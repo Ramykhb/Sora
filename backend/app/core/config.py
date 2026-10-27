@@ -1,6 +1,6 @@
 from pathlib import Path
 from typing import Literal
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -9,7 +9,20 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     app_env: str = "development"
     api_prefix: str = "/api/v1"
+    # API_KEY is retained for old configuration files only; it grants no API access.
     api_key: SecretStr = SecretStr("local-development-only")
+    auth_access_minutes: int = Field(default=15, ge=1, le=60)
+    auth_refresh_days: int = Field(default=30, ge=1, le=90)
+    auth_registration_enabled: bool = True
+    auth_require_verified_email: bool = False
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from: str = ""
+    smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
+    auth_public_url: str = "http://localhost:3000"
+
     cors_origins: list[str] = ["http://localhost:8081", "http://localhost:3000"]
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/visual_assistant"
     auto_migrate: bool = False
@@ -34,6 +47,13 @@ class Settings(BaseSettings):
     vision_model: str = "qwen2.5vl:3b"
     embedding_model: str = "qwen3-embedding:0.6b"
     embedding_dimensions: Literal[1024] = 1024
+
+    @field_validator("embedding_dimensions", mode="before")
+    @classmethod
+    def parse_embedding_dimensions(cls, value):
+        # Environment variables are strings; Literal[1024] otherwise rejects "1024".
+        return 1024 if isinstance(value, str) and value.strip() == "1024" else value
+
     model_timeout_seconds: int = 120
     yolo_model: str = "yolo11n.pt"
     yolo_confidence: float = Field(default=0.35, ge=0, le=1)

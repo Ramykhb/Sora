@@ -16,3 +16,12 @@ python -m scripts.evaluate /path/to/consented-dataset.json --output evaluation-r
 ```
 
 The smoke script runs image storage/retrieval, text answers, TTS, an audio question, history and optional actual WebRTC video. It deletes its test session afterward. The evaluation script produces per-example data and timings for review. Human ratings remain necessary to establish factual answer accuracy and accessibility usefulness.
+
+## Authentication layer — 2026-10-26
+
+- All 47 tests passed in the available `/tmp/visual-backend-tests` environment (real SQLite, local objects, real Argon2 password hashing; model inference and SMTP sending substituted).
+- Ruff checks, Python compilation, CLI argument/help checks and Git whitespace checks passed.
+- Authentication coverage includes cross-user REST/WebSocket denial, scoped dashboard/metrics, refresh rotation and simultaneous reuse, expiry/logout, live-stream logout, password recovery/change, single-use/purpose/expiry checks, verification, role management, account deletion and rate limits.
+- New Alembic migration `0002_authentication` is implemented but was not applied to a running PostgreSQL deployment here. The local `.venv` has not been populated; installation failed because PyPI DNS resolution is unavailable. Run `uv pip install -r requirements-dev.txt`, then `alembic upgrade head` in the configured environment.
+- Real SMTP delivery has not been tested; configure SMTP and exercise verification/reset with your mailbox or a local mail sandbox.
+- Frontend authentication remains outside this change; the web dashboard still uses sample data.

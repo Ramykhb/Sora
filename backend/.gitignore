@@ -9,3 +9,7 @@ data/
 *.pt
 evaluation-report*.json
 .DS_Store
+
+# Source models are Python code, not downloaded model weights.
+!app/db/models/
+!app/db/models/*.py

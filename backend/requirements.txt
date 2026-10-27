@@ -16,3 +16,4 @@ httpx>=0.28,<1
 aiortc>=1.10,<2
 ultralytics>=8.3,<9
 faster-whisper>=1.1,<2
+argon2-cffi>=23.1,<26

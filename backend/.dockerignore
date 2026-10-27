@@ -7,3 +7,7 @@ models
 data
 *.pt
 .git
+
+# Include SQLAlchemy source models while excluding downloaded AI weights.
+!app/db/models
+!app/db/models/**

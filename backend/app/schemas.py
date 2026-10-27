@@ -18,6 +18,7 @@ class SessionCreate(BaseModel):
 
 class SessionOut(ORMModel):
     id: UUID
+    owner_id: UUID | None
     language: Language
     consent: bool
     alerts_enabled: bool

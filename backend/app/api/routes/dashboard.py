@@ -1,6 +1,8 @@
 from uuid import UUID
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
+from app.core.auth import current_user, owned_session, require_admin
+from app.db.auth_models import User
 from app.db.models import Alert, CaptureSession, Feedback, Frame, ObjectDeletion, QuestionAnswer
 from app.db.models.frame import now
 from app.db.session import SessionFactory
@@ -12,12 +14,19 @@ router = APIRouter()
 
 
 @router.get("/dashboard")
-async def overview(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
+async def overview(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(current_user),
+):
     async with SessionFactory() as db:
         sessions = (
             await db.scalars(
                 select(CaptureSession)
-                .where(CaptureSession.expires_at > now())
+                .where(
+                    CaptureSession.expires_at > now(),
+                    True if user.role == "admin" else CaptureSession.owner_id == user.id,
+                )
                 .order_by(CaptureSession.created_at.desc())
                 .limit(limit)
                 .offset(offset)
@@ -50,19 +59,23 @@ async def overview(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, 
 
 
 @router.get("/metrics")
-async def metrics():
+async def metrics(user: User = Depends(current_user)):
     async with SessionFactory() as db:
+        owned_ids = select(CaptureSession.id).where(CaptureSession.expires_at > now())
+        if user.role != "admin":
+            owned_ids = owned_ids.where(CaptureSession.owner_id == user.id)
+        ids = list((await db.scalars(owned_ids)).all())
         frames, processing = (
             await db.execute(
                 select(func.count(Frame.id), func.avg(Frame.processing_ms)).where(
-                    Frame.expires_at > now()
+                    Frame.expires_at > now(), Frame.session_id.in_(ids)
                 )
             )
         ).one()
         questions, latency = (
             await db.execute(
                 select(func.count(QuestionAnswer.id), func.avg(QuestionAnswer.latency_ms)).where(
-                    QuestionAnswer.expires_at > now()
+                    QuestionAnswer.expires_at > now(), QuestionAnswer.session_id.in_(ids)
                 )
             )
         ).one()
@@ -70,11 +83,15 @@ async def metrics():
             await db.execute(
                 select(Feedback.rating, func.count(Feedback.id))
                 .join(QuestionAnswer, Feedback.question_id == QuestionAnswer.id)
-                .where(QuestionAnswer.expires_at > now())
+                .where(QuestionAnswer.expires_at > now(), QuestionAnswer.session_id.in_(ids))
                 .group_by(Feedback.rating)
             )
         ).all()
-        pending = await db.scalar(select(func.count(ObjectDeletion.key)))
+        pending = (
+            await db.scalar(select(func.count(ObjectDeletion.key)))
+            if user.role == "admin"
+            else None
+        )
     return {
         "retained_frames": frames,
         "retained_questions": questions,
@@ -82,11 +99,11 @@ async def metrics():
         "mean_question_latency_ms": latency,
         "feedback": dict(ratings),
         "pending_object_deletions": pending,
-        "live_sessions": len(streams.states),
+        "live_sessions": sum(sid in streams.states for sid in ids),
     }
 
 
-@router.get("/sessions/{session_id}/alerts")
+@router.get("/sessions/{session_id}/alerts", dependencies=[Depends(owned_session)])
 async def alerts(
     session_id: UUID, limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)
 ):
@@ -114,11 +131,11 @@ async def alerts(
         ]
 
 
-@router.post("/maintenance/cleanup")
+@router.post("/maintenance/cleanup", dependencies=[Depends(require_admin)])
 async def cleanup():
     return await cleanup_once()
 
 
-@router.post("/maintenance/reconcile")
+@router.post("/maintenance/reconcile", dependencies=[Depends(require_admin)])
 async def reconcile():
     return await reconcile_orphans()

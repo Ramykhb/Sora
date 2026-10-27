@@ -47,7 +47,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      API_KEY: ${API_KEY:?Set API_KEY in backend/.env}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?Set POSTGRES_USER in backend/.env}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in backend/.env}@postgres:5432/${POSTGRES_DB:-visual_assistant}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-s3}
       S3_ENDPOINT_URL: http://object-storage:9000

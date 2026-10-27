@@ -4,6 +4,7 @@ from datetime import timedelta
 from time import monotonic
 from sqlalchemy import delete, select
 from app.core.config import settings
+from app.db.auth_models import AccountToken, AuthRateLimit, AuthSession
 from app.db.models import CaptureSession, Frame, ObjectDeletion, QuestionAnswer
 from app.db.models.frame import now
 from app.db.session import SessionFactory
@@ -67,6 +68,8 @@ async def cleanup_once():
                 await db.execute(
                     delete(CaptureSession).where(CaptureSession.id.in_(expired_sessions))
                 )
+            for model in (AccountToken, AuthRateLimit, AuthSession):
+                await db.execute(delete(model).where(model.expires_at <= now()))
             await db.commit()
         objects_removed = await drain_deletions()
         return {

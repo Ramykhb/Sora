@@ -3,83 +3,16 @@
 import asyncio
 from datetime import timedelta
 from io import BytesIO
-import sys
 import numpy as np
 from PIL import Image
 import pytest
 
 pytest.importorskip("fastapi")
 pytest.importorskip("aiosqlite")
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
 from app.core.config import settings
-from app.db.base import Base
 from app.db.models import Frame
 from app.db.models.frame import now
-from app.main import app
 from app.services.ai.models import ModelAnswer, Scene, models
-from app.services.frames.processing import Analysis
-
-
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    import app.main as main
-    import app.services.frames.ingestion as ingestion
-    from sqlalchemy import event
-
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///" + str(tmp_path / "test.db"), poolclass=NullPool
-    )
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def foreign_keys(connection, _):
-        connection.execute("PRAGMA foreign_keys=ON")
-
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def initialize():
-        async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
-
-    asyncio.run(initialize())
-    monkeypatch.setattr(settings, "auto_migrate", False)
-    monkeypatch.setattr(settings, "storage_backend", "local")
-    monkeypatch.setattr(settings, "local_storage_dir", tmp_path / "objects")
-    for module in list(sys.modules.values()):
-        if getattr(module, "__name__", "").startswith("app.") and hasattr(module, "SessionFactory"):
-            monkeypatch.setattr(module, "SessionFactory", factory)
-    monkeypatch.setattr(main, "engine", engine)
-    monkeypatch.setattr(
-        ingestion,
-        "analyze_image",
-        lambda *args: Analysis(
-            "EXIT", 95, [{"label": "chair", "confidence": 0.9, "box": [20, 20, 80, 95]}]
-        ),
-    )
-
-    async def describe(_):
-        return Scene(caption="A chair beside an EXIT sign", uncertain=False)
-
-    async def embed(*args, **kwargs):
-        return [1.0] + [0.0] * (settings.embedding_dimensions - 1)
-
-    async def chat(messages, schema):
-        import json
-
-        context = json.loads(messages[-1]["content"])["camera_observations"]
-        return ModelAnswer(
-            answer="A chair is visible.",
-            uncertain=False,
-            evidence_frame_ids=[context[0]["frame_id"]],
-        )
-
-    monkeypatch.setattr(models, "describe", describe)
-    monkeypatch.setattr(models, "embed", embed)
-    monkeypatch.setattr(models, "chat", chat)
-    with TestClient(app, headers={"X-API-Key": settings.api_key.get_secret_value()}) as api:
-        yield api, factory
-    asyncio.run(engine.dispose())
 
 
 def image_bytes():
@@ -107,7 +40,7 @@ def upload(api, session_id):
 
 def test_auth_and_consent(client):
     api, _ = client
-    assert api.get("/api/v1/sessions", headers={"X-API-Key": "wrong"}).status_code == 401
+    assert api.get("/api/v1/sessions", headers={"Authorization": "Bearer wrong"}).status_code == 401
     assert api.post("/api/v1/sessions", json={"consent": False}).status_code == 422
     assert api.get("/health").status_code == 200
 
@@ -261,10 +194,10 @@ def test_websocket_auth_and_frame_to_event_flow(client):
     sid = create(api)
     path = f"/api/v1/sessions/{sid}"
     with api.websocket_connect(path + "/events") as event_socket:
-        event_socket.send_json({"api_key": settings.api_key.get_secret_value()})
+        event_socket.send_json({"access_token": api.headers["Authorization"].split(" ", 1)[1]})
         assert event_socket.receive_json()["type"] == "ready"
         with api.websocket_connect(path + "/stream/frames") as producer:
-            producer.send_json({"api_key": settings.api_key.get_secret_value()})
+            producer.send_json({"access_token": api.headers["Authorization"].split(" ", 1)[1]})
             assert producer.receive_json()["type"] == "ready"
             assert event_socket.receive_json()["type"] == "stream_started"
             source = Image.open(BytesIO(image_bytes()))

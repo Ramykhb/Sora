@@ -2,7 +2,7 @@ import asyncio
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
-from app.core.auth import valid_key
+from app.core.auth import authenticate, check_ownership
 from app.core.config import settings
 from app.core.errors import BackendError
 from app.schemas import Offer
@@ -26,10 +26,14 @@ async def config(session_id: UUID):
 
 
 @router.post("/offer")
-async def offer(session_id: UUID, request: Offer):
+async def offer(session_id: UUID, request: Offer, http_request: Request):
     await get_session(session_id, active=True)
     try:
-        return await accept_offer(session_id, request.sdp, request.type)
+        answer = await accept_offer(session_id, request.sdp, request.type)
+        streams.states[session_id].auth_token = http_request.headers["authorization"].split(" ", 1)[
+            1
+        ]
+        return answer
     except BackendError:
         raise
     except Exception as exc:
@@ -60,7 +64,19 @@ async def live_view(session_id: UUID, request: Request):
 
     async def generate():
         sequence = -1
+        from time import monotonic
+
+        checked_at = 0
         while streams.states.get(session_id) is state and not await request.is_disconnected():
+            if monotonic() - checked_at > 1:
+                try:
+                    principal = await authenticate(
+                        request.headers.get("authorization", "").split(" ", 1)[-1]
+                    )
+                    await check_ownership(session_id, principal.user)
+                except HTTPException:
+                    return
+                checked_at = monotonic()
             if state.latest and state.sequence != sequence:
                 sequence = state.sequence
                 content = state.latest
@@ -88,9 +104,11 @@ async def authenticate_socket(socket: WebSocket, session_id, active=False):
     await socket.accept()
     try:
         message = await asyncio.wait_for(socket.receive_json(), timeout=5)
-        if not isinstance(message, dict) or not valid_key(message.get("api_key")):
-            await socket.close(code=1008, reason="Invalid API key")
-            return False
+        if not isinstance(message, dict):
+            raise ValueError("Authentication message required")
+        principal = await authenticate(message.get("access_token"))
+        await check_ownership(session_id, principal.user)
+        socket.scope["auth_token"] = message["access_token"]
         await get_session(session_id, active=active)
         return True
     except (ValueError, TypeError, asyncio.TimeoutError, WebSocketDisconnect, HTTPException):
@@ -104,7 +122,7 @@ async def frame_socket(socket: WebSocket, session_id: UUID):
         return
     started = False
     try:
-        streams.start(session_id, "jpeg-websocket")
+        streams.start(session_id, "jpeg-websocket").auth_token = socket.scope["auth_token"]
         started = True
         await socket.send_json(
             {
@@ -115,6 +133,8 @@ async def frame_socket(socket: WebSocket, session_id: UUID):
         )
         while session_id in streams.states:
             content = await asyncio.wait_for(socket.receive_bytes(), timeout=60)
+            principal = await authenticate(socket.scope["auth_token"])
+            await check_ownership(session_id, principal.user)
             await get_session(session_id, active=True)
             streams.push(session_id, content)
     except WebSocketDisconnect:
@@ -140,9 +160,13 @@ async def event_socket(socket: WebSocket, session_id: UUID):
             while True:
                 try:
                     message = await asyncio.wait_for(queue.get(), timeout=10)
+                    principal = await authenticate(socket.scope["auth_token"])
+                    await check_ownership(session_id, principal.user)
                     await get_session(session_id)
                     await socket.send_json(message)
                 except asyncio.TimeoutError:
+                    principal = await authenticate(socket.scope["auth_token"])
+                    await check_ownership(session_id, principal.user)
                     await get_session(session_id)
                     await socket.send_json({"type": "heartbeat"})
     except WebSocketDisconnect:

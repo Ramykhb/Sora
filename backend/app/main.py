@@ -7,12 +7,14 @@ from uuid import uuid4
 import httpx
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from app.api.routes import router
+from app.api.routes.auth import router as auth_router
 from app.api.routes.live import ws_router
-from app.core.auth import require_key
+from app.core.auth import require_admin
 from app.core.config import settings
 from app.core.errors import BackendError
 from app.db.session import engine
@@ -25,11 +27,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app):
-    if (
-        settings.app_env == "production"
-        and settings.api_key.get_secret_value() == "local-development-only"
-    ):
-        raise RuntimeError("Set a unique API_KEY before production startup")
     if settings.auto_migrate:
         from alembic import command
         from alembic.config import Config
@@ -37,7 +34,8 @@ async def lifespan(app):
 
         await asyncio.to_thread(command.upgrade, Config(str(BACKEND_ROOT / "alembic.ini")), "head")
     async with engine.connect() as connection:
-        await connection.execute(text("SELECT 1 FROM capture_sessions LIMIT 1"))
+        await connection.execute(text("SELECT owner_id FROM capture_sessions LIMIT 1"))
+        await connection.execute(text("SELECT 1 FROM auth_sessions LIMIT 1"))
     for attempt in range(10):
         try:
             await asyncio.to_thread(initialize_storage)
@@ -62,9 +60,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["X-API-Key", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type"],
     expose_headers=["X-Request-ID", "X-Response-Time-Ms"],
 )
+app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(router, prefix=settings.api_prefix)
 app.include_router(ws_router, prefix=settings.api_prefix)
 
@@ -86,6 +85,20 @@ async def request_metadata(request: Request, call_next):
     return response
 
 
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request, exc):
+    # Do not reflect password/token values (or uploaded data) in validation errors.
+    return JSONResponse(
+        {
+            "detail": [
+                {"loc": list(error["loc"]), "msg": error["msg"], "type": error["type"]}
+                for error in exc.errors()
+            ]
+        },
+        422,
+    )
+
+
 @app.exception_handler(BackendError)
 async def backend_error(request, exc):
     return JSONResponse({"error": {"code": exc.code, "message": exc.message}}, exc.status_code)
@@ -104,7 +117,7 @@ async def health():
     return {"status": "ok", "version": "1.0.0"}
 
 
-@app.get("/ready", dependencies=[Depends(require_key)])
+@app.get("/ready", dependencies=[Depends(require_admin)])
 async def ready():
     components = {}
     try:

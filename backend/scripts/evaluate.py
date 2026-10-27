@@ -11,6 +11,7 @@ from app.core.config import settings
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--email", help="Registered account email; password is prompted securely")
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--url", default="http://localhost:8000")
     parser.add_argument("--output", type=Path, default=Path("evaluation-report.json"))
@@ -22,9 +23,16 @@ def main():
     latencies = []
     with httpx.Client(
         base_url=args.url.rstrip("/") + settings.api_prefix,
-        headers={"X-API-Key": settings.api_key.get_secret_value()},
         timeout=300,
     ) as client:
+        from getpass import getpass
+
+        email = args.email or input("Account email: ").strip()
+        response = client.post(
+            "/auth/login", json={"email": email, "password": getpass("Password: ")}
+        )
+        response.raise_for_status()
+        client.headers["Authorization"] = "Bearer " + response.json()["access_token"]
         response = client.post(
             "/sessions", json={"consent": True, "language": manifest.get("language", "en")}
         )

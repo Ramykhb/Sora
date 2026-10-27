@@ -22,9 +22,10 @@ async def get_session(session_id: UUID, active: bool = False) -> CaptureSession:
         return row
 
 
-async def create_session(language="en", alerts_enabled=False):
+async def create_session(language="en", alerts_enabled=False, owner_id=None):
     async with SessionFactory() as db:
         session = CaptureSession(
+            owner_id=owner_id,
             language=language,
             consent=True,
             alerts_enabled=alerts_enabled,

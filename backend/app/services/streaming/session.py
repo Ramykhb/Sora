@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LiveState:
     source: str
+    auth_token: str | None = None
     latest: bytes | None = None
     last_received: float = field(default_factory=monotonic)
     last_sampled: float = 0
@@ -132,6 +133,11 @@ class Streams:
             for session_id, state in list(self.states.items()):
                 try:
                     await get_session(session_id, active=True)
+                    if state.auth_token:
+                        from app.core.auth import authenticate, check_ownership
+
+                        principal = await authenticate(state.auth_token)
+                        await check_ownership(session_id, principal.user)
                     expired = monotonic() - state.last_received > 60
                 except Exception:
                     expired = True
