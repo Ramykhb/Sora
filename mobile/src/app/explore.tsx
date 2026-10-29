@@ -1,180 +1,94 @@
+import { useCallback, useState } from 'react';
+import { Alert, Platform, ScrollView, Text, View } from 'react-native';
 import { Image } from 'expo-image';
-import { SymbolView } from 'expo-symbols';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router, useFocusEffect } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '@/providers/auth';
+import type { Answer, CaptureSession, Frame } from '@/lib/api';
+import { AuthScreen } from '@/components/auth-screen';
+import { AnswerCard } from '@/components/answer-card';
+import { Action, Field, ui } from '@/components/controls';
 
-import { ExternalLink } from '@/components/external-link';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Collapsible } from '@/components/ui/collapsible';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
-
-export default function TabTwoScreen() {
-  const safeAreaInsets = useSafeAreaInsets();
-  const insets = {
-    ...safeAreaInsets,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
-  };
-  const theme = useTheme();
-
-  const contentPlatformStyle = Platform.select({
-    android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-      paddingBottom: insets.bottom,
-    },
-    web: {
-      paddingTop: Spacing.six,
-      paddingBottom: Spacing.four,
-    },
-  });
-
-  return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-      <ThemedView style={styles.container}>
-        <ThemedView style={styles.titleContainer}>
-          <ThemedText type="subtitle">Explore</ThemedText>
-          <ThemedText style={styles.centerText} themeColor="textSecondary">
-            This starter app includes example{'\n'}code to help you get started.
-          </ThemedText>
-
-          <ExternalLink href="https://docs.expo.dev" asChild>
-            <Pressable style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedView type="backgroundElement" style={styles.linkButton}>
-                <ThemedText type="link">Expo documentation</ThemedText>
-                <SymbolView
-                  tintColor={theme.text}
-                  name={{ ios: 'arrow.up.right.square', android: 'link', web: 'link' }}
-                  size={12}
-                />
-              </ThemedView>
-            </Pressable>
-          </ExternalLink>
-        </ThemedView>
-
-        <ThemedView style={styles.sectionsWrapper}>
-          <Collapsible title="File-based routing">
-            <ThemedText type="small">
-              This app has two screens: <ThemedText type="code">src/app/index.tsx</ThemedText> and{' '}
-              <ThemedText type="code">src/app/explore.tsx</ThemedText>
-            </ThemedText>
-            <ThemedText type="small">
-              The layout file in <ThemedText type="code">src/app/_layout.tsx</ThemedText> sets up
-              the tab navigator.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/router/introduction">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Android, iOS, and web support">
-            <ThemedView type="backgroundElement" style={styles.collapsibleContent}>
-              <ThemedText type="small">
-                You can open this project on Android, iOS, and the web. To open the web version,
-                press <ThemedText type="smallBold">w</ThemedText> in the terminal running this
-                project.
-              </ThemedText>
-              <Image
-                source={require('@/assets/images/tutorial-web.png')}
-                style={styles.imageTutorial}
-              />
-            </ThemedView>
-          </Collapsible>
-
-          <Collapsible title="Images">
-            <ThemedText type="small">
-              For static images, you can use the <ThemedText type="code">@2x</ThemedText> and{' '}
-              <ThemedText type="code">@3x</ThemedText> suffixes to provide files for different
-              screen densities.
-            </ThemedText>
-            <Image source={require('@/assets/images/react-logo.png')} style={styles.imageReact} />
-            <ExternalLink href="https://reactnative.dev/docs/images">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Light and dark mode components">
-            <ThemedText type="small">
-              This template has light and dark mode support. The{' '}
-              <ThemedText type="code">useColorScheme()</ThemedText> hook lets you inspect what the
-              user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Animations">
-            <ThemedText type="small">
-              This template includes an example of an animated component. The{' '}
-              <ThemedText type="code">src/components/ui/collapsible.tsx</ThemedText> component uses
-              the powerful <ThemedText type="code">react-native-reanimated</ThemedText> library to
-              animate opening this hint.
-            </ThemedText>
-          </Collapsible>
-        </ThemedView>
-        {Platform.OS === 'web' && <WebBadge />}
-      </ThemedView>
-    </ScrollView>
-  );
+export default function MomentsScreen() {
+  const { tokens } = useAuth();
+  return tokens ? <Moments key={tokens.user.id} /> : <AuthScreen />;
 }
-
-const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
-  contentContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  container: {
-    maxWidth: MaxContentWidth,
-    flexGrow: 1,
-  },
-  titleContainer: {
-    gap: Spacing.three,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.six,
-  },
-  centerText: {
-    textAlign: 'center',
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-  linkButton: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
-    justifyContent: 'center',
-    gap: Spacing.one,
-    alignItems: 'center',
-  },
-  sectionsWrapper: {
-    gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
-  },
-  collapsibleContent: {
-    alignItems: 'center',
-  },
-  imageTutorial: {
-    width: '100%',
-    aspectRatio: 296 / 171,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
-  },
-  imageReact: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
-  },
-});
+function Moments() {
+  const { api } = useAuth();
+  const [sessions, setSessions] = useState<CaptureSession[]>([]);
+  const [selected, setSelected] = useState<CaptureSession | null>(null);
+  const [frames, setFrames] = useState<Frame[]>([]);
+  const [history, setHistory] = useState<Answer[]>([]);
+  const [query, setQuery] = useState('');
+  const [since, setSince] = useState('');
+  const [until, setUntil] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [more, setMore] = useState(false);
+  const [headers, setHeaders] = useState<Record<string, string>>({});
+  const [original, setOriginal] = useState(false);
+  async function run(work: () => Promise<void>) {
+    setBusy(true); setError('');
+    try { await work(); } catch (e) { setError(e instanceof Error ? e.message : 'Request failed'); } finally { setBusy(false); }
+  }
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    void api.request<CaptureSession[]>('/sessions?limit=200').then(value => { if (!cancelled) setSessions(value); }).catch(e => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [api]));
+  function bounds() {
+    const params = new URLSearchParams();
+    for (const [key, value] of [['since', since], ['until', until]]) if (value.trim()) {
+      const date = new Date(value);
+      if (!Number.isFinite(date.getTime())) throw new Error(`Enter a valid ${key} date/time.`);
+      params.set(key, date.toISOString());
+    }
+    return params;
+  }
+  async function load(session: CaptureSession, search = false, append = false) {
+    const params = bounds();
+    const offset = append ? frames.length : 0;
+    params.set('limit', search ? '10' : '50');
+    params.set('offset', String(offset));
+    if (search) params.set('q', query.trim());
+    const path = `/sessions/${session.id}`;
+    const [result, answers, token] = await Promise.all([
+      search ? api.request<{ frames: Frame[]; warnings: string[] }>(`${path}/frames/search?${params}`) : api.request<Frame[]>(`${path}/frames?${params}`),
+      api.request<Answer[]>(`${path}/questions?limit=200`), api.token(),
+    ]);
+    const values = Array.isArray(result) ? result : result.frames;
+    if (!Array.isArray(result) && result.warnings.length) setError(result.warnings.join('\n'));
+    setHeaders({ Authorization: `Bearer ${token}` });
+    setSelected(session); setFrames(previous => append ? [...previous, ...values] : values); setHistory(answers); setMore(!search && values.length === 50);
+  }
+  function confirmDelete(title: string, work: () => Promise<void>) {
+    if (Platform.OS === 'web') { if (window.confirm(title)) void run(work); }
+    else Alert.alert(title, 'This permanently deletes the selected retained data.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => void run(work) }]);
+  }
+  return <SafeAreaView style={ui.screen}><ScrollView contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
+    <Action title="Back to Sora" onPress={() => router.replace('/')} /><Text style={ui.title}>Moments</Text>
+    {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
+    {!selected ? <><Text style={ui.copy}>Choose a retained session.</Text>{sessions.length === 0 && <Text style={ui.copy}>No retained sessions yet.</Text>}{sessions.map(session => <Action key={session.id} title={`${new Date(session.created_at).toLocaleString()} · ${session.status}`} disabled={busy} onPress={() => void run(() => load(session))} />)}</> : <>
+      <Text style={ui.subtitle}>{new Date(selected.created_at).toLocaleString()}</Text>
+      <Action title="Choose another session" disabled={busy} onPress={() => { setSelected(null); setFrames([]); setHistory([]); }} />
+      <Field placeholder="Search visual memory" value={query} onChangeText={setQuery} />
+      <Field placeholder="Since (optional, e.g. 2026-10-29T09:00)" value={since} onChangeText={setSince} autoCapitalize="none" />
+      <Field placeholder="Until (optional)" value={until} onChangeText={setUntil} autoCapitalize="none" />
+      <Action title="Search memory" disabled={busy || !query.trim()} onPress={() => void run(() => load(selected, true))} />
+      <Action title="Show timeline" disabled={busy} onPress={() => void run(() => load(selected))} />
+      <Action title={original ? 'Show enhanced images' : 'Show original images'} onPress={() => setOriginal(value => !value)} />
+      {frames.length === 0 && <Text style={ui.copy}>No matching retained images.</Text>}
+      {frames.map(frame => <View style={ui.card} key={frame.id}>
+        <Image source={{ uri: api.url(`/sessions/${selected.id}/frames/${frame.id}/image?original=${original}`), headers }} cachePolicy="none" style={{ width: '100%', height: 210, borderRadius: 14 }} contentFit="contain" accessibilityLabel={frame.caption || 'Retained camera frame'} onError={() => setError('Image unavailable. Refresh the timeline to renew access.')} />
+        <Text style={ui.copy}>{new Date(frame.captured_at).toLocaleString()}</Text><Text style={ui.subtitle}>{frame.caption || 'Caption unavailable'}</Text>
+        {!!frame.ocr_text && <Text style={ui.copy}>Text: {frame.ocr_text}</Text>}
+        <Text style={ui.copy}>{frame.detected_objects.map(o => `${o.label} (${Math.round(o.confidence * 100)}%)`).join(', ')}</Text>
+        {frame.processing_warnings.map(w => <Text key={w} style={ui.error}>{w}</Text>)}
+        <Action title="Delete image" disabled={busy} onPress={() => confirmDelete('Delete this image?', async () => { await api.request(`/sessions/${selected.id}/frames/${frame.id}`, 'DELETE'); setFrames(previous => previous.filter(f => f.id !== frame.id)); })} />
+      </View>)}
+      {more && <Action title="Load more images" disabled={busy} onPress={() => void run(() => load(selected, false, true))} />}
+      <Text style={ui.subtitle}>Conversation history</Text>{history.map(answer => <AnswerCard key={answer.id} answer={answer} onError={setError} />)}
+      <Action title="Delete this session and all its data" disabled={busy} onPress={() => confirmDelete('Delete this session?', async () => { await api.request(`/sessions/${selected.id}`, 'DELETE'); setSessions(previous => previous.filter(s => s.id !== selected.id)); setSelected(null); setFrames([]); setHistory([]); })} />
+    </>}
+  </ScrollView></SafeAreaView>;
+}

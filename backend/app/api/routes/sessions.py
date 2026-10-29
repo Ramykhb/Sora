@@ -7,6 +7,7 @@ from app.db.models import CaptureSession, Frame
 from app.db.models.frame import now
 from app.db.session import SessionFactory
 from app.schemas import SessionCreate, SessionOut, SessionPatch
+from app.services.events import events
 from app.services.sessions import create_session, get_session
 from app.services.streaming.session import streams
 from app.workers.retention import drain_deletions, enqueue_frame_objects
@@ -22,6 +23,7 @@ async def create(request: SessionCreate, user: User = Depends(current_user)):
 @router.get("", response_model=list[SessionOut])
 async def list_sessions(
     limit: int = Query(50, ge=1, le=200),
+    own_only: bool = Query(False),
     offset: int = Query(0, ge=0),
     user: User = Depends(current_user),
 ):
@@ -32,7 +34,9 @@ async def list_sessions(
                     select(CaptureSession)
                     .where(
                         CaptureSession.expires_at > now(),
-                        True if user.role == "admin" else CaptureSession.owner_id == user.id,
+                        True
+                    if user.role == "admin" and not own_only
+                    else CaptureSession.owner_id == user.id,
                     )
                     .order_by(CaptureSession.created_at.desc())
                     .limit(limit)
@@ -55,6 +59,10 @@ async def update(session_id: UUID, request: SessionPatch):
         for name, value in request.model_dump(exclude_none=True).items():
             setattr(row, name, value)
         await db.commit()
+        events.publish(
+            session_id,
+            {"type": "session_updated", "session": SessionOut.model_validate(row).model_dump(mode="json")},
+        )
         return row
 
 
@@ -67,6 +75,10 @@ async def close(session_id: UUID):
         row = await db.get(CaptureSession, session_id)
         row.status = "closed"
         await db.commit()
+    events.publish(
+        session_id,
+        {"type": "session_updated", "session": SessionOut.model_validate(row).model_dump(mode="json")},
+    )
     await streams.stop(session_id)
     return row
 

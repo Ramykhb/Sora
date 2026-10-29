@@ -23,7 +23,12 @@ class Settings(BaseSettings):
     smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
     auth_public_url: str = "http://localhost:3000"
 
-    cors_origins: list[str] = ["http://localhost:8081", "http://localhost:3000"]
+    cors_origins: list[str] = [
+        "http://localhost:8081",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/visual_assistant"
     auto_migrate: bool = False
     storage_backend: str = "s3"

@@ -34,7 +34,7 @@ Do not form public S3 URLs. Images are served through the authenticated API. Inp
 
 For a simple camera integration, connect a WebSocket to `/api/v1/sessions/{id}/stream/frames`, send `{"access_token":"..."}` as the first text message within 5 seconds, wait for `type=ready`, then send binary JPEG frames at about 5 fps. Do not send a filename or a Base64 string. The server samples according to `SAMPLE_INTERVAL_SECONDS`; a queue of one keeps the newest frame when processing falls behind.
 
-Connect another WebSocket to `/api/v1/sessions/{id}/events` and authenticate with the same first message. Events: ready, heartbeat, stream_started, stream_stopped, frame_stored, frame_rejected, processing_error, question_answered, alert. Browser Origin must be in `CORS_ORIGINS`. Tokens never go in URLs. Authentication is rechecked during streaming; refresh and reconnect when tokens expire or rotate.
+Connect another WebSocket to `/api/v1/sessions/{id}/events` and authenticate with the same first message. Events: ready, heartbeat, stream_started, stream_stopped, frame_stored, frame_rejected, processing_error, question_answered, alert, session_updated. `session_updated` carries the full session after a language/alert change or capture closure so connected devices can update their controls. Browser Origin must be in `CORS_ORIGINS`. Tokens never go in URLs. Authentication is rechecked during streaming; refresh and reconnect when tokens expire or rotate.
 
 ## Dashboard and operations
 
@@ -46,3 +46,5 @@ Connect another WebSocket to `/api/v1/sessions/{id}/events` and authenticate wit
 - `POST /maintenance/reconcile`: administrator-only removal of old unreferenced image objects after failed uploads; also runs hourly.
 
 Most dependency failures use `{"error":{"code":"...","message":"..."}}` with 503. Invalid input is 422, byte/pixel/duration limits are 413, authentication is 401, missing/expired resources are 404, closed/conflicting sessions are 409 and capacity exhaustion is 429. Validation errors use a `detail` list with location, message and type; input values are omitted to avoid exposing secrets. Caption or embedding failures produce a stored frame with explicit warnings and OCR/object/lexical fallback; failed OCR or YOLO inference returns an error instead of an empty invented result. When the answer model is unavailable, the backend stores an uncertain response with a warning.
+
+The dashboard requests `own_only=true` on `/sessions`, `/dashboard` and `/metrics` so even administrator accounts see only their own mobile sessions in this workspace. Omitting it preserves administrator-wide visibility. Maintenance and user-management controls remain explicitly administrator-only.

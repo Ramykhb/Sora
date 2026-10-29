@@ -1,21 +1,26 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon.jsx';
-import scene from '../../assets/scene.svg';
-
+import ProtectedImage from './ProtectedImage.jsx';
+import { useDashboard } from '../providers/Dashboard.jsx';
 export default function DetailDialog({ detail, onClose }) {
+  const { api, refreshData, refreshSessions, setError } = useDashboard();
   const dialogRef = useRef(null);
+  const [original, setOriginal] = useState(false);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     const dialog = dialogRef.current;
     if (detail && !dialog.open) dialog.showModal();
     if (!detail && dialog.open) dialog.close();
   }, [detail]);
   const frame = detail?.frame;
-  return <dialog id="detail-dialog" ref={dialogRef} aria-labelledby="dialog-title" onClose={onClose} onClick={event => {
-    if (event.target !== event.currentTarget) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose();
-  }}>
-    <div className="dialog-top"><span className="eyebrow">{frame ? 'FRAME DETAILS' : 'SORA PREVIEW'}</span><button className="icon-button" onClick={onClose} aria-label="Close details"><Icon name="close" /></button></div>
-    {frame ? <><img src={scene} alt="Illustrated sample room" /><h2 id="dialog-title">{frame.title}</h2><p>{frame.caption}</p><dl><dt>Frame ID</dt><dd>{frame.id}</dd><dt>Captured</dt><dd>{frame.date} · {frame.time}</dd><dt>Objects</dt><dd>{frame.tags.join(', ')}</dd><dt>Recognized text</dt><dd>{frame.ocr}</dd><dt>Quality score</dt><dd>{frame.quality} / 100 (sample)</dd></dl><div className="notice">Illustrative demo data · no images have been retrieved from your backend.</div></> : detail?.type === 'preview' ? <><h2 id="dialog-title">Study room · demo preview</h2><img src={scene} alt="Illustrated study room with a table, plant and exit door" /><p>Sample stream · Session #SR-0042 · No camera connected.</p></> : <><h2 id="dialog-title">A clearer view, with Sora.</h2><p>This dashboard is an interactive design preview for a visual assistance project. Explore a sample session, browse saved moments and review question history.</p><p>All metrics, answers and detections are sample data. The room is a local SVG illustration. There are no API requests, camera permissions or backend connections.</p></>}
+  async function remove() {
+    if (!window.confirm('Permanently delete this image?')) return;
+    setBusy(true);
+    try { await api.request(`/sessions/${frame.session_id}/frames/${frame.id}`, 'DELETE'); detail.onDeleted?.(frame.id); onClose(); await Promise.all([refreshData(), refreshSessions()]); }
+    catch (error) { setError(error.message); } finally { setBusy(false); }
+  }
+  return <dialog id="detail-dialog" ref={dialogRef} aria-labelledby="dialog-title" onClose={onClose} onClick={event => { if (event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose(); } }}>
+    <div className="dialog-top"><span className="eyebrow">{frame ? 'FRAME DETAILS' : 'SORA'}</span><button className="icon-button" onClick={onClose} aria-label="Close details"><Icon name="close" /></button></div>
+    {frame ? <><ProtectedImage path={`/sessions/${frame.session_id}/frames/${frame.id}/image?original=${original}`} alt={frame.caption || 'Saved camera frame'} /><h2 id="dialog-title">{frame.caption || 'Saved scene'}</h2><button className="button" onClick={() => setOriginal(value => !value)}>{original ? 'Show enhanced image' : 'Show sanitized original'}</button><dl><dt>Frame ID</dt><dd>{frame.id}</dd><dt>Captured</dt><dd>{new Date(frame.captured_at).toLocaleString()}</dd><dt>Objects</dt><dd>{frame.detected_objects?.map(o => `${o.label} (${Math.round(o.confidence * 100)}%)`).join(', ') || 'None detected'}</dd><dt>Recognized text</dt><dd>{frame.ocr_text || 'No text recognized'}</dd><dt>Processing</dt><dd>{Math.round(frame.processing_ms)} ms</dd><dt>Expires</dt><dd>{new Date(frame.expires_at).toLocaleString()}</dd></dl>{frame.processing_warnings?.map(w => <div className="notice error" key={w}>{w}</div>)}<button className="button danger" disabled={busy} onClick={() => void remove()}>Delete image</button></> : <><h2 id="dialog-title">Your mobile view, connected.</h2><p>Sign in on the phone and dashboard with the same account. Start a capture session on mobile; the dashboard automatically follows its live stream.</p><p>The session selector lets you revisit retained sessions. Conversations, images and alerts are shared through the backend. Pausing this preview leaves mobile capture running. Ending a capture session stops its producer and keeps memory until expiry.</p></>}
   </dialog>;
 }

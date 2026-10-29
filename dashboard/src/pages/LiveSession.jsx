@@ -1,11 +1,19 @@
-import Icon from '../components/Icon.jsx';
 import { Heading } from '../components/Shared.jsx';
 import SessionPreview from '../components/SessionPreview.jsx';
-
-export default function LiveSession({ previewProps }) {
+import QuestionComposer from '../components/QuestionComposer.jsx';
+import { useDashboard } from '../providers/Dashboard.jsx';
+export default function LiveSession() {
+  const { api, session, selectedId, frames, status, alerts, refreshData, refreshSessions, setError } = useDashboard();
+  const frame = frames[0];
+  async function close() {
+    if (!confirm('End mobile capture for this session? Its retained memory will remain until expiry.')) return;
+    try { await api.request(`/sessions/${selectedId}/close`, 'POST'); await Promise.all([refreshData(), refreshSessions()]); }
+    catch (error) { setError(error.message); }
+  }
   return <>
-    <Heading title="A little closer to the moment." subtitle="An illustrated session preview with sample object detections."><button className="button primary" onClick={previewProps.onPause}><Icon name={previewProps.paused ? 'play' : 'pause'} />{previewProps.paused ? 'Resume preview' : 'Pause preview'}</button></Heading>
-    <div className="notice">Demo mode · This preview uses an illustration. No camera, stream or AI service is connected.</div>
-    <div className="live-layout"><SessionPreview {...previewProps} /><div><div className="panel"><div className="panel-head"><h2>In this scene</h2><span className="pill">3 objects</span></div>{[['Door', '98%'], ['Table', '96%'], ['Potted plant', '94%']].map(([label, confidence]) => <div className="detection" key={label}>{label}<span>{confidence}</span></div>)}<div className="panel-head"><h2>Recognized text</h2></div><div className="detection">EXIT → <span>English</span></div></div><div className="notice live-notice">Visual assistance adds context. It cannot confirm whether a path is safe to walk.</div></div></div>
+    <Heading title="A little closer to the moment." subtitle="Live video from your mobile account, with shared scene context.">{session?.status === 'active' && <button className="button" onClick={() => void close()}>End mobile capture</button>}</Heading>
+    <div className="live-layout"><SessionPreview /><div><div className="panel"><div className="panel-head"><h2>Latest saved scene</h2></div><div className="panel-body"><p>{frame?.caption || 'Waiting for a processed frame.'}</p>{frame && <p className="muted">Captured {new Date(frame.captured_at).toLocaleString()}. Detections describe this saved frame.</p>}</div>{frame?.detected_objects?.map((object, index) => <div className="detection" key={index}>{object.label}<span>{Math.round(object.confidence * 100)}%</span></div>)}<div className="panel-head"><h2>Recognized text</h2></div><div className="panel-body">{frame?.ocr_text || 'No text recognized'}</div></div><div className="notice live-notice">Received {status?.frames_received ?? 0} · saved {status?.frames_stored ?? 0} · rejected {status?.frames_rejected ?? 0} · dropped {status?.frames_dropped ?? 0}{status?.processing_error && <p role="alert">{status.processing_error}</p>}</div></div></div>
+    <QuestionComposer key={selectedId} />
+    <section className="panel"><div className="panel-head"><h2>Session alerts</h2></div>{alerts.length ? alerts.map((alert, index) => <div className="panel-body" key={alert.id || index}><strong>{alert.message}</strong><p className="muted">{new Date(alert.created_at).toLocaleString()}</p></div>) : <div className="empty">No retained alerts.</div>}</section>
   </>;
 }

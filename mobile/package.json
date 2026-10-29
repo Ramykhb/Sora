@@ -11,6 +11,7 @@
     "expo-constants": "~58.0.13",
     "expo-dev-client": "~58.0.15",
     "expo-device": "~58.0.5",
+    "expo-file-system": "~58.0.11",
     "expo-font": "~58.0.10",
     "expo-glass-effect": "~58.0.5",
     "expo-haptics": "~58.0.7",
@@ -36,6 +37,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~58.0.4",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -44,7 +47,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.cjs"
   },
   "private": true
 }

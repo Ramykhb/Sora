@@ -1,122 +1,145 @@
-import { SymbolView } from 'expo-symbols';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, ScrollView, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-const colors = {
-  ink: '#142820', muted: '#74847A', paper: '#F5F7F2', card: '#FFFFFF', green: '#245B45',
-  mint: '#E3F0E8', lime: '#D7EF92', line: '#E8EDE7', orange: '#F1A374',
-};
-
-type IconName = 'camera.fill' | 'mic.fill' | 'waveform' | 'location.fill' | 'sun.max.fill' | 'arrow.up.right' | 'house.fill' | 'clock' | 'gearshape.fill' | 'pause.fill' | 'play.fill' | 'speaker.wave.2.fill' | 'chevron.right';
-
-function Icon({ name, size = 18, color = colors.ink }: { name: IconName; size?: number; color?: string }) {
-  return <SymbolView name={name} size={size} tintColor={color} />;
-}
-
-function Header() {
-  return (
-    <View style={styles.header}>
-      <View style={styles.brandMark}><View style={styles.brandDot} /><View style={styles.brandDotSmall} /></View>
-      <View style={styles.brandText}><Text style={styles.brandName}>sora</Text><Text style={styles.brandCaption}>YOUR EVERYDAY COMPANION</Text></View>
-      <Pressable accessibilityLabel="Settings" style={styles.avatar}><Text style={styles.avatarText}>M</Text><View style={styles.onlineDot} /></Pressable>
-    </View>
-  );
-}
-
-function LiveStatus({ active, onToggle }: { active: boolean; onToggle: () => void }) {
-  return (
-    <View style={styles.liveRow}>
-      <View style={[styles.liveIndicator, !active && styles.liveIndicatorOff]}><View style={[styles.liveDot, !active && styles.liveDotOff]} /><Text style={[styles.liveLabel, !active && styles.liveLabelOff]}>{active ? 'LIVE ASSIST' : 'ASSIST PAUSED'}</Text></View>
-      <Text style={styles.liveHint}>{active ? 'Ready when you are' : 'Tap to resume'}</Text>
-      <Pressable onPress={onToggle} accessibilityLabel={active ? 'Pause live assistance' : 'Resume live assistance'} style={styles.liveToggle}><Icon name={active ? 'pause.fill' : 'play.fill'} size={12} color={colors.green} /></Pressable>
-    </View>
-  );
-}
-
-function CameraPreview({ active }: { active: boolean }) {
-  const [permission, requestPermission] = useCameraPermissions();
-
-  return (
-    <View style={styles.camera}>
-      {active && permission?.granted && <CameraView style={styles.cameraFeed} facing="back" />}
-      {active && permission && !permission.granted && (
-        <Pressable onPress={requestPermission} style={styles.cameraPermission}>
-          <View style={styles.permissionIcon}><Icon name="camera.fill" size={17} color={colors.green} /></View>
-          <Text style={styles.permissionTitle}>Allow camera access</Text>
-          <Text style={styles.permissionCopy}>Tap to show your live view</Text>
-        </Pressable>
-      )}
-      {!permission && active && <View style={styles.cameraLoading}><Text style={styles.permissionCopy}>Opening camera…</Text></View>}
-      <View style={styles.cameraTop}>
-        <View style={styles.viewfinder}><View style={styles.vfCornerTL} /><View style={styles.vfCornerTR} /><View style={styles.vfCornerBL} /><View style={styles.vfCornerBR} /></View>
-        <View style={styles.cameraChip}><View style={styles.cameraChipDot} /><Text style={styles.cameraChipText}>{active ? 'CAMERA ON' : 'CAMERA PAUSED'}</Text></View>
-      </View>
-      {(!active || !permission?.granted) && <View style={styles.scene}>
-        <View style={styles.window}><View style={styles.windowPane} /><View style={styles.windowPane} /><View style={styles.windowPane} /><View style={styles.windowPane} /></View>
-        <View style={styles.shelf}><View style={styles.plantPot}><View style={styles.plantLeaf} /><View style={styles.plantLeaf2} /></View><View style={styles.bookStack}><View /><View /><View /></View><View style={styles.cup} /></View>
-        <View style={styles.table}><View style={styles.tableLeg} /><View style={styles.tableLeg2} /></View>
-        <View style={styles.roomWall} /><View style={styles.roomFloor} />
-      </View>}
-      {permission?.granted && active && <View style={styles.cameraLiveCaption}><View style={styles.cameraChipDot} /><Text style={styles.sceneText}>Live camera preview</Text><Text style={styles.sceneTime}>back camera</Text></View>}
-      {(!active || !permission?.granted) && <View style={styles.sceneCaption}><View style={styles.captionIcon}><Icon name="sun.max.fill" size={13} color="#C78043" /></View><Text style={styles.sceneText}>{active ? 'Camera preview is waiting' : 'Camera is paused'}</Text><Text style={styles.sceneTime}>{active ? 'tap to allow' : 'paused'}</Text></View>}
-    </View>
-  );
-}
-
-function ChatMessage({ who, children, time }: { who: 'sora' | 'you'; children: string; time: string }) {
-  const fromSora = who === 'sora';
-  return <View style={[styles.messageRow, !fromSora && styles.messageRowYou]}>{fromSora && <View style={styles.messageMark}><View /></View>}<View style={[styles.messageBubble, fromSora ? styles.soraBubble : styles.youBubble]}><Text style={[styles.messageText, !fromSora && styles.youText]}>{children}</Text><Text style={[styles.messageTime, !fromSora && styles.youTime]}>{time}</Text></View></View>;
-}
-
-function ChatList() {
-  return <View style={styles.chatList}><ChatMessage who="sora" time="10:42 AM">There’s a ceramic mug on the table, next to a small stack of books. The window is open and it looks like a lovely day outside.</ChatMessage><ChatMessage who="you" time="10:43 AM">What does the note on the table say?</ChatMessage><ChatMessage who="sora" time="10:43 AM">It says, “Pick up groceries on the way home.”</ChatMessage></View>;
-}
-
-function VoiceButton({ listening, onPress }: { listening: boolean; onPress: () => void }) {
-  return <Pressable onPress={onPress} accessibilityLabel={listening ? 'Stop listening' : 'Start voice question'} style={({ pressed }) => [styles.voiceButton, listening && styles.voiceButtonListening, pressed && { transform: [{ scale: 0.97 }] }]}><Icon name={listening ? 'waveform' : 'mic.fill'} size={20} color="#FFFFFF" /><Text style={styles.voiceButtonText}>{listening ? 'Listening… tap to stop' : 'Ask Sora anything'}</Text><View style={styles.voiceButtonArrow}><Icon name={listening ? 'waveform' : 'arrow.up.right'} size={14} color={colors.green} /></View></Pressable>;
-}
-
-function BottomNavigation({ current, onSelect }: { current: string; onSelect: (value: string) => void }) {
-  const items: { label: string; icon: IconName }[] = [{ label: 'Today', icon: 'house.fill' }, { label: 'Moments', icon: 'clock' }, { label: 'Settings', icon: 'gearshape.fill' }];
-  return <View style={styles.bottomNav}>{items.map((item) => <Pressable key={item.label} onPress={() => onSelect(item.label)} style={styles.navItem}><Icon name={item.icon} size={19} color={current === item.label ? colors.green : '#A3AEA5'} /><Text style={[styles.navLabel, current === item.label && styles.navLabelActive]}>{item.label}</Text>{current === item.label && <View style={styles.navUnderline} />}</Pressable>)}</View>;
-}
+import { router, useFocusEffect } from 'expo-router';
+import * as Speech from 'expo-speech';
+import { useAuth } from '@/providers/auth';
+import { ApiError, type Answer, type CaptureSession, type Frame, type Language, type Scope } from '@/lib/api';
+import { connectLive } from '@/lib/live';
+import { AuthScreen } from '@/components/auth-screen';
+import { Action, Field, ui } from '@/components/controls';
+import { StreamStatus } from '@/components/stream-status';
+import { LiveCamera } from '@/components/live-camera';
+import { VoiceQuestion } from '@/components/voice-question';
+import { AnswerCard } from '@/components/answer-card';
 
 export default function HomeScreen() {
-  const [streamActive, setStreamActive] = useState(true);
-  const [listening, setListening] = useState(false);
-  const [currentTab, setCurrentTab] = useState('Today');
-  const [showStatus, setShowStatus] = useState(false);
-  return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <Header />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.greeting}><View><Text style={styles.eyebrow}>THURSDAY, OCTOBER 24</Text><Text style={styles.title}>Good morning, Maya</Text><Text style={styles.subtitle}>I’m right here whenever you need me.</Text></View><View style={styles.sunBadge}><Icon name="sun.max.fill" size={20} color="#B97841" /></View></View>
-        <LiveStatus active={streamActive} onToggle={() => setStreamActive((value) => !value)} />
-        <CameraPreview active={streamActive} />
-        <View style={styles.sectionHeader}><View><Text style={styles.sectionTitle}>A little more context</Text><Text style={styles.sectionSubtitle}>Your conversation with Sora</Text></View><Pressable onPress={() => setShowStatus((value) => !value)} style={styles.moreButton}><Text style={styles.moreText}>{showStatus ? 'Hide' : 'View all'}</Text><Icon name="chevron.right" size={12} color={colors.green} /></Pressable></View>
-        {showStatus && <View style={styles.statusCard}><View style={styles.statusIcon}><Icon name="speaker.wave.2.fill" size={15} color={colors.green} /></View><View style={{ flex: 1 }}><Text style={styles.statusTitle}>Sora is here with you</Text><Text style={styles.statusCopy}>Your assistant is ready to describe what’s around you.</Text></View><View style={styles.statusReady}><View style={styles.statusReadyDot} /><Text style={styles.statusReadyText}>READY</Text></View></View>}
-        <ChatList />
-        <View style={styles.tipCard}><View style={styles.tipIcon}><Icon name="location.fill" size={13} color={colors.green} /></View><Text style={styles.tipText}>Try asking about <Text style={styles.tipEmphasis}>people, objects, or text</Text> around you.</Text></View>
-      </ScrollView>
-      <View style={styles.bottomArea}><VoiceButton listening={listening} onPress={() => setListening((value) => !value)} /><BottomNavigation current={currentTab} onSelect={setCurrentTab} /></View>
-    </SafeAreaView>
-  );
+  const { tokens } = useAuth();
+  return tokens ? <Assistant key={tokens.user.id} /> : <AuthScreen />;
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.paper },
-  header: { height: 66, paddingHorizontal: 22, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#E9EDE7', backgroundColor: colors.paper },
-  brandMark: { width: 32, height: 32, borderRadius: 11, backgroundColor: colors.green, alignItems: 'center', justifyContent: 'center', marginRight: 10 }, brandDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: colors.lime, marginLeft: -4, marginTop: -2 }, brandDotSmall: { position: 'absolute', width: 6, height: 6, borderRadius: 3, backgroundColor: '#FFFFFF', top: 8, right: 7 },
-  brandText: { flex: 1 }, brandName: { color: colors.ink, fontSize: 19, fontWeight: '700', letterSpacing: -0.8, lineHeight: 21 }, brandCaption: { color: '#8C9A8F', fontSize: 8, letterSpacing: 1.1, fontWeight: '600' }, avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#E8E1D8', alignItems: 'center', justifyContent: 'center' }, avatarText: { color: '#705F4F', fontSize: 13, fontWeight: '700' }, onlineDot: { position: 'absolute', width: 9, height: 9, right: 0, bottom: 0, borderRadius: 5, borderWidth: 1.5, borderColor: colors.paper, backgroundColor: '#66A979' },
-  content: { paddingHorizontal: 20, paddingTop: 22, paddingBottom: 18 }, greeting: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 17 }, eyebrow: { color: '#91A095', fontSize: 9, fontWeight: '700', letterSpacing: 1.15, marginBottom: 7 }, title: { color: colors.ink, fontSize: 24, fontWeight: '700', letterSpacing: -0.8 }, subtitle: { color: colors.muted, fontSize: 12, marginTop: 5 }, sunBadge: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8EBDD' },
-  liveRow: { height: 38, flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, liveIndicator: { height: 27, flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: colors.mint, borderRadius: 20, paddingHorizontal: 10 }, liveIndicatorOff: { backgroundColor: '#ECEEEB' }, liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#4E9C6A' }, liveDotOff: { backgroundColor: '#9BA59C' }, liveLabel: { color: colors.green, fontSize: 9, fontWeight: '700', letterSpacing: 0.65 }, liveLabelOff: { color: '#68756B' }, liveHint: { flex: 1, marginLeft: 9, color: '#95A197', fontSize: 10 }, liveToggle: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#E8EEE8', alignItems: 'center', justifyContent: 'center' },
-  camera: { height: 180, backgroundColor: '#DCE4DC', borderRadius: 19, overflow: 'hidden', marginBottom: 23 }, cameraFeed: { ...StyleSheet.absoluteFill }, cameraPermission: { ...StyleSheet.absoluteFill, zIndex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E9EFE9' }, permissionIcon: { width: 35, height: 35, borderRadius: 12, backgroundColor: '#D8E8DB', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }, permissionTitle: { color: colors.ink, fontSize: 12, fontWeight: '700' }, permissionCopy: { color: colors.muted, fontSize: 10, marginTop: 3 }, cameraLoading: { ...StyleSheet.absoluteFill, zIndex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E9EFE9' }, cameraLiveCaption: { position: 'absolute', bottom: 0, height: 31, left: 0, right: 0, backgroundColor: 'rgba(255,255,255,0.94)', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12 }, cameraTop: { position: 'absolute', top: 12, left: 13, right: 13, zIndex: 2, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }, viewfinder: { width: 27, height: 27 }, vfCornerTL: { position: 'absolute', left: 0, top: 0, width: 9, height: 9, borderLeftWidth: 2, borderTopWidth: 2, borderColor: '#FFFFFF', borderTopLeftRadius: 4 }, vfCornerTR: { position: 'absolute', right: 0, top: 0, width: 9, height: 9, borderRightWidth: 2, borderTopWidth: 2, borderColor: '#FFFFFF', borderTopRightRadius: 4 }, vfCornerBL: { position: 'absolute', left: 0, bottom: 0, width: 9, height: 9, borderLeftWidth: 2, borderBottomWidth: 2, borderColor: '#FFFFFF', borderBottomLeftRadius: 4 }, vfCornerBR: { position: 'absolute', right: 0, bottom: 0, width: 9, height: 9, borderRightWidth: 2, borderBottomWidth: 2, borderColor: '#FFFFFF', borderBottomRightRadius: 4 }, cameraChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 20, backgroundColor: 'rgba(24,48,36,0.7)' }, cameraChipDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#92D897' }, cameraChipText: { color: 'white', fontSize: 8, fontWeight: '700', letterSpacing: 0.6 },
-  scene: { flex: 1, overflow: 'hidden' }, roomWall: { position: 'absolute', top: 0, left: 0, right: 0, height: 128, backgroundColor: '#CBD8CE' }, roomFloor: { position: 'absolute', bottom: 26, left: 0, right: 0, height: 27, backgroundColor: '#B7C6B8' }, window: { position: 'absolute', left: '24%', top: 20, width: 107, height: 80, borderRadius: 3, backgroundColor: '#B2D0CE', borderWidth: 5, borderColor: '#F1F0E8', flexDirection: 'row', flexWrap: 'wrap', gap: 2, padding: 2 }, windowPane: { width: '48%', height: '48%', backgroundColor: '#AFD0D0' }, shelf: { position: 'absolute', right: '13%', top: 62, width: 110, height: 7, backgroundColor: '#987D61', borderRadius: 2, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-end' }, plantPot: { width: 15, height: 18, borderRadius: 3, backgroundColor: '#D8906E', marginBottom: 7 }, plantLeaf: { position: 'absolute', top: -11, left: 1, width: 10, height: 14, backgroundColor: '#658A68', borderRadius: 8, transform: [{ rotate: '-25deg' }] }, plantLeaf2: { position: 'absolute', top: -9, right: 0, width: 9, height: 12, backgroundColor: '#7C9A74', borderRadius: 8, transform: [{ rotate: '22deg' }] }, bookStack: { width: 30, height: 23, marginBottom: 7, justifyContent: 'flex-end', gap: 1 }, cup: { width: 13, height: 16, borderRadius: 3, backgroundColor: '#E8E3D4', marginBottom: 7 },
-  table: { position: 'absolute', left: '9%', bottom: 42, width: '59%', height: 8, borderRadius: 4, backgroundColor: '#947B62' }, tableLeg: { position: 'absolute', left: 10, top: 6, height: 29, width: 5, backgroundColor: '#826E5B' }, tableLeg2: { position: 'absolute', right: 10, top: 6, height: 29, width: 5, backgroundColor: '#826E5B' }, sceneCaption: { height: 31, backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 11 }, captionIcon: { width: 21, height: 21, borderRadius: 7, backgroundColor: '#F8EBDD', alignItems: 'center', justifyContent: 'center', marginRight: 8 }, sceneText: { fontSize: 10, fontWeight: '600', color: colors.ink, flex: 1 }, sceneTime: { fontSize: 9, color: '#9BA79D' },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 }, sectionTitle: { color: colors.ink, fontSize: 15, fontWeight: '700', letterSpacing: -0.25 }, sectionSubtitle: { color: '#91A095', fontSize: 10, marginTop: 3 }, moreButton: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: 5 }, moreText: { color: colors.green, fontSize: 10, fontWeight: '600' },
-  chatList: { gap: 9 }, messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 7, maxWidth: '91%' }, messageRowYou: { alignSelf: 'flex-end', justifyContent: 'flex-end' }, messageMark: { width: 22, height: 22, borderRadius: 8, backgroundColor: colors.green, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }, messageMarkInner: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.lime }, messageBubble: { borderRadius: 14, paddingHorizontal: 12, paddingTop: 9, paddingBottom: 7 }, soraBubble: { backgroundColor: colors.card, borderBottomLeftRadius: 4, flex: 1 }, youBubble: { backgroundColor: colors.green, borderBottomRightRadius: 4, maxWidth: '90%' }, messageText: { color: '#43544A', fontSize: 11, lineHeight: 16 }, youText: { color: '#FFFFFF' }, messageTime: { color: '#A0AAA1', fontSize: 8, marginTop: 5 }, youTime: { color: '#BAD0C3', textAlign: 'right' },
-  tipCard: { marginTop: 12, borderRadius: 12, paddingVertical: 9, paddingHorizontal: 10, backgroundColor: '#ECF2E8', flexDirection: 'row', alignItems: 'center', gap: 8 }, tipIcon: { width: 22, height: 22, borderRadius: 7, backgroundColor: '#DCE9D8', alignItems: 'center', justifyContent: 'center' }, tipText: { color: '#728275', fontSize: 10 }, tipEmphasis: { color: colors.green, fontWeight: '700' }, statusCard: { padding: 11, marginBottom: 10, borderRadius: 14, backgroundColor: colors.card, flexDirection: 'row', alignItems: 'center', gap: 9 }, statusIcon: { width: 30, height: 30, borderRadius: 10, backgroundColor: colors.mint, alignItems: 'center', justifyContent: 'center' }, statusTitle: { fontSize: 11, color: colors.ink, fontWeight: '700' }, statusCopy: { marginTop: 3, fontSize: 9, lineHeight: 13, color: colors.muted }, statusReady: { alignItems: 'center', gap: 4 }, statusReadyDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#55A36D' }, statusReadyText: { fontSize: 7, fontWeight: '700', letterSpacing: 0.5, color: colors.green },
-  bottomArea: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 3, backgroundColor: colors.paper, borderTopWidth: 1, borderTopColor: '#E9EDE7' }, voiceButton: { height: 49, borderRadius: 16, backgroundColor: colors.green, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, shadowColor: '#1C4B37', shadowOpacity: 0.18, shadowRadius: 9, shadowOffset: { width: 0, height: 4 }, elevation: 3 }, voiceButtonListening: { backgroundColor: '#A8513B' }, voiceButtonText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600', letterSpacing: 0.1 }, voiceButtonArrow: { position: 'absolute', right: 11, width: 27, height: 27, borderRadius: 10, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' }, bottomNav: { height: 54, marginTop: 3, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' }, navItem: { minWidth: 62, alignItems: 'center', justifyContent: 'center', height: 49, gap: 2, position: 'relative' }, navLabel: { color: '#98A39A', fontSize: 9, fontWeight: '500' }, navLabelActive: { color: colors.green, fontWeight: '700' }, navUnderline: { position: 'absolute', bottom: 0, width: 13, height: 2, borderRadius: 2, backgroundColor: colors.green },
-});
+function Assistant() {
+  const { api, tokens } = useAuth();
+  const [session, setSession] = useState<CaptureSession | null>(null);
+  const [sessions, setSessions] = useState<CaptureSession[]>([]);
+  const [consent, setConsent] = useState(false);
+  const [language, setLanguage] = useState<Language>('en');
+  const [scope, setScope] = useState<Scope>('recent');
+  const [alerts, setAlerts] = useState(false);
+  const [speak, setSpeak] = useState(true);
+  const [active, setActive] = useState(false);
+  const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  const [focused, setFocused] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [question, setQuestion] = useState('');
+  const [answers, setAnswers] = useState<Answer[]>([]);
+  const [frame, setFrame] = useState<Frame | null>(null);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [connection, setConnection] = useState('');
+  const spoken = useRef(new Set<string>());
+  const selectedId = useRef<string | null>(null);
+  const select = useCallback((value: CaptureSession | null) => {
+    selectedId.current = value?.id || null;
+    setActive(false); setAnswers([]); setFrame(null); setSession(value);
+    if (value) { setLanguage(value.language); setAlerts(value.alerts_enabled); }
+    void Speech.stop();
+  }, []);
+  const fail = useCallback((e: unknown) => {
+    setError(e instanceof Error ? e.message : 'Request failed.');
+    if (e instanceof ApiError && e.status === 404) select(null);
+  }, [select]);
+  const listSessions = useCallback(() => {
+    void api.request<CaptureSession[]>('/sessions?limit=50').then(setSessions).catch(fail);
+  }, [api, fail]);
+  useFocusEffect(useCallback(() => { setFocused(true); listSessions(); return () => { setFocused(false); void Speech.stop(); }; }, [listSessions]));
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', value => { setForeground(value === 'active'); if (value !== 'active') void Speech.stop(); });
+    return () => subscription.remove();
+  }, []);
+  useEffect(() => {
+    if (!session) return;
+    const timer = setTimeout(() => { setActive(false); select(null); setNotice('This session expired. Start a new session.'); listSessions(); }, Math.max(0, Date.parse(session.expires_at) - Date.now()));
+    return () => clearTimeout(timer);
+  }, [session, select, listSessions]);
+  const receiveAnswer = useCallback((answer: Answer, readAloud = false) => {
+    if (answer.session_id !== selectedId.current) return;
+    setAnswers(previous => [answer, ...previous.filter(value => value.id !== answer.id)]);
+    if (readAloud && speak && !spoken.current.has(answer.id)) {
+      spoken.current.add(answer.id); void Speech.stop(); Speech.speak(answer.answer, { language: answer.language });
+    }
+  }, [speak]);
+  useEffect(() => {
+    if (!session || !foreground || !focused) return;
+    let cancelled = false;
+    const path = `/sessions/${session.id}`;
+    const sync = () => {
+      void Promise.all([api.request<Answer[]>(`${path}/questions`), api.request<Frame[]>(`${path}/frames?limit=1`)]).then(([history, frames]) => {
+        if (cancelled) return;
+        setAnswers(previous => [...new Map([...history, ...previous].map(a => [a.id, a])).values()].sort((a, b) => b.created_at.localeCompare(a.created_at)));
+        setFrame(frames[0] || null);
+      }).catch(e => { if (!cancelled) fail(e); });
+    };
+    sync();
+    const live = connectLive(api, `${path}/events`, event => {
+      if (event.type === 'ready') sync();
+      if (event.type === 'session_updated' && event.session) {
+        setSession(event.session); setLanguage(event.session.language); setAlerts(event.session.alerts_enabled);
+        if (event.session.status !== 'active') setActive(false);
+      }
+      if (event.frame) setFrame(event.frame);
+      if (event.question) receiveAnswer(event.question, true);
+      if (event.type === 'frame_rejected') setNotice(`Frame skipped: ${event.reason}`);
+      if (event.type === 'processing_error') setError(event.message || event.code || 'Frame processing failed');
+      if (event.type === 'alert' && event.message) {
+        setNotice(event.message);
+        if (speak && alerts) Speech.speak(event.message, { language: event.language || language });
+      }
+    }, setConnection);
+    return () => { cancelled = true; live.close(); };
+  }, [api, session, foreground, focused, receiveAnswer, fail, speak, alerts, language]);
+  async function run(operation: () => Promise<void>) {
+    setBusy(true); setError('');
+    try { await operation(); } catch (e) { fail(e); } finally { setBusy(false); }
+  }
+  async function ask() {
+    if (!session || !question.trim()) return;
+    const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope, language });
+    receiveAnswer(answer, true); setQuestion('');
+  }
+  async function preferences(nextLanguage: Language, nextAlerts: boolean) {
+    if (session) setSession(await api.request<CaptureSession>(`/sessions/${session.id}`, 'PATCH', { language: nextLanguage, alerts_enabled: nextAlerts }));
+    setLanguage(nextLanguage); setAlerts(nextAlerts);
+  }
+  return <SafeAreaView style={ui.screen}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={ui.content}>
+    <View style={ui.row}><Text style={[ui.title, { flex: 1 }]}>sora</Text><Action title="Moments" onPress={() => router.push('/explore')} /><Action title="Settings" onPress={() => router.push('./settings')} /></View>
+    <Text style={ui.subtitle}>Hello, {tokens?.user.display_name}</Text>
+    <Text style={ui.copy}>{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
+    {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
+    {!!notice && <Text accessibilityLiveRegion="polite" style={ui.copy}>{notice}</Text>}
+    <View style={ui.row}>{(['en', 'fr', 'ar'] as const).map(value => <Action key={value} title={`${language === value ? '✓ ' : ''}${{ en: 'English', fr: 'Français', ar: 'العربية' }[value]}`} disabled={busy || session?.status === 'closed'} onPress={() => void run(() => preferences(value, alerts))} />)}</View>
+    <View style={ui.row}><Switch accessibilityLabel="Spoken answers" value={speak} onValueChange={value => { setSpeak(value); if (!value) void Speech.stop(); }} /><Text style={ui.copy}>Speak answers</Text><Switch accessibilityLabel="Obstacle alerts" disabled={busy || session?.status === 'closed'} value={alerts} onValueChange={value => void run(() => preferences(language, value))} /><Text style={ui.copy}>Obstacle alerts</Text></View>
+    {!session ? <View style={ui.card}>
+      <Text style={ui.subtitle}>Start live assistance</Text><Text style={ui.copy}>Camera frames are analyzed and selected images and conversations are retained until the session expires. Voice uploads are processed without being retained.</Text>
+      <View style={ui.row}><Switch accessibilityLabel="Consent to camera processing and retention" value={consent} onValueChange={setConsent} /><Text style={[ui.copy, { flex: 1 }]}>I consent to camera processing and visual memory storage.</Text></View>
+      <Action title={busy ? 'Starting…' : 'Start a new session'} disabled={!consent || busy} onPress={() => void run(async () => {
+        const created = await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language, alerts_enabled: alerts });
+        select(created); setActive(true); listSessions();
+      })} />
+      <Action title="Refresh sessions" onPress={listSessions} />
+      {sessions.map(item => <Action key={item.id} title={`${new Date(item.created_at).toLocaleString()} · ${item.status}`} onPress={() => select(item)} />)}
+    </View> : <>
+      <Text style={ui.copy}>Session · {session.status} · expires {new Date(session.expires_at).toLocaleString()} · {connection}</Text>
+      {session.status === 'active' && <><LiveCamera key={`${session.id}-${foreground}-${focused}-${active}`} sessionId={session.id} active={active && foreground && focused} />{active && foreground && focused && <StreamStatus sessionId={session.id} onUnavailable={fail} />}<Action title={active ? 'Pause assistance' : 'Resume assistance'} onPress={() => setActive(v => !v)} /></>}
+      {frame && <View style={ui.card}><Text style={ui.subtitle}>Latest scene</Text><Text style={ui.copy}>{frame.caption || 'Caption unavailable'}</Text>{!!frame.ocr_text && <Text style={ui.copy}>Text: {frame.ocr_text}</Text>}<Text style={ui.copy}>{new Date(frame.captured_at).toLocaleTimeString()}</Text>{frame.processing_warnings.map(w => <Text key={w} style={ui.error}>{w}</Text>)}</View>}
+      <View style={ui.row}>{(['recent', 'memory', 'auto'] as const).map(value => <Action key={value} title={`${scope === value ? '✓ ' : ''}${value === 'recent' ? 'Current view' : value === 'memory' ? 'Memory' : 'Auto'}`} onPress={() => setScope(value)} />)}</View>
+      <Field placeholder="Ask about your surroundings or memory" value={question} onChangeText={setQuestion} multiline maxLength={2000} />
+      <Action title={busy ? 'Thinking…' : 'Ask Sora'} disabled={busy || !question.trim()} onPress={() => void run(ask)} />
+      {foreground && focused && <VoiceQuestion key={session.id} sessionId={session.id} language={language} scope={scope} disabled={busy} onAnswer={answer => receiveAnswer(answer, true)} onError={setError} />}
+      <Action title="Stop speaking" onPress={() => void Speech.stop()} />
+      {answers.length === 0 && <Text style={ui.copy}>Your conversation will appear here.</Text>}
+      {answers.map(answer => <AnswerCard key={answer.id} answer={answer} onError={setError} />)}
+      {session.status === 'active' && <Action title="End capture and keep memory" disabled={busy} onPress={() => void run(async () => { setActive(false); setSession(await api.request<CaptureSession>(`/sessions/${session.id}/close`, 'POST')); listSessions(); })} />}
+      <Action title="Choose another session" disabled={busy} onPress={() => { select(null); listSessions(); }} />
+    </>}
+  </ScrollView></SafeAreaView>;
+}

@@ -433,3 +433,105 @@ def test_logout_terminates_stream_and_revokes_event_subscription(client):
             assert api.post("/api/v1/auth/logout").status_code == 204
             with pytest.raises(WebSocketDisconnect):
                 event_socket.receive_json()
+
+
+def test_dashboard_own_only_keeps_administrator_mobile_workspace_private(client):
+    api, _ = client
+    admin_headers = dict(api.headers)
+    own_session = create(api)
+    upload(api, own_session)
+    other = account(api, "mobile-other@example.com")
+    api.headers.update(headers(other))
+    other_session = create(api)
+    upload(api, other_session)
+    api.headers.clear()
+    api.headers.update(admin_headers)
+
+    assert {item["id"] for item in api.get("/api/v1/sessions").json()} == {
+        own_session,
+        other_session,
+    }
+    assert [item["id"] for item in api.get("/api/v1/sessions?own_only=true").json()] == [
+        own_session
+    ]
+    assert [
+        item["session_id"]
+        for item in api.get("/api/v1/dashboard?own_only=true").json()["sessions"]
+    ] == [own_session]
+    assert api.get("/api/v1/metrics").json()["retained_frames"] == 2
+    own_metrics = api.get("/api/v1/metrics?own_only=true").json()
+    assert own_metrics["retained_frames"] == 1
+    assert own_metrics["pending_object_deletions"] is None
+
+    api.headers.update(headers(other))
+    for suffix in ("", "?own_only=true", "?own_only=false"):
+        assert [item["id"] for item in api.get("/api/v1/sessions" + suffix).json()] == [
+            other_session
+        ]
+        assert api.get("/api/v1/metrics" + suffix).json()["retained_frames"] == 1
+
+
+def test_mobile_and_dashboard_logins_share_stream_frames_and_answers(client):
+    from io import BytesIO
+
+    from PIL import Image
+    from test_api import image_bytes
+
+    api, _ = client
+    mobile = account(api, "shared-mobile@example.com")
+    dashboard = api.post(
+        "/api/v1/auth/login",
+        json={"email": "shared-mobile@example.com", "password": PASSWORD},
+    ).json()
+    assert mobile["access_token"] != dashboard["access_token"]
+    assert mobile["user"]["id"] == dashboard["user"]["id"]
+    api.headers.update(headers(mobile))
+    sid = create(api)
+    path = f"/api/v1/sessions/{sid}"
+
+    def receive_type(socket, event_type):
+        for _ in range(10):
+            message = socket.receive_json()
+            if message["type"] == event_type:
+                return message
+        raise AssertionError(f"Expected {event_type}")
+
+    with api.websocket_connect(path + "/events") as viewer:
+        viewer.send_json({"access_token": dashboard["access_token"]})
+        assert viewer.receive_json()["type"] == "ready"
+        with api.websocket_connect(path + "/stream/frames") as producer:
+            producer.send_json({"access_token": mobile["access_token"]})
+            assert producer.receive_json()["type"] == "ready"
+            assert receive_type(viewer, "stream_started")
+            image = Image.open(BytesIO(image_bytes()))
+            jpeg = BytesIO()
+            image.save(jpeg, format="JPEG")
+            producer.send_bytes(jpeg.getvalue())
+            frame = receive_type(viewer, "frame_stored")["frame"]
+            assert frame["session_id"] == sid
+            assert frame["ocr_text"] == "EXIT"
+            snapshot = api.get(
+                "/api/v1/dashboard?own_only=true", headers=headers(dashboard)
+            ).json()["sessions"]
+            assert snapshot[0]["session_id"] == sid
+            assert snapshot[0]["live"]["streaming"] is True
+            result = api.post(
+                path + "/questions",
+                headers=headers(dashboard),
+                json={"question": "What is visible?", "scope": "recent", "language": "en"},
+            )
+            assert result.status_code == 200, result.text
+            event_answer = receive_type(viewer, "question_answered")["question"]
+            assert event_answer["id"] == result.json()["id"]
+            mobile_history = api.get(path + "/questions", headers=headers(mobile)).json()
+            assert mobile_history[0]["id"] == event_answer["id"]
+            patched = api.patch(
+                path, headers=headers(dashboard), json={"language": "fr", "alerts_enabled": False}
+            )
+            assert patched.status_code == 200
+            update = receive_type(viewer, "session_updated")["session"]
+            assert update["language"] == "fr"
+            assert update["alerts_enabled"] is False
+            closed = api.post(path + "/close", headers=headers(dashboard))
+            assert closed.status_code == 200
+            assert receive_type(viewer, "session_updated")["session"]["status"] == "closed"

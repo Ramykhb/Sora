@@ -16,6 +16,7 @@ router = APIRouter()
 @router.get("/dashboard")
 async def overview(
     limit: int = Query(50, ge=1, le=200),
+    own_only: bool = Query(False),
     offset: int = Query(0, ge=0),
     user: User = Depends(current_user),
 ):
@@ -25,7 +26,9 @@ async def overview(
                 select(CaptureSession)
                 .where(
                     CaptureSession.expires_at > now(),
-                    True if user.role == "admin" else CaptureSession.owner_id == user.id,
+                    True
+                    if user.role == "admin" and not own_only
+                    else CaptureSession.owner_id == user.id,
                 )
                 .order_by(CaptureSession.created_at.desc())
                 .limit(limit)
@@ -59,10 +62,10 @@ async def overview(
 
 
 @router.get("/metrics")
-async def metrics(user: User = Depends(current_user)):
+async def metrics(own_only: bool = Query(False), user: User = Depends(current_user)):
     async with SessionFactory() as db:
         owned_ids = select(CaptureSession.id).where(CaptureSession.expires_at > now())
-        if user.role != "admin":
+        if user.role != "admin" or own_only:
             owned_ids = owned_ids.where(CaptureSession.owner_id == user.id)
         ids = list((await db.scalars(owned_ids)).all())
         frames, processing = (
@@ -89,7 +92,7 @@ async def metrics(user: User = Depends(current_user)):
         ).all()
         pending = (
             await db.scalar(select(func.count(ObjectDeletion.key)))
-            if user.role == "admin"
+            if user.role == "admin" and not own_only
             else None
         )
     return {

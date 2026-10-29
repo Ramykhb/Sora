@@ -3,12 +3,15 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Sora React dashboard with local demo data",
-  "engines": { "node": ">=22.12.0" },
+  "description": "Sora dashboard for authenticated mobile streams, visual memory and speech",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "react": "^19.2.0",
