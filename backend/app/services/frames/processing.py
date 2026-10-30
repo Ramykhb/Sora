@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from functools import lru_cache
 from io import BytesIO
+from pathlib import Path
 import threading
 import cv2
 import numpy as np
@@ -83,11 +84,35 @@ def prepare_image(content: bytes) -> PreparedImage:
 _detector_lock = threading.Lock()
 
 
+def vision_image(prepared: PreparedImage) -> bytes:
+    height, width = prepared.image.shape[:2]
+    side = settings.vision_image_max_side
+    if max(width, height) <= side:
+        return prepared.processed
+    scale = side / max(width, height)
+    resized = cv2.resize(
+        prepared.image,
+        (max(1, round(width * scale)), max(1, round(height * scale))),
+        interpolation=cv2.INTER_AREA,
+    )
+    return jpeg(resized)
+
+
 @lru_cache
 def detector():
     from ultralytics import YOLO
 
     return YOLO(settings.yolo_model)
+
+
+def warmup_detector():
+    # Model weights are prepared explicitly; startup must not download anything.
+    if Path(settings.yolo_model).is_file():
+        with _detector_lock:
+            detector().predict(
+                np.zeros((640, 640, 3), dtype=np.uint8),
+                conf=settings.yolo_confidence, device=settings.model_device, verbose=False,
+            )
 
 
 def analyze_image(prepared: PreparedImage, languages: str | None = None) -> Analysis:

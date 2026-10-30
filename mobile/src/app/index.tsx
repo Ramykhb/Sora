@@ -86,7 +86,10 @@ function Assistant() {
         setSession(event.session); setLanguage(event.session.language); setAlerts(event.session.alerts_enabled);
         if (event.session.status !== 'active') setActive(false);
       }
-      if (event.frame) setFrame(event.frame);
+      if (event.frame) {
+        const incoming = event.frame;
+        setFrame(previous => !previous || previous.id === incoming.id || Date.parse(incoming.captured_at) >= Date.parse(previous.captured_at) ? incoming : previous);
+      }
       if (event.question) receiveAnswer(event.question, true);
       if (event.type === 'frame_rejected') setNotice(`Frame skipped: ${event.reason}`);
       if (event.type === 'processing_error') setError(event.message || event.code || 'Frame processing failed');
@@ -130,7 +133,7 @@ function Assistant() {
     </View> : <>
       <Text style={ui.copy}>Session · {session.status} · expires {new Date(session.expires_at).toLocaleString()} · {connection}</Text>
       {session.status === 'active' && <><LiveCamera key={`${session.id}-${foreground}-${focused}-${active}`} sessionId={session.id} active={active && foreground && focused} />{active && foreground && focused && <StreamStatus sessionId={session.id} onUnavailable={fail} />}<Action title={active ? 'Pause assistance' : 'Resume assistance'} onPress={() => setActive(v => !v)} /></>}
-      {frame && <View style={ui.card}><Text style={ui.subtitle}>Latest scene</Text><Text style={ui.copy}>{frame.caption || 'Caption unavailable'}</Text>{!!frame.ocr_text && <Text style={ui.copy}>Text: {frame.ocr_text}</Text>}<Text style={ui.copy}>{new Date(frame.captured_at).toLocaleTimeString()}</Text>{frame.processing_warnings.map(w => <Text key={w} style={ui.error}>{w}</Text>)}</View>}
+      {frame && <View style={ui.card}><Text style={ui.subtitle}>Latest scene</Text><Text style={ui.copy}>{frame.caption || (frame.enrichment_status === 'pending' ? 'Frame saved. AI description is being prepared.' : 'Caption unavailable')}</Text>{!!frame.ocr_text && <Text style={ui.copy}>Text: {frame.ocr_text}</Text>}<Text style={ui.copy}>{new Date(frame.captured_at).toLocaleTimeString()}</Text>{frame.processing_warnings.map(w => <Text key={w} style={ui.error}>{w}</Text>)}</View>}
       <View style={ui.row}>{(['recent', 'memory', 'auto'] as const).map(value => <Action key={value} title={`${scope === value ? '✓ ' : ''}${value === 'recent' ? 'Current view' : value === 'memory' ? 'Memory' : 'Auto'}`} onPress={() => setScope(value)} />)}</View>
       <Field placeholder="Ask about your surroundings or memory" value={question} onChangeText={setQuestion} multiline maxLength={2000} />
       <Action title={busy ? 'Thinking…' : 'Ask Sora'} disabled={busy || !question.trim()} onPress={() => void run(ask)} />

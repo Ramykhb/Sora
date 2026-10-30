@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from './Auth.jsx';
 import { chooseSession, subscribeEvents } from '../lib/live.js';
+import { loadDashboard } from '../lib/dashboard.js';
 const DashboardContext = createContext(null);
 export function DashboardProvider({ children }) {
   const { api, tokens } = useAuth();
@@ -54,21 +55,18 @@ export function DashboardProvider({ children }) {
     return () => document.removeEventListener('visibilitychange', hide);
   }, [stopSpeaking]);
   const refreshSessions = useCallback(async signal => {
-    const [summary, ownSessions, values] = await Promise.all([
-      api.request('/dashboard?own_only=true&limit=200', 'GET', undefined, signal), api.request('/sessions?own_only=true&limit=200', 'GET', undefined, signal), api.request('/metrics?own_only=true', 'GET', undefined, signal),
-    ]);
+    const snapshot = await loadDashboard(api, tokens.user.id, signal);
     if (signal?.aborted) return;
-    const byId = new Map(summary.sessions.map(item => [item.session_id, item]));
-    const rows = ownSessions.filter(item => item.owner_id === tokens.user.id).map(item => ({ ...item, ...byId.get(item.id) }));
-    setSessions(rows); setMetrics(values);
-    setSelectedId(previous => chooseSession(rows, previous, followLive));
+    setSessions(snapshot.sessions); setMetrics(snapshot.metrics);
+    setNetworkError(snapshot.warning);
+    setSelectedId(previous => chooseSession(snapshot.sessions, previous, followLive));
   }, [api, tokens.user.id, followLive]);
   useEffect(() => {
     let disposed = false;
     const controller = new AbortController();
     let timer;
     async function poll() {
-      try { await refreshSessions(controller.signal); if (!disposed) setNetworkError(''); }
+      try { await refreshSessions(controller.signal); }
       catch (e) { if (!disposed) setNetworkError(e.message); }
       finally { if (!disposed) { setLoading(false); timer = setTimeout(() => void poll(), 4000); } }
     }
@@ -104,7 +102,7 @@ export function DashboardProvider({ children }) {
       if (event.type === 'ready') refresh();
       if (event.type === 'session_updated' && event.session) setSessions(previous => previous.map(item => item.id === event.session.id ? { ...item, ...event.session } : item));
       if (!['heartbeat', 'ready'].includes(event.type)) setEvents(previous => [{ ...event, receivedAt: new Date().toISOString() }, ...previous].slice(0, 30));
-      if (event.frame) setFrames(previous => [event.frame, ...previous.filter(item => item.id !== event.frame.id)].slice(0, Math.max(50, previous.length)));
+      if (event.frame) setFrames(previous => [event.frame, ...previous.filter(item => item.id !== event.frame.id)].sort((a, b) => Date.parse(b.captured_at) - Date.parse(a.captured_at)).slice(0, Math.max(50, previous.length)));
       if (event.question) {
         setQuestions(previous => [event.question, ...previous.filter(item => item.id !== event.question.id)]);
         if (spokenRef.current) void play(`/sessions/${selectedId}/questions/${event.question.id}/audio`).catch(e => setMediaError(e.message));

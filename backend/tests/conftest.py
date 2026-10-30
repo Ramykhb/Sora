@@ -51,6 +51,12 @@ def client(tmp_path, monkeypatch):
         if getattr(module, "__name__", "").startswith("app.") and hasattr(module, "SessionFactory"):
             monkeypatch.setattr(module, "SessionFactory", factory)
     monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr(main, "warmup_detector", lambda: None)
+    # Background enrichment is driven explicitly in its integration tests.
+    async def idle_enrichment():
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(main, "enrichment_loop", idle_enrichment)
     monkeypatch.setattr(
         ingestion,
         "analyze_image",

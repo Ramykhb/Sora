@@ -38,6 +38,28 @@ services:
     volumes:
       - ollama_data:/root/.ollama
 
+  turn:
+    profiles: ["webrtc"]
+    image: ghcr.io/coturn/coturn:4.18.0-alpine
+    command:
+      - --no-cli
+      - --no-tls
+      - --fingerprint
+      - --realm=sora.local
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SHARED_SECRET:-}
+      - --external-ip=${TURN_PUBLIC_HOST:-}
+      - --listening-port=3478
+      - --min-port=49160
+      - --max-port=49259
+      - --no-multicast-peers
+      - --log-file=stdout
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49160-49259:49160-49259/udp"
+    restart: unless-stopped
+
   api:
     profiles: ["app"]
     build: .
@@ -71,6 +93,9 @@ services:
     volumes:
       - model_data:/app/models
       - local_storage_data:/app/data
+      # Local development: source changes survive container recreation.
+      - ./app:/app/app:ro
+      - ./migrations:/app/migrations:ro
     restart: unless-stopped
 
 volumes:

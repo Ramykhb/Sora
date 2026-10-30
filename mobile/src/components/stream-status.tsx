@@ -3,7 +3,7 @@ import { Text } from 'react-native';
 import { ApiError } from '@/lib/api';
 import { useAuth } from '@/providers/auth';
 import { ui } from './controls';
-type Status = { streaming: boolean; frames_received?: number; frames_stored?: number; frames_rejected?: number; frames_dropped?: number; processing_error?: string };
+type Status = { streaming: boolean; frames_received?: number; frames_sampled?: number; frames_stored?: number; frames_rejected?: number; frames_dropped?: number; processing_error?: string };
 export function StreamStatus({ sessionId, onUnavailable }: { sessionId: string; onUnavailable: (error: unknown) => void }) {
   const { api } = useAuth();
   const [status, setStatus] = useState<Status | null>(null);
@@ -21,5 +21,5 @@ export function StreamStatus({ sessionId, onUnavailable }: { sessionId: string; 
     void update();
     return () => { cancelled = true; clearTimeout(timer); };
   }, [api, sessionId, onUnavailable]);
-  return <>{error ? <Text style={ui.error}>{error}</Text> : status?.streaming ? <Text style={ui.copy}>Received {status.frames_received} · saved {status.frames_stored} · skipped {status.frames_rejected} · dropped {status.frames_dropped}</Text> : <Text style={ui.copy}>Waiting for camera frames</Text>}{!!status?.processing_error && <Text style={ui.error}>{status.processing_error}</Text>}</>;
+  return <>{error ? <Text style={ui.error}>{error}</Text> : status?.streaming ? <Text style={ui.copy}>Received {status.frames_received} · sampled {status.frames_sampled ?? 0} · saved {status.frames_stored} · skipped {status.frames_rejected} · dropped {status.frames_dropped}</Text> : <Text style={ui.copy}>Waiting for camera frames</Text>}{!!status?.processing_error && <Text style={ui.error}>{status.processing_error}</Text>}</>;
 }

@@ -4,7 +4,7 @@ from PIL import Image
 import pytest
 from app.core.config import settings
 from app.core.errors import BackendError
-from app.services.frames.processing import prepare_image
+from app.services.frames.processing import prepare_image, vision_image
 from app.services.frames.selection import rejection_reason
 
 
@@ -49,6 +49,28 @@ def test_original_is_sanitized_jpeg_and_resized(monkeypatch):
     assert image.width == 320 and image.height == 160
     assert image.original.startswith(b"\xff\xd8")
     assert image.brightness == pytest.approx(80)
+
+
+@pytest.mark.parametrize("size", [(1280, 720), (720, 1280)])
+def test_caption_image_is_smaller_without_reducing_ocr_or_saved_images(monkeypatch, size):
+    monkeypatch.setattr(settings, "max_image_side", 1280)
+    monkeypatch.setattr(settings, "vision_image_max_side", 448)
+    source = BytesIO()
+    Image.new("RGB", size, "white").save(source, format="JPEG")
+    prepared = prepare_image(source.getvalue())
+    caption = Image.open(BytesIO(vision_image(prepared)))
+    assert max(caption.size) == 448
+    assert caption.width / caption.height == pytest.approx(size[0] / size[1], abs=0.01)
+    assert (prepared.width, prepared.height) == size
+    assert Image.open(BytesIO(prepared.original)).size == size
+    assert Image.open(BytesIO(prepared.processed)).size == size
+    assert prepared.image.shape[:2] == (size[1], size[0])
+
+
+def test_caption_image_does_not_upscale_small_frames(monkeypatch):
+    monkeypatch.setattr(settings, "vision_image_max_side", 448)
+    prepared = prepare_image(encode(np.full((100, 200, 3), 80, dtype=np.uint8)))
+    assert vision_image(prepared) is prepared.processed
 
 
 def test_actual_tesseract_reads_test_sign(monkeypatch):

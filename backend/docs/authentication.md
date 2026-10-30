@@ -79,7 +79,7 @@ Both WebSockets require this first text message within five seconds:
 {"access_token":"ACCESS_TOKEN_FROM_LOGIN"}
 ```
 
-Use it at `/sessions/{id}/events` and `/sessions/{id}/stream/frames`, then wait for `type=ready`. Origin and capture ownership are checked. Old `api_key` messages are rejected. Authentication failure closes with code 1008. Producer messages are rechecked before ingestion; subscriptions are rechecked before every event or 10-second heartbeat. MJPEG authentication is rechecked about once per second. WebRTC producer authorization is rechecked by the 10-second reaper. Token expiry/rotation can end active media; refresh and reconnect/renegotiate with the replacement token. Logging out, changing/resetting a password, deleting an account or deactivating/changing a role stops that user's producers.
+Use it at `/sessions/{id}/events` and `/sessions/{id}/stream/frames`, then wait for `type=ready`. Origin and capture ownership are checked. Old `api_key` messages are rejected. Authentication failure closes with code 1008. Producer messages are rechecked before ingestion; subscriptions are rechecked before every event or 10-second heartbeat. MJPEG authentication is rechecked about once per second. WebRTC producer and viewer authorization is rechecked every second. Clients refresh their individual media connections over authenticated HTTP every 20 seconds; failed/expired connections reconnect and renegotiate. Logging out, changing/resetting a password, deleting an account or deactivating/changing a role stops that user's producers.
 
 ## Email verification and recovery
 

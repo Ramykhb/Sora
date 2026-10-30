@@ -47,7 +47,27 @@ Avoid printing a full rendered Compose configuration when sharing logs, because 
 - CORS and ICE values must be JSON arrays. Booleans accept `true`/`false`.
 - Retention: 1–168 hours; access lifetime: 1–60 minutes; refresh lifetime: 1–90 days.
 - Uploads: 1–100 MB; maximum image side: 320–4096 px; audio: 1–120 seconds.
+- `VISION_IMAGE_MAX_SIDE` controls the separate image sent for AI captioning (default 448 px; range 224–2048). Smaller images may lose small visual details. OCR, object detection and stored images still use `MAX_IMAGE_SIDE` (default 1280), independently of this setting. Some vision runtimes enforce a minimum image-token count, so shrinking below this default may not improve latency further.
 - Retrieval: 1–6 frames; live sessions: 1–32; sample interval: at least 0.25 seconds.
+- `LIVE_DEFER_ENRICHMENT=true` (default) saves live camera frames after OCR/detection, targeting roughly two seconds on a warmed CPU. Captions and embeddings run in one background worker, with pending work persisted in the database. `processing_ms` measures initial saving; `enrichment_ms` measures the later AI work. Full descriptions remain slower and can queue behind earlier frames. HTTP uploads keep synchronous processing. Set this flag to `false` to wait for all AI stages before saving live frames.
 - `EMBEDDING_DIMENSIONS` is constrained to 1024 by the current code and database schema.
 - SMTP security: `starttls`, `ssl`, or `none` (local mail sandbox). `MODEL_DEVICE` is passed to YOLO only; Whisper currently uses CPU.
 - Database credentials containing URL-special characters must be percent-encoded in `DATABASE_URL`. Compose also currently interpolates credentials directly into its API database URL, so this requires a corresponding Compose adjustment; changing the raw password alone does not encode it.
+
+
+## WebRTC networking
+
+The API's Docker Compose service mounts `app/` and `migrations/` read-only for local development, so source fixes survive recreation. Dependencies still come from the API image. For a production image deployment, omit those development mounts.
+
+`SAMPLE_INTERVAL_SECONDS=1` samples one image per second from incoming WebRTC video. It does not control video playback frame rate. Configure the optional authenticated TURN service for phone/browser connectivity through Docker:
+
+```dotenv
+TURN_PUBLIC_HOST=192.168.0.104
+TURN_INTERNAL_HOST=turn
+TURN_SHARED_SECRET=<a long randomly generated secret>
+SAMPLE_INTERVAL_SECONDS=1
+```
+
+`TURN_PUBLIC_HOST` must be reachable from the phone and dashboard. Use the computer's actual LAN address for a same-Wi-Fi demo; update it if that address changes. Internet clients require a publicly reachable relay address and port forwarding/firewall configuration. `TURN_INTERNAL_HOST=turn` lets the API reach the relay through Docker DNS. The shared secret stays on the servers; authenticated `/stream/config` calls receive HMAC-based credentials valid for one hour, never the secret itself.
+
+Start the relay with `docker compose --profile webrtc up -d turn`, then recreate the API after changing environment settings. Compose exposes TURN on UDP/TCP 3478 and relay UDP ports 49160–49259. The local relay does not configure TURN-over-TLS; production networks needing TLS require that additional deployment configuration. Native capture needs a rebuilt WebRTC development app. Browser camera capture requires HTTPS or localhost; dashboard playback uses the browser's WebRTC support.

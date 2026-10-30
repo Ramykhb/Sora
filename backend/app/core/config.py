@@ -45,11 +45,14 @@ class Settings(BaseSettings):
     min_sharpness: float = 20.0
     min_brightness: float = 5.0
     duplicate_hash_distance: int = Field(default=5, ge=0, le=64)
-    sample_interval_seconds: float = Field(default=2.0, ge=0.25)
+    sample_interval_seconds: float = Field(default=1.0, ge=0.25)
+    live_defer_enrichment: bool = True
     recent_evidence_seconds: int = Field(default=15, ge=1)
     retrieval_top_k: int = Field(default=3, ge=1, le=6)
     ollama_url: str = "http://localhost:11434"
     vision_model: str = "qwen2.5vl:3b"
+    # Captioning needs scene context; OCR and storage retain max_image_side.
+    vision_image_max_side: int = Field(default=448, ge=224, le=2048)
     embedding_model: str = "qwen3-embedding:0.6b"
     embedding_dimensions: Literal[1024] = 1024
 
@@ -70,6 +73,10 @@ class Settings(BaseSettings):
     espeak_binary: str = "espeak-ng"
     alert_cooldown_seconds: int = 30
     ice_servers: list[dict] = []
+    turn_public_host: str = ""
+    turn_internal_host: str = "turn"
+    turn_shared_secret: SecretStr = SecretStr("")
+    max_stream_viewers: int = Field(default=8, ge=1, le=32)
     max_live_sessions: int = Field(default=4, ge=1, le=32)
     model_config = SettingsConfigDict(env_file=BACKEND_ROOT / ".env", extra="ignore")
 

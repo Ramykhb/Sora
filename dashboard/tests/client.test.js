@@ -2,11 +2,76 @@ import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiClient, ApiError } from '../src/lib/api.js';
 import { chooseSession, MjpegParser, subscribeEvents } from '../src/lib/live.js';
+import { loadDashboard } from '../src/lib/dashboard.js';
+import { subscribeVideo } from '../src/lib/webrtc.js';
 const originalFetch = globalThis.fetch;
 const originalSocket = globalThis.WebSocket;
-afterEach(() => { globalThis.fetch = originalFetch; globalThis.WebSocket = originalSocket; });
+const originalPeer = globalThis.RTCPeerConnection;
+afterEach(() => { globalThis.fetch = originalFetch; globalThis.WebSocket = originalSocket; globalThis.RTCPeerConnection = originalPeer; });
 const pair = (access = 'access') => ({ access_token: access, refresh_token: `refresh-${access}`, expires_in: 300, user: { id: 'owner' } });
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
+
+test('dashboard negotiates a receive-only WebRTC viewer and releases only its connection', async () => {
+  let peer;
+  class Peer {
+    iceGatheringState = 'complete';
+    constructor() { peer = this; }
+    addTransceiver(kind, options) { assert.equal(kind, 'video'); assert.equal(options.direction, 'recvonly'); }
+    async createOffer() { return { type: 'offer', sdp: 'viewer video SDP' }; }
+    async setLocalDescription(offer) { this.localDescription = offer; }
+    async setRemoteDescription(answer) { this.answer = answer; }
+    addEventListener() {} removeEventListener() {}
+    close() { this.closed = true; }
+  }
+  globalThis.RTCPeerConnection = Peer;
+  const requests = [];
+  const api = { tokens: pair(), async request(path, method, body) {
+    requests.push({ path, method, body });
+    if (path.endsWith('/config')) return { ice_servers: [], ice_transport_policy: 'all' };
+    return { type: 'answer', sdp: 'relayed video SDP', connection_id: 'viewer-id' };
+  } };
+  const streams = [];
+  const stop = subscribeVideo(api, 'phone', stream => streams.push(stream), () => {});
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(peer.answer.sdp, 'relayed video SDP');
+    const stream = { id: 'continuous-video' };
+    peer.ontrack({ streams: [stream], track: {} });
+    assert.equal(streams.at(-1), stream);
+    assert.equal(requests[1].path, '/sessions/phone/stream/viewer/offer');
+    assert.ok(!requests.some(item => /preview.jpg|live.mjpeg/.test(item.path)));
+  } finally { stop(); }
+  assert.equal(peer.closed, true);
+  assert.equal(requests.at(-1).path, '/sessions/phone/stream/connections/viewer-id');
+  assert.equal(requests.at(-1).method, 'DELETE');
+});
+
+test('session discovery survives a failed statistics request and preserves account isolation', async () => {
+  const api = { request: async path => {
+    if (path === '/dashboard/statistics?own_only=true') throw new TypeError('Load failed');
+    if (path.startsWith('/dashboard')) return { sessions: [{ session_id: 'phone', live: { streaming: true } }] };
+    return [{ id: 'phone', owner_id: 'owner', status: 'active' }, { id: 'other', owner_id: 'another-user' }];
+  } };
+  const snapshot = await loadDashboard(api, 'owner');
+  assert.equal(snapshot.sessions.length, 1);
+  assert.equal(chooseSession(snapshot.sessions, '', true), 'phone');
+  assert.equal(snapshot.sessions[0].live.streaming, true);
+  assert.equal(snapshot.metrics, null);
+  assert.match(snapshot.warning, /statistics/);
+});
+
+test('sessions remain visible when summaries fail, but a failed session list is reported', async () => {
+  const api = { request: async path => {
+    if (path === '/dashboard/statistics?own_only=true') return { retained_frames: 0 };
+    if (path.startsWith('/dashboard')) throw new TypeError('Load failed');
+    return [{ id: 'phone', owner_id: 'owner' }];
+  } };
+  const snapshot = await loadDashboard(api, 'owner');
+  assert.equal(snapshot.sessions[0].id, 'phone');
+  assert.equal(snapshot.metrics.retained_frames, 0);
+  assert.match(snapshot.warning, /summaries/);
+  await assert.rejects(loadDashboard({ request: async () => { throw new Error('Offline'); } }, 'owner'), /Offline/);
+});
 
 test('parallel expired requests rotate only once and retry with the new token', async () => {
   let rotations = 0;

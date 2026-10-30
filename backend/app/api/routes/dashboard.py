@@ -61,6 +61,7 @@ async def overview(
         return {"sessions": items}
 
 
+@router.get("/dashboard/statistics")
 @router.get("/metrics")
 async def metrics(own_only: bool = Query(False), user: User = Depends(current_user)):
     async with SessionFactory() as db:

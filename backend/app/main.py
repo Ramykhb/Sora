@@ -20,6 +20,8 @@ from app.core.errors import BackendError
 from app.db.session import engine
 from app.services.storage.object_store import client, initialize_storage
 from app.services.streaming.session import streams
+from app.services.frames.processing import warmup_detector
+from app.workers.enrichment import enrichment_loop
 from app.workers.retention import retention_loop
 
 logger = logging.getLogger(__name__)
@@ -44,7 +46,14 @@ async def lifespan(app):
             if attempt == 9:
                 raise
             await asyncio.sleep(2)
-    tasks = [asyncio.create_task(retention_loop()), asyncio.create_task(streams.reap_idle())]
+    try:
+        await asyncio.to_thread(warmup_detector)
+    except Exception:
+        logger.exception("Object detector warmup failed")
+    tasks = [
+        asyncio.create_task(retention_loop()), asyncio.create_task(streams.reap_idle()),
+        asyncio.create_task(enrichment_loop()),
+    ]
     try:
         yield
     finally:

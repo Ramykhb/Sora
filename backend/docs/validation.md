@@ -1,4 +1,13 @@
-# Implementation validation — 2026-10-25
+# Current validation — 2026-10-29
+
+- 75 backend tests pass in Docker, including real local aiortc producer/viewer peers, continuous video delivery, one-second sampling, connection cleanup, account isolation, temporary TURN credentials and durable background enrichment. SQLite/local storage and model substitutes are used for server-logic tests.
+- A separate smoke test used actual TURN-only ICE candidates through the running Docker/LAN relay: the viewer received **68 video frames in 2.2 seconds**, while the backend sampled **2 images**. Test media was not stored. This validates the relay path independently of JPEG previews.
+- Three real warmed fast saves using OCR, YOLO, PostgreSQL and object storage measured 479/396/405 ms (427 ms average) on one retained sample. Full AI descriptions remain slower and finish afterward; a real background run successfully populated both caption and embedding. These measurements do not establish general model quality or a latency guarantee for every scene.
+- Dashboard: 13 client tests and production build pass. Mobile: 8 client tests, lint, typecheck, Expo iOS prebuild and iOS JavaScript bundle export pass. Physical iPhone compilation/installation and camera testing still require native dependencies and an available development device.
+
+The notes below describe earlier validation runs and their limitations at the time.
+
+## Implementation validation — 2026-10-25
 
 The local server-logic suite passes 35 tests. Ruff lint, Python syntax checks and Docker Compose configuration validation also pass.
 

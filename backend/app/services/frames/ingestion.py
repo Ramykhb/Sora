@@ -14,7 +14,7 @@ from app.db.session import SessionFactory
 from app.schemas import FrameOut, IngestResult
 from app.services.ai.models import models
 from app.services.events import events
-from app.services.frames.processing import analyze_image, prepare_image
+from app.services.frames.processing import analyze_image, prepare_image, vision_image
 from app.services.frames.selection import rejection_reason
 from app.services.sessions import create_session, get_session
 from app.services.storage.object_store import delete_image, put_image
@@ -39,6 +39,7 @@ async def ingest_bytes(
     force=False,
     captured_at: datetime | None = None,
     ocr_language: str | None = None,
+    defer_enrichment: bool = False,
 ) -> IngestResult:
     async with session_lock(session_id):
         start = perf_counter()
@@ -68,22 +69,23 @@ async def ingest_bytes(
         warnings = []
         caption = ""
         scene_flags = []
-        try:
-            scene = await models.describe(prepared.processed)
-            caption = scene.caption
-            if scene.central_closed_door and not scene.uncertain:
-                scene_flags.append("central_closed_door")
-            if scene.uncertain:
-                warnings.append("scene_uncertain")
-        except BackendError as exc:
-            warnings.append(exc.code)
+        if not defer_enrichment:
+            try:
+                scene = await models.describe(await asyncio.to_thread(vision_image, prepared))
+                caption = scene.caption
+                if scene.central_closed_door and not scene.uncertain:
+                    scene_flags.append("central_closed_door")
+                if scene.uncertain:
+                    warnings.append("scene_uncertain")
+            except BackendError as exc:
+                warnings.append(exc.code)
         text = " ".join(
             [caption, analysis.ocr_text, " ".join(obj["label"] for obj in analysis.objects)]
         ).strip()
-        if not text and not force:
+        if not text and not force and not defer_enrichment:
             return IngestResult(status="rejected", reason="uninformative")
         embedding = None
-        if text:
+        if text and not defer_enrichment:
             try:
                 embedding = await models.embed(text)
             except BackendError as exc:
@@ -127,6 +129,7 @@ async def ingest_bytes(
                 embedding_model=settings.embedding_model if embedding else None,
                 processing_warnings=warnings,
                 processing_ms=(perf_counter() - start) * 1000,
+                enrichment_status="pending" if defer_enrichment else "complete",
                 captured_at=timestamp,
                 expires_at=min(
                     session_expiry, timestamp + timedelta(hours=settings.frame_retention_hours)

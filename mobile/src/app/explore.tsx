@@ -80,7 +80,7 @@ function Moments() {
       {frames.length === 0 && <Text style={ui.copy}>No matching retained images.</Text>}
       {frames.map(frame => <View style={ui.card} key={frame.id}>
         <Image source={{ uri: api.url(`/sessions/${selected.id}/frames/${frame.id}/image?original=${original}`), headers }} cachePolicy="none" style={{ width: '100%', height: 210, borderRadius: 14 }} contentFit="contain" accessibilityLabel={frame.caption || 'Retained camera frame'} onError={() => setError('Image unavailable. Refresh the timeline to renew access.')} />
-        <Text style={ui.copy}>{new Date(frame.captured_at).toLocaleString()}</Text><Text style={ui.subtitle}>{frame.caption || 'Caption unavailable'}</Text>
+        <Text style={ui.copy}>{new Date(frame.captured_at).toLocaleString()}</Text><Text style={ui.subtitle}>{frame.caption || (frame.enrichment_status === 'pending' ? 'Frame saved. AI description is being prepared.' : 'Caption unavailable')}</Text>
         {!!frame.ocr_text && <Text style={ui.copy}>Text: {frame.ocr_text}</Text>}
         <Text style={ui.copy}>{frame.detected_objects.map(o => `${o.label} (${Math.round(o.confidence * 100)}%)`).join(', ')}</Text>
         {frame.processing_warnings.map(w => <Text key={w} style={ui.error}>{w}</Text>)}

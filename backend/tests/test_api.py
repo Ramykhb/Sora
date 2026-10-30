@@ -189,6 +189,39 @@ def test_failed_second_upload_compensates_first(client, monkeypatch):
     assert api.get(f"/api/v1/sessions/{sid}/frames").json() == []
 
 
+def test_preview_delivers_latest_jpeg_before_analysis_finishes(client, monkeypatch):
+    import threading
+    import app.services.frames.ingestion as ingestion
+
+    processing = threading.Event()
+
+    async def slow_ingest(*args, **kwargs):
+        processing.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(ingestion, "ingest_bytes", slow_ingest)
+    api, _ = client
+    sid = create(api)
+    path = f"/api/v1/sessions/{sid}/stream"
+    assert api.get(path + "/preview.jpg").status_code == 409
+    with api.websocket_connect(path + "/frames") as producer:
+        producer.send_json({"access_token": api.headers["Authorization"].split(" ", 1)[1]})
+        assert producer.receive_json()["type"] == "ready"
+        assert api.get(path + "/preview.jpg").status_code == 204
+        source = Image.open(BytesIO(image_bytes()))
+        out = BytesIO()
+        source.save(out, format="JPEG")
+        producer.send_bytes(out.getvalue())
+        assert processing.wait(timeout=5)
+        preview = api.get(path + "/preview.jpg")
+        assert preview.status_code == 200
+        assert preview.content == out.getvalue()
+        assert preview.headers["content-type"] == "image/jpeg"
+        assert preview.headers["cache-control"] == "no-store"
+        assert api.get(path + "/status").json()["frames_stored"] == 0
+    assert api.get(path + "/preview.jpg").status_code == 409
+
+
 def test_websocket_auth_and_frame_to_event_flow(client):
     api, _ = client
     sid = create(api)

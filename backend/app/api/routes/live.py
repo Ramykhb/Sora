@@ -8,7 +8,8 @@ from app.core.errors import BackendError
 from app.schemas import Offer
 from app.services.events import events
 from app.services.sessions import get_session
-from app.services.streaming.session import accept_offer, streams
+from app.services.streaming.session import accept_offer, accept_viewer_offer, close_viewer, streams
+from app.services.streaming.ice import ice_servers
 
 router = APIRouter()
 ws_router = APIRouter()
@@ -18,7 +19,8 @@ ws_router = APIRouter()
 async def config(session_id: UUID):
     await get_session(session_id)
     return {
-        "ice_servers": settings.ice_servers,
+        "ice_servers": ice_servers(),
+        "ice_transport_policy": "relay" if settings.turn_public_host and settings.turn_shared_secret.get_secret_value() else "all",
         "sample_interval_seconds": settings.sample_interval_seconds,
         "jpeg_websocket": f"{settings.api_prefix}/sessions/{session_id}/stream/frames",
         "events_websocket": f"{settings.api_prefix}/sessions/{session_id}/events",
@@ -29,17 +31,56 @@ async def config(session_id: UUID):
 async def offer(session_id: UUID, request: Offer, http_request: Request):
     await get_session(session_id, active=True)
     try:
-        answer = await accept_offer(session_id, request.sdp, request.type)
-        streams.states[session_id].auth_token = http_request.headers["authorization"].split(" ", 1)[
-            1
-        ]
-        return answer
+        return await accept_offer(
+            session_id, request.sdp, request.type,
+            http_request.headers["authorization"].split(" ", 1)[1],
+        )
     except BackendError:
         raise
     except Exception as exc:
         raise BackendError(
             "Invalid WebRTC offer or media configuration", 422, "invalid_offer"
         ) from exc
+
+
+@router.post("/viewer/offer")
+async def viewer_offer(session_id: UUID, request: Offer, http_request: Request):
+    await get_session(session_id, active=True)
+    try:
+        return await accept_viewer_offer(
+            session_id, request.sdp, request.type,
+            http_request.headers["authorization"].split(" ", 1)[1],
+        )
+    except BackendError:
+        raise
+    except Exception as exc:
+        raise BackendError("Invalid WebRTC viewer offer", 422, "invalid_offer") from exc
+
+
+@router.post("/connections/{connection_id}/refresh", status_code=204)
+async def refresh_connection(session_id: UUID, connection_id: str, request: Request):
+    state = streams.states.get(session_id)
+    if state is None:
+        raise HTTPException(409, "Camera is no longer connected")
+    token = request.headers["authorization"].split(" ", 1)[1]
+    if connection_id == state.connection_id:
+        state.auth_token = token
+    elif connection_id in state.viewers:
+        state.viewers[connection_id].auth_token = token
+    else:
+        raise HTTPException(404, "Connection not found")
+    return Response(status_code=204)
+
+
+@router.delete("/connections/{connection_id}", status_code=204)
+async def close_connection(session_id: UUID, connection_id: str):
+    state = streams.states.get(session_id)
+    if state is not None:
+        if connection_id == state.connection_id:
+            await streams.stop(session_id, expected=state)
+        else:
+            await close_viewer(state, connection_id)
+    return Response(status_code=204)
 
 
 @router.get("/status")
@@ -96,9 +137,29 @@ async def live_view(session_id: UUID, request: Request):
     )
 
 
+@router.get("/preview.jpg")
+async def preview_image(session_id: UUID):
+    await get_session(session_id)
+    state = streams.states.get(session_id)
+    if state is None:
+        raise HTTPException(409, "No producer is streaming for this session")
+    if state.latest is None:
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+    return Response(
+        content=state.latest,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 async def authenticate_socket(socket: WebSocket, session_id, active=False):
     origin = socket.headers.get("origin")
-    if origin and origin not in settings.cors_origins:
+    # Native WebSocket clients send the API's own HTTP(S) origin, including
+    # its LAN address on a physical phone. Accept same-origin connections as
+    # well as explicitly configured cross-origin browser clients.
+    scheme = "https" if socket.url.scheme == "wss" else "http"
+    same_origin = f"{scheme}://{socket.url.netloc}"
+    if origin and origin not in settings.cors_origins and origin != same_origin:
         await socket.close(code=1008)
         return False
     await socket.accept()

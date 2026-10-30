@@ -12,7 +12,7 @@ See [the complete environment reference](docs/environment.md) for native/Docker 
 - Tesseract for OCR; YOLO11 nano for object labels, confidence and bounding boxes.
 - Ollama running Qwen2.5-VL 3B for scene descriptions and grounded answers; Qwen3 Embedding 0.6B for multilingual semantic retrieval over captions/OCR/objects.
 - faster-whisper base for multilingual speech recognition; eSpeak NG for WAV output.
-- aiortc WebRTC receiver, binary JPEG WebSocket ingress, MJPEG live preview and authenticated event WebSockets.
+- aiortc WebRTC ingest and live viewer relay, one-second image sampling, optional TURN relay, legacy JPEG ingress/preview and authenticated event WebSockets.
 
 The vision model and embedding model are separate tasks. This system uses text embeddings of scene descriptions, OCR and object labels rather than CLIP image embeddings. Changing the embedding dimensions requires a DB migration; the initial schema is 1024 dimensions. Models run locally with no paid API key, but download several GB of weights. CPU inference works and can be slow on a MacBook Air. Accuracy and latency need measurement on your scenes and hardware. eSpeak Arabic pronunciation relies on diacritics; English and French are the primary speech demo languages.
 
@@ -49,7 +49,7 @@ docker compose --profile app up --build -d
 docker compose exec api python -m scripts.prepare_models
 ```
 
-The API container applies migrations automatically. Its image includes the OCR language packs and eSpeak. Weights and database/image data use named volumes. On Docker Desktop, WebSocket/HTTP frame ingestion works through the published port; WebRTC needs reachable ICE candidates or a configured TURN relay. For native WebRTC development use the previous setup. This is a single-process server: run exactly one API worker because live peer connections, bounded queues and event subscriptions are held in memory. Stored sessions, images, history and the deletion outbox survive API restarts. A restart disconnects live clients; they reconnect and renegotiate.
+The API container applies migrations automatically. Its image includes the OCR language packs and eSpeak. Weights and database/image data use named volumes. On Docker Desktop, WebSocket/HTTP frame ingestion works through the published port; WebRTC needs reachable ICE candidates or a configured TURN relay. For Docker WebRTC, configure and start the optional TURN service as described in [WebRTC networking](docs/environment.md#webrtc-networking). This is a single-process server: run exactly one API worker because live peer connections, bounded queues and event subscriptions are held in memory. Stored sessions, images, history and the deletion outbox survive API restarts. A restart disconnects live clients; they reconnect and renegotiate.
 
 ## Process one test image
 

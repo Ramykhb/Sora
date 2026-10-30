@@ -57,6 +57,8 @@ class Frame(Base):
     embedding_model: Mapped[str | None] = mapped_column(String(120), nullable=True)
     processing_warnings: Mapped[list] = mapped_column(JSON, default=list)
     processing_ms: Mapped[float] = mapped_column(Float, default=0)
+    enrichment_status: Mapped[str] = mapped_column(String(20), default="complete", index=True)
+    enrichment_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

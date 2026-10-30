@@ -32,6 +32,33 @@ def headers(pair):
     return {"Authorization": "Bearer " + pair["access_token"]}
 
 
+@pytest.mark.parametrize("suffix", ["/events", "/stream/frames"])
+@pytest.mark.parametrize(
+    ("endpoint", "origin", "allowed"),
+    [
+        ("ws://192.168.1.10:8000", "http://192.168.1.10:8000", True),
+        ("wss://api.example.com", "https://api.example.com", True),
+        ("ws://192.168.1.10:8000", "http://localhost:8081", True),
+        ("ws://192.168.1.10:8000", "https://untrusted.example", False),
+        ("ws://192.168.1.10:8000", "http://192.168.1.10:8081", False),
+        ("wss://api.example.com", "http://api.example.com", False),
+    ],
+)
+def test_websocket_origin_validation(client, suffix, endpoint, origin, allowed):
+    api, _ = client
+    session_id = create(api)
+    url = f"{endpoint}/api/v1/sessions/{session_id}{suffix}"
+    if not allowed:
+        with pytest.raises(WebSocketDisconnect) as error:
+            with api.websocket_connect(url, headers={"Origin": origin}):
+                pytest.fail("Untrusted origin accepted")
+        assert error.value.code == 1008
+        return
+    with api.websocket_connect(url, headers={"Origin": origin}) as socket:
+        socket.send_json({"access_token": api.headers["Authorization"].split(" ", 1)[1]})
+        assert socket.receive_json()["type"] == "ready"
+
+
 def test_registration_validation_credentials_and_profile(client):
     api, factory = client
     pair = account(api, "Person@Example.com")
@@ -139,6 +166,7 @@ def test_cross_user_http_websocket_and_metrics_isolation(client):
         "/stream/config",
         "/stream/status",
         "/stream/live.mjpeg",
+        "/stream/preview.jpg",
     ]:
         result = api.get(base + path)
         assert result.status_code == 404, (path, result.text)
@@ -146,6 +174,9 @@ def test_cross_user_http_websocket_and_metrics_isolation(client):
         ("POST", "/questions", {"question": "What is visible?"}),
         ("PATCH", "", {"language": "fr"}),
         ("POST", "/close", {}),
+        ("POST", "/stream/viewer/offer", {"type": "offer", "sdp": "invalid"}),
+        ("POST", "/stream/connections/unknown/refresh", None),
+        ("DELETE", "/stream/connections/unknown", None),
         ("DELETE", "", None),
         ("DELETE", "/stream", None),
         ("POST", f"/questions/{answer['id']}/feedback", {"rating": "correct"}),
@@ -435,7 +466,8 @@ def test_logout_terminates_stream_and_revokes_event_subscription(client):
                 event_socket.receive_json()
 
 
-def test_dashboard_own_only_keeps_administrator_mobile_workspace_private(client):
+@pytest.mark.parametrize("statistics_path", ["/metrics", "/dashboard/statistics"])
+def test_dashboard_own_only_keeps_administrator_mobile_workspace_private(client, statistics_path):
     api, _ = client
     admin_headers = dict(api.headers)
     own_session = create(api)
@@ -458,8 +490,8 @@ def test_dashboard_own_only_keeps_administrator_mobile_workspace_private(client)
         item["session_id"]
         for item in api.get("/api/v1/dashboard?own_only=true").json()["sessions"]
     ] == [own_session]
-    assert api.get("/api/v1/metrics").json()["retained_frames"] == 2
-    own_metrics = api.get("/api/v1/metrics?own_only=true").json()
+    assert api.get("/api/v1" + statistics_path).json()["retained_frames"] == 2
+    own_metrics = api.get("/api/v1" + statistics_path + "?own_only=true").json()
     assert own_metrics["retained_frames"] == 1
     assert own_metrics["pending_object_deletions"] is None
 
@@ -468,7 +500,7 @@ def test_dashboard_own_only_keeps_administrator_mobile_workspace_private(client)
         assert [item["id"] for item in api.get("/api/v1/sessions" + suffix).json()] == [
             other_session
         ]
-        assert api.get("/api/v1/metrics" + suffix).json()["retained_frames"] == 1
+        assert api.get("/api/v1" + statistics_path + suffix).json()["retained_frames"] == 1
 
 
 def test_mobile_and_dashboard_logins_share_stream_frames_and_answers(client):

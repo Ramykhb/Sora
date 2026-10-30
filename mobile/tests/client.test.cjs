@@ -5,11 +5,40 @@ const ts = require('typescript');
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
 const { ApiClient, ApiError } = require('../src/lib/api.ts');
 const { connectLive, jpegBytes } = require('../src/lib/live.ts');
+const { publishVideo } = require('../src/lib/webrtc.ts');
 const originalFetch = global.fetch;
 const originalSocket = global.WebSocket;
 afterEach(() => { global.fetch = originalFetch; global.WebSocket = originalSocket; });
 const pair = (access = 'access') => ({ access_token: access, refresh_token: `refresh-${access}`, expires_in: 300, user: { id: 'owner' } });
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
+
+test('WebRTC publisher sends its gathered video SDP and cleans up a cancelled negotiation', async () => {
+  const requests = [];
+  const peer = {
+    iceGatheringState: 'complete', localDescription: null,
+    async createOffer() { return { type: 'offer', sdp: 'video offer' }; },
+    async setLocalDescription(offer) { this.localDescription = { ...offer, sdp: offer.sdp + '\na=candidate:gathered' }; },
+    async setRemoteDescription(answer) { this.answer = answer; },
+    addEventListener() {}, removeEventListener() {},
+  };
+  const api = { async request(path, method, body) {
+    requests.push({ path, method, body });
+    return { type: 'answer', sdp: 'video answer', connection_id: 'producer-id' };
+  } };
+  assert.equal(await publishVideo(api, 'session', peer, new AbortController().signal), 'producer-id');
+  assert.equal(requests[0].path, '/sessions/session/stream/offer');
+  assert.match(requests[0].body.sdp, /candidate:gathered/);
+  assert.deepEqual(peer.answer, { type: 'answer', sdp: 'video answer' });
+  const controller = new AbortController();
+  api.request = async (path, method) => {
+    requests.push({ path, method });
+    if (method === 'POST') controller.abort();
+    return { type: 'answer', sdp: 'late answer', connection_id: 'cancelled-id' };
+  };
+  await assert.rejects(publishVideo(api, 'session', peer, controller.signal), /cancelled/);
+  assert.equal(requests.at(-1).path, '/sessions/session/stream/connections/cancelled-id');
+  assert.equal(requests.at(-1).method, 'DELETE');
+});
 
 test('parallel 401 responses share one refresh and retry with the rotated token', async () => {
   let rotations = 0;
