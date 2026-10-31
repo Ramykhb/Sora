@@ -28,7 +28,7 @@ Do not form public S3 URLs. Images are served through the authenticated API. Inp
 
 ## Live camera and events
 
-`GET /sessions/{id}/stream/config` returns ICE servers (including temporary TURN credentials), transport policy and the sampling interval. Native mobile and web publishers attach a sending video track, wait for ICE gathering to finish, then POST their `{"type":"offer","sdp":"..."}` to `/stream/offer` with bearer authorization. The answer includes `sdp`, `type` and `connection_id`. There is one producer per capture session.
+`GET /sessions/{id}/stream/config` returns ICE servers (including temporary TURN credentials), transport policy and the sampling interval. Native mobile and web publishers attach a sending video track, wait for ICE candidates (the mobile app can proceed once a TURN relay candidate is available), then POST their `{"type":"offer","sdp":"..."}` to `/stream/offer` with bearer authorization. The answer includes `sdp`, `type` and `connection_id`. There is one producer per capture session.
 
 Dashboard clients create a `recvonly` video transceiver, gather ICE and POST their offer to `/stream/viewer/offer`. The backend subscribes them to the producer's video through `MediaRelay` with unbuffered live tracks. They receive continuous RTP video, independently of sampled/saved frames. At most `MAX_STREAM_VIEWERS` viewers (default 8) may join each producer.
 

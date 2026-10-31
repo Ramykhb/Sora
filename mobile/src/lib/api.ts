@@ -31,6 +31,10 @@ export class ApiClient {
   private expiresAt = 0;
   private refreshing: Promise<string> | null = null;
   constructor(public baseUrl: string, private onTokens: (tokens: Tokens | null) => Promise<void>) {}
+  setBaseUrl(origin: string) {
+    if (this.tokens) throw new Error('Sign out before changing the server address.');
+    this.baseUrl = origin;
+  }
   url(path: string) { return `${this.baseUrl}/api/v1${path}`; }
   async setTokens(tokens: Tokens | null) {
     await this.onTokens(tokens);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { NativeModules, Text, View } from 'react-native';
 import type * as NativeRTC from 'react-native-webrtc';
 import { useAuth } from '@/providers/auth';
 import { maintainVideo, publishVideo, type StreamConfig } from '@/lib/webrtc';
@@ -8,7 +8,9 @@ import { ui } from './controls';
 export function LiveCamera({ sessionId, active }: { sessionId: string; active: boolean }) {
   const { api } = useAuth();
   const [rtc] = useState(() => {
-    // Older development binaries can render the rebuild message without crashing.
+    // Check before importing: WebRTC creates a native event emitter at import time.
+    // Catching the import error still lets Metro report it in Expo Go/older binaries.
+    if (!NativeModules.WebRTCModule) return null;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     try { return require('react-native-webrtc') as typeof NativeRTC; }
     catch { return null; }
@@ -61,7 +63,7 @@ export function LiveCamera({ sessionId, active }: { sessionId: string; active: b
   }, [active, api, rtc, sessionId, attempt]);
   const Video = rtc?.RTCView;
   return <View style={ui.card}>
-    <Text style={ui.subtitle}>{!rtc ? 'Rebuild the development app to enable WebRTC video.' : active ? status : 'Camera paused'}</Text>
+    <Text style={ui.subtitle}>{!rtc ? 'Live video requires a development build with WebRTC. Install the rebuilt app instead of opening Expo Go.' : active ? status : 'Camera paused'}</Text>
     {active && Video && stream && <Video streamURL={stream.toURL()} objectFit="cover" style={{ height: 240, borderRadius: 16 }} />}
   </View>;
 }

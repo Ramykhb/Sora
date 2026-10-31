@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, Text } from 'react-native';
+import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/providers/auth';
 import type { Tokens } from '@/lib/api';
 import { Action, Field, ui } from './controls';
 export function AuthScreen() {
-  const { api, ready, error: restoreError, retry } = useAuth();
+  const { api, ready, error: restoreError, retry, serverUrl, setServerUrl } = useAuth();
+  const [editingServer, setEditingServer] = useState(false);
+  const [serverAddress, setServerAddress] = useState('');
   const [mode, setMode] = useState<'login' | 'register' | 'recover' | 'reset' | 'verify'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,6 +36,16 @@ export function AuthScreen() {
   if (!ready) return <SafeAreaView style={ui.screen}><ActivityIndicator accessibilityLabel="Restoring sign-in" /></SafeAreaView>;
   return <SafeAreaView style={ui.screen}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={ui.content}>
     <Text style={ui.title}>sora</Text><Text style={ui.subtitle}>Your everyday companion</Text>
+    <Text style={ui.copy}>Server: {serverUrl}</Text>
+    <Action title={editingServer ? 'Cancel server change' : 'Change server'} disabled={busy} onPress={() => { setServerAddress(serverUrl); setEditingServer(value => !value); }} />
+    {editingServer && <View style={ui.card}>
+      <Text style={ui.copy}>Enter your backend address. For a server on your computer, use its Wi-Fi IP and port 8000.</Text>
+      <Field placeholder="http://192.168.1.10:8000" value={serverAddress} onChangeText={setServerAddress} autoCapitalize="none" autoCorrect={false} keyboardType="url" />
+      <Action title="Save server" disabled={busy} onPress={() => {
+        setBusy(true); setMessage('');
+        void setServerUrl(serverAddress).then(() => { setEditingServer(false); setMessage('Server saved. You can now sign in.'); }).catch(e => setMessage(e.message)).finally(() => setBusy(false));
+      }} />
+    </View>}
     <Text style={ui.copy}>{mode === 'register' ? 'Create your account' : mode === 'login' ? 'Sign in to your visual memory' : mode === 'recover' ? 'Request a password reset' : mode === 'reset' ? 'Reset your password' : 'Verify your email'}</Text>
     {!!restoreError && <><Text style={ui.error}>{restoreError}</Text><Action title="Retry saved sign-in" onPress={retry} /></>}
     {mode === 'register' && <Field placeholder="Display name" value={name} onChangeText={setName} autoComplete="name" />}

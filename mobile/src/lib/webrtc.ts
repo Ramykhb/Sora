@@ -7,21 +7,38 @@ type SignalingPeer = {
   createOffer(): Promise<{ sdp?: string; type: string | null }>;
   setLocalDescription(description: { type: 'offer'; sdp: string }): Promise<void>;
   setRemoteDescription(description: { type: 'answer'; sdp: string }): Promise<void>;
-  addEventListener(type: 'icegatheringstatechange', listener: () => void): void;
-  removeEventListener(type: 'icegatheringstatechange', listener: () => void): void;
+  addEventListener(type: 'icegatheringstatechange' | 'icecandidate', listener: () => void): void;
+  removeEventListener(type: 'icegatheringstatechange' | 'icecandidate', listener: () => void): void;
 };
 
 export function waitForIce(peer: SignalingPeer, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let relayReady: ReturnType<typeof setTimeout> | undefined;
     const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(relayReady);
       clearTimeout(timeout); peer.removeEventListener('icegatheringstatechange', changed);
+      peer.removeEventListener('icecandidate', changed);
       signal.removeEventListener('abort', aborted);
       if (error) reject(error); else resolve();
     };
-    const changed = () => { if (peer.iceGatheringState === 'complete') finish(); };
+    const changed = () => {
+      if (peer.iceGatheringState === 'complete') { finish(); return; }
+      // A TURN candidate is sufficient for this single-offer exchange. Cellular
+      // interfaces can keep gathering long after the Wi-Fi relay is ready.
+      if (!relayReady && /^a=candidate:.*\btyp relay\b/m.test(peer.localDescription?.sdp || '')) {
+        relayReady = setTimeout(() => finish(), 1000);
+      }
+    };
     const aborted = () => finish(new Error('Camera connection cancelled'));
-    const timeout = setTimeout(() => finish(new Error('WebRTC could not gather candidates. Check the TURN relay.')), 15000);
+    const timeout = setTimeout(() => {
+      if (/^a=candidate:/m.test(peer.localDescription?.sdp || '')) finish();
+      else finish(new Error('WebRTC could not gather candidates. Check the TURN relay.'));
+    }, 15000);
     peer.addEventListener('icegatheringstatechange', changed);
+    peer.addEventListener('icecandidate', changed);
     signal.addEventListener('abort', aborted, { once: true });
     if (signal.aborted) aborted(); else changed();
   });

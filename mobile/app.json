@@ -37,7 +37,8 @@
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.WAKE_LOCK",
         "android.permission.BLUETOOTH"
-      ]
+      ],
+      "package": "com.ramykhachab.mobile"
     },
     "web": {
       "output": "server",
@@ -49,6 +50,7 @@
         "expo-camera",
         {
           "cameraPermission": "Allow Sora to use your camera for live scene descriptions",
+          "barcodeScannerEnabled": false,
           "recordAudioAndroid": false
         }
       ],
@@ -71,6 +73,9 @@
       [
         "expo-build-properties",
         {
+          "ios": {
+            "usePrecompiledModules": false
+          },
           "android": {
             "usesCleartextTraffic": true
           }

@@ -5,12 +5,90 @@ const ts = require('typescript');
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
 const { ApiClient, ApiError } = require('../src/lib/api.ts');
 const { connectLive, jpegBytes } = require('../src/lib/live.ts');
-const { publishVideo } = require('../src/lib/webrtc.ts');
+const { publishVideo, waitForIce } = require('../src/lib/webrtc.ts');
+const { serverOrigin } = require('../src/lib/server-url.ts');
 const originalFetch = global.fetch;
 const originalSocket = global.WebSocket;
 afterEach(() => { global.fetch = originalFetch; global.WebSocket = originalSocket; });
 const pair = (access = 'access') => ({ access_token: access, refresh_token: `refresh-${access}`, expires_in: 300, user: { id: 'owner' } });
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
+
+function gatheringPeer(sdp = 'v=0\r\n') {
+  const listeners = new Map();
+  return {
+    iceGatheringState: 'gathering', localDescription: { type: 'offer', sdp }, listeners,
+    addEventListener(type, listener) { listeners.set(type, listener); },
+    removeEventListener(type) { listeners.delete(type); },
+  };
+}
+
+test('a phone publishes once its relay is ready even when cellular ICE gathering never completes', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const peer = gatheringPeer();
+  let ready = false;
+  const pending = waitForIce(peer, new AbortController().signal).then(() => { ready = true; });
+  t.mock.timers.tick(1000);
+  await Promise.resolve();
+  assert.equal(ready, false);
+  peer.localDescription.sdp += 'a=candidate:relay 1 udp 1 192.168.0.100 49177 typ relay\r\n';
+  peer.listeners.get('icecandidate')();
+  t.mock.timers.tick(1000);
+  await pending;
+  assert.equal(ready, true);
+  assert.equal(peer.iceGatheringState, 'gathering');
+  assert.equal(peer.listeners.size, 0);
+});
+
+test('ICE deadline uses available host candidates and rejects a peer with no candidates', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const host = gatheringPeer('v=0\r\na=candidate:host 1 udp 1 192.168.0.1 5000 typ host\r\n');
+  const pending = waitForIce(host, new AbortController().signal);
+  t.mock.timers.tick(15000);
+  await pending;
+  const missing = gatheringPeer();
+  const rejected = assert.rejects(waitForIce(missing, new AbortController().signal), /could not gather candidates/);
+  t.mock.timers.tick(15000);
+  await rejected;
+  assert.equal(missing.listeners.size, 0);
+});
+
+test('cancelling ICE gathering removes both listeners and the relay timer', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const peer = gatheringPeer('a=candidate:relay 1 udp 1 192.168.0.100 49177 typ relay\r\n');
+  const controller = new AbortController();
+  const rejected = assert.rejects(waitForIce(peer, controller.signal), /cancelled/);
+  controller.abort();
+  await rejected;
+  t.mock.timers.tick(15000);
+  assert.equal(peer.listeners.size, 0);
+});
+
+test('installed apps accept a server origin and reject credentials or API paths', () => {
+  assert.equal(serverOrigin(' http://192.168.0.100:8000/ '), 'http://192.168.0.100:8000');
+  assert.equal(serverOrigin('https://example.test'), 'https://example.test');
+  for (const value of ['192.168.0.100:8000', 'ftp://example.test', 'https://user:password@example.test', 'https://example.test/api/v1', 'https://example.test?token=secret', 'https://example.test#fragment']) {
+    assert.throws(() => serverOrigin(value));
+  }
+});
+
+test('changing servers requires clearing credentials and cannot restore an in-flight login', async () => {
+  const api = new ApiClient('https://old.test', async () => {});
+  await api.setTokens(pair());
+  assert.throws(() => api.setBaseUrl('https://new.test'), /Sign out/);
+  let resolve;
+  global.fetch = () => new Promise(done => { resolve = done; });
+  const refreshing = api.refresh();
+  await api.setTokens(null);
+  api.setBaseUrl('https://new.test');
+  resolve(json(pair('old-server-rotated')));
+  await assert.rejects(refreshing, /Sign-in changed/);
+  assert.equal(api.tokens, null);
+  global.fetch = async url => {
+    assert.equal(url, 'https://new.test/api/v1/auth/login');
+    return json(pair('new-server'));
+  };
+  assert.equal((await api.publicRequest('/auth/login', {})).access_token, 'new-server');
+});
 
 test('WebRTC publisher sends its gathered video SDP and cleans up a cancelled negotiation', async () => {
   const requests = [];
