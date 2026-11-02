@@ -2,11 +2,27 @@
 
 The implementation was checked against the three-page Fall 2026/2027 project brief. Team attribution is omitted at the user's request. See the root README for the requirement mapping and `docs/presentation.html` for the presentation.
 
-- **94 backend tests pass**, with Ruff checks. Coverage includes live alerts while OCR/storage are blocked, bounded queues, fresh/stale snapshots, current-view retrieval without embeddings, English/French/Arabic OCR-question routing, numbered visual evidence, model priority/cancellation, ownership, speech contracts and retention/deletion. Server tests use SQLite/local objects and deterministic model substitutes, with actual Tesseract sign checks and aiortc transport tests.
+- **131 backend tests pass**, with Ruff checks. Coverage includes live alerts while OCR/storage are blocked, bounded queues, fresh/stale snapshots, current-view retrieval without embeddings, English/French/Arabic OCR-question routing, numbered visual evidence, model priority/cancellation, ownership, speech contracts and retention/deletion. Server tests use SQLite/local objects and deterministic model substitutes, with actual Tesseract sign checks and aiortc transport tests.
 - **18 mobile tests pass**, plus typecheck, lint and an iOS Hermes JavaScript export. **15 dashboard tests pass**, plus the production build. These are distinct from native installation and physical-phone accessibility checks.
 - Docker Compose configuration validates; the running PostgreSQL database is at `0004_live_alerts`. Ollama's container limit is `2,000,000,000` NanoCPUs (two cores), verified at runtime. During inference it used approximately 199% CPU rather than the previously reported 1050%. The detector uses two PyTorch threads and 320-pixel inference resolution.
 
 ## Real-service acceptance run
+
+### Current-view latency correction
+
+A physical-phone report of `evidence_expired_during_inference` exposed the practical failure of putting a general object-overview question through the VLM: Ollama logs showed approximately 50 seconds for one image, exceeding the 15-second freshness limit. The freshness guard was working, but the answer path was too slow.
+
+Simple current-view object questions now use translated detector labels with explicit uncertainty, retaining the exact detected source image as evidence. This path bypasses OCR, memory-processing locks and Ollama. Detailed current-view requests now have an eight-second processing budget, including snapshot work and model-queue waits; timeout produces an explicit uncertain response. Memory questions retain full generative inference. The CPU cap and evidence freshness checks remain enabled.
+
+A follow-up report exposed overly narrow wording matching: the actual text requests `what object is in front of me` and `what us in front of me?` still entered the VLM path. The overview matcher now accepts natural generic-object wording, polite wrappers and this common `is`/`us` typo while excluding text-reading and visual-attribute questions. Regression tests exercise both exact user requests with the OCR lock and model gate held busy.
+
+Both exact requests also passed against the running WebRTC/API stack, returning in **57.3 ms** and **60.7 ms**, respectively, with retained evidence and no warnings. See the [wording regression report](live-overview-wording-report.json). As in the other targeted test, the generated sign has no supported objects; this verifies routing and latency, not obstacle recall or iPhone speech onset.
+
+Walking questions originally still reached generative inference and timed out. They now use the detector path directly, prioritize central detections and describe left/center/right locations in the camera image, followed by explicit route uncertainty. They require evidence within two seconds by default, even when Memory is selected. The exact question `is it safe to walk` passed the [real-service walking check](live-walking-report.json) in **58.1 ms**, with retained evidence and no warnings. The person-free synthetic sign has no supported objects, so the response correctly reported no detections without declaring a clear route. Regression tests verify chair/left/center/right output, English/French/Arabic wording, no model/OCR wait, and rejection of a five-second-old frame for a walking request. These checks do not validate real-world navigation or obstacle recall.
+
+The [targeted real-service report](live-overview-report.json) passed: a continuous WebRTC viewer received 92 frames over approximately three seconds, then “What is in front of me?” returned in **88.2 ms** with retained evidence and no warnings. An earlier targeted run took 30 ms. This uses a generated sign with no supported objects and does not measure obstacle recall or phone-to-speech latency. The regression test separately supplies a chair detection and holds both the OCR session lock and generative-model gate busy, verifying that the qualified answer still completes and cites its image. Multilingual label/intent tests, no-detection uncertainty and detailed-request timeout/cancellation tests also pass.
+
+### Full workflow before the latency correction
 
 The checked-in [acceptance report](acceptance-report.json), started at 10:54 UTC on November 2, passed using the running API, PostgreSQL/pgvector, RustFS, YOLO, Tesseract, Whisper, Ollama and eSpeak. The script created its own temporary account, generated person-free signs and deleted its account/session afterward.
 

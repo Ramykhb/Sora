@@ -37,7 +37,7 @@ async def checked(client, method, path, **kwargs):
     return None if response.status_code == 204 else response.json()
 
 
-async def video_flow(client, sid, content):
+async def video_flow(client, sid, content, *, overview=False, overview_question="What is in front of me?"):
     from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
     from av import VideoFrame
     import numpy as np
@@ -95,7 +95,8 @@ async def video_flow(client, sid, content):
         # freshly timestamped camera snapshot.
         question_start = perf_counter()
         question_task = asyncio.create_task(checked(client, "POST", f"/sessions/{sid}/questions", json={
-            "question": "What is written on the current sign?", "scope": "recent", "language": "en",
+            "question": overview_question if overview else "What is written on the current sign?",
+            "scope": "recent", "language": "en",
         }))
         try:
             async with asyncio.timeout(45):
@@ -106,12 +107,16 @@ async def video_flow(client, sid, content):
             if not question_task.done():
                 question_task.cancel()
                 await asyncio.gather(question_task, return_exceptions=True)
-        assert current["evidence_frame_ids"] and "123" in current["answer"], "Current-view sign answer lacked fresh evidence or correct text"
+        assert current["evidence_frame_ids"], "Current-view answer lacked fresh evidence"
+        if overview:
+            assert current["uncertain"] and perf_counter() - question_start < 5, "Object overview was not bounded and qualified"
+        else:
+            assert "123" in current["answer"], "Current-view sign answer lacked correct text"
         return {
             "viewer_frames": initial_count, "duration_s": duration,
             "server_status": status,
             "detection_latency_ms": [item["latency_ms"] for item in observations],
-            "current_view_question": {"answer": current["answer"], "warnings": current["processing_warnings"], "elapsed_ms": round((perf_counter() - question_start) * 1000, 1)},
+            "current_view_question": {"question": overview_question if overview else "What is written on the current sign?", "answer": current["answer"], "warnings": current["processing_warnings"], "elapsed_ms": round((perf_counter() - question_start) * 1000, 1)},
             "note": "Server receipt-to-observation timing; excludes phone capture, transport and speech onset.",
         }
     finally:
@@ -123,7 +128,8 @@ async def video_flow(client, sid, content):
 async def run(args):
     report = {
         "started_at": datetime.now(timezone.utc).isoformat(), "checks": {},
-        "dataset": "Two generated text signs; no people or external media.",
+        "dataset": "One generated text sign; no people or external media." if args.overview_only else "Two generated text signs; no people or external media.",
+        "mode": "live_overview" if args.overview_only else "full_workflow",
         "limitations": "Synthetic functional checks do not establish real-world obstacle recall, factual answer accuracy, accessibility or iPhone speech latency.",
     }
     password = secrets.token_urlsafe(24)
@@ -141,7 +147,10 @@ async def run(args):
             sid = session["id"]
             base = f"/sessions/{sid}"
             print("Checking WebRTC publisher, viewer and live observations…", flush=True)
-            report["checks"]["video"] = await video_flow(client, sid, sign_image("EXIT 123"))
+            report["checks"]["video"] = await video_flow(client, sid, sign_image("EXIT 123"), overview=args.overview_only, overview_question=args.overview_question)
+            if args.overview_only:
+                success = True
+                return
             images = []
             report["checks"]["images"] = images
             for text in ["EXIT 123", "ROOM 215"]:
@@ -226,4 +235,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="http://localhost:8000")
     parser.add_argument("--output", type=Path, default=Path("acceptance-report.json"))
+    parser.add_argument("--overview-only", action="store_true", help="Check live streaming and a fast object overview, then clean up")
+    parser.add_argument("--overview-question", default="What is in front of me?", help="Question wording for --overview-only")
     asyncio.run(run(parser.parse_args()))

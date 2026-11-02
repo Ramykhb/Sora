@@ -43,8 +43,10 @@ def guard_answer(text, uncertain, language, evidence_ids):
 
 
 ROUTE_QUESTION = re.compile(
-    r"safe|can i (?:walk|cross|proceed)|puis.je.*(?:marcher|traverser)|sans danger|"
-    r"هل.*(?:أمشي|امشي|العبور|آمن)|يمكنني.*(?:المشي|العبور)",
+    r"safe|\bobstacles?\b|(?:can|should|may) i (?:walk|cross|proceed|move|go|continue)|"
+    r"(?:path|route|way).{0,25}clear|(?:anything|obstacles?).{0,25}in my way|"
+    r"(?:puis.je|peux.je|je peux).*(?:marcher|traverser|avancer)|sans danger|"
+    r"هل.*(?:أمشي|امشي|العبور|آمن|المشي|المسار)|يمكنني.*(?:المشي|العبور)",
     re.I,
 )
 

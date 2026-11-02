@@ -1,0 +1,122 @@
+{
+  "runs": [
+    {
+      "started_at": "2026-11-02T11:24:13.128327+00:00",
+      "checks": {
+        "video": {
+          "viewer_frames": 92,
+          "duration_s": 3.01,
+          "server_status": {
+            "streaming": true,
+            "source": "webrtc",
+            "frames_received": 93,
+            "frames_sampled": 3,
+            "viewers": 1,
+            "sample_interval_seconds": 1.0,
+            "frames_stored": 1,
+            "frames_rejected": 2,
+            "frames_dropped": 0,
+            "last_frame_seconds_ago": 0.009011291000206256,
+            "processing_error": null,
+            "detection_error": null,
+            "detection_interval_seconds": 0.25,
+            "detection_frames_dropped": 0,
+            "alert_history_dropped": 0,
+            "observation": {
+              "type": "observation",
+              "id": "6742ed5f-387d-422a-85ac-03148ad9c078",
+              "captured_at": "2026-11-02T11:24:16.767947+00:00",
+              "expires_at": "2026-11-02T11:24:18.767947+00:00",
+              "width": 640,
+              "height": 480,
+              "detected_objects": [],
+              "latency_ms": 66.7
+            }
+          },
+          "detection_latency_ms": [
+            208.4,
+            65.6,
+            69.3,
+            74.7,
+            79.8,
+            103.2,
+            74.7,
+            67.1,
+            66.7
+          ],
+          "current_view_question": {
+            "question": "what object is in front of me",
+            "answer": "I'm not sure. No supported objects were identified; that does not establish a clear route.",
+            "warnings": [],
+            "elapsed_ms": 57.3
+          },
+          "note": "Server receipt-to-observation timing; excludes phone capture, transport and speech onset."
+        }
+      },
+      "dataset": "One generated text sign; no people or external media.",
+      "mode": "live_overview",
+      "limitations": "Synthetic functional checks do not establish real-world obstacle recall, factual answer accuracy, accessibility or iPhone speech latency.",
+      "temporary_account_deleted": true,
+      "passed": true
+    },
+    {
+      "started_at": "2026-11-02T11:24:28.595765+00:00",
+      "checks": {
+        "video": {
+          "viewer_frames": 92,
+          "duration_s": 3.03,
+          "server_status": {
+            "streaming": true,
+            "source": "webrtc",
+            "frames_received": 93,
+            "frames_sampled": 3,
+            "viewers": 1,
+            "sample_interval_seconds": 1.0,
+            "frames_stored": 1,
+            "frames_rejected": 2,
+            "frames_dropped": 0,
+            "last_frame_seconds_ago": 0.006412749999981315,
+            "processing_error": null,
+            "detection_error": null,
+            "detection_interval_seconds": 0.25,
+            "detection_frames_dropped": 0,
+            "alert_history_dropped": 0,
+            "observation": {
+              "type": "observation",
+              "id": "efddc115-2728-4aaf-a397-47ef480b3ab4",
+              "captured_at": "2026-11-02T11:24:32.265520+00:00",
+              "expires_at": "2026-11-02T11:24:34.265520+00:00",
+              "width": 640,
+              "height": 480,
+              "detected_objects": [],
+              "latency_ms": 81.3
+            }
+          },
+          "detection_latency_ms": [
+            118.5,
+            111.4,
+            110.6,
+            70.8,
+            55.6,
+            75.9,
+            109.4,
+            61.3,
+            71.3
+          ],
+          "current_view_question": {
+            "question": "what us in front of me?",
+            "answer": "I'm not sure. No supported objects were identified; that does not establish a clear route.",
+            "warnings": [],
+            "elapsed_ms": 60.7
+          },
+          "note": "Server receipt-to-observation timing; excludes phone capture, transport and speech onset."
+        }
+      },
+      "dataset": "One generated text sign; no people or external media.",
+      "mode": "live_overview",
+      "limitations": "Synthetic functional checks do not establish real-world obstacle recall, factual answer accuracy, accessibility or iPhone speech latency.",
+      "temporary_account_deleted": true,
+      "passed": true
+    }
+  ]
+}

@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     detector_threads: int = Field(default=2, ge=1, le=8)
     max_pending_enrichments: int = Field(default=2, ge=1, le=10)
     recent_evidence_seconds: int = Field(default=15, ge=1)
+    current_answer_timeout_seconds: float = Field(default=8, ge=0.1, le=30)
     retrieval_top_k: int = Field(default=3, ge=1, le=6)
     ollama_url: str = "http://localhost:11434"
     vision_model: str = "qwen2.5vl:3b"

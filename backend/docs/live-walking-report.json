@@ -1,0 +1,59 @@
+{
+  "started_at": "2026-11-02T11:29:07.462301+00:00",
+  "checks": {
+    "video": {
+      "viewer_frames": 92,
+      "duration_s": 3.03,
+      "server_status": {
+        "streaming": true,
+        "source": "webrtc",
+        "frames_received": 93,
+        "frames_sampled": 3,
+        "viewers": 1,
+        "sample_interval_seconds": 1.0,
+        "frames_stored": 1,
+        "frames_rejected": 2,
+        "frames_dropped": 0,
+        "last_frame_seconds_ago": 0.00703716699990764,
+        "processing_error": null,
+        "detection_error": null,
+        "detection_interval_seconds": 0.25,
+        "detection_frames_dropped": 0,
+        "alert_history_dropped": 0,
+        "observation": {
+          "type": "observation",
+          "id": "419e79ef-c3e6-49bd-a0af-ed0721a69362",
+          "captured_at": "2026-11-02T11:29:11.314384+00:00",
+          "expires_at": "2026-11-02T11:29:13.314384+00:00",
+          "width": 640,
+          "height": 480,
+          "detected_objects": [],
+          "latency_ms": 68.0
+        }
+      },
+      "detection_latency_ms": [
+        93.7,
+        78.6,
+        65.0,
+        71.5,
+        56.3,
+        72.0,
+        73.7,
+        74.9,
+        68.0
+      ],
+      "current_view_question": {
+        "question": "is it safe to walk",
+        "answer": "No supported objects were detected in the camera view. I can't confirm the route; steps, drop-offs and hazards outside the image may be missed.",
+        "warnings": [],
+        "elapsed_ms": 58.1
+      },
+      "note": "Server receipt-to-observation timing; excludes phone capture, transport and speech onset."
+    }
+  },
+  "dataset": "One generated text sign; no people or external media.",
+  "mode": "live_overview",
+  "limitations": "Synthetic functional checks do not establish real-world obstacle recall, factual answer accuracy, accessibility or iPhone speech latency.",
+  "temporary_account_deleted": true,
+  "passed": true
+}

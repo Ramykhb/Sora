@@ -61,7 +61,7 @@ def test_end_to_end_memory_answers_history_alerts_feedback_delete(client):
     assert duplicate.json()["reason"] == "duplicate"
     answer = api.post(base + "/questions", json={"question": "What is in front of me?"}).json()
     assert answer["evidence_frame_ids"] == [frame["id"]]
-    assert not answer["uncertain"]
+    assert answer["uncertain"]  # A detector overview explicitly admits incomplete coverage.
     assert api.get(base + "/questions").json()[0]["id"] == answer["id"]
     assert (
         api.post(
@@ -316,7 +316,7 @@ def test_evidence_that_ages_during_inference_is_not_called_current(client, monke
 
     monkeypatch.setattr(models, "chat", slow_response)
     answer = api.post(
-        f"/api/v1/sessions/{sid}/questions", json={"question": "What is in front of me?"}
+        f"/api/v1/sessions/{sid}/questions", json={"question": "What color is the chair?"}
     ).json()
     assert answer["uncertain"] and not answer["evidence_frame_ids"]
     assert "evidence_expired_during_inference" in answer["processing_warnings"]

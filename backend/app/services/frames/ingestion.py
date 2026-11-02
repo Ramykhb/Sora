@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import perf_counter
@@ -42,8 +43,13 @@ async def ingest_bytes(
     defer_enrichment: bool = False,
     detected_objects: list[dict] | None = None,
     emit_alerts: bool = True,
+    objects_only: bool = False,
 ) -> IngestResult:
-    async with session_lock(session_id):
+    if objects_only and (not force or detected_objects is None):
+        raise ValueError("Object-only evidence requires a forced snapshot with matching detections")
+    # This independent snapshot has no deduplication or caption admission state.
+    # It must not queue behind OCR of ordinary memory frames.
+    async with (nullcontext() if objects_only else session_lock(session_id)):
         start = perf_counter()
         session = await get_session(session_id, active=True)
         timestamp = captured_at or now()
@@ -68,7 +74,9 @@ async def ingest_bytes(
             events.publish(session_id, {"type": "frame_rejected", "reason": reason})
             return IngestResult(status="rejected", reason=reason)
         warnings = []
-        if detected_objects is None:
+        if objects_only:
+            analysis = Analysis("", 0, detected_objects)
+        elif detected_objects is None:
             analysis = await asyncio.to_thread(analyze_image, prepared, ocr_language)
         else:
             # Reuse the fast detector's result for this exact source frame.
@@ -80,7 +88,7 @@ async def ingest_bytes(
             analysis = Analysis(ocr, confidence, detected_objects)
         caption = ""
         scene_flags = []
-        if not defer_enrichment:
+        if not defer_enrichment and not objects_only:
             try:
                 scene = await models.describe(await asyncio.to_thread(vision_image, prepared))
                 caption = scene.caption
@@ -96,7 +104,7 @@ async def ingest_bytes(
         if not text and not force and not defer_enrichment:
             return IngestResult(status="rejected", reason="uninformative")
         embedding = None
-        if text and not defer_enrichment:
+        if text and not defer_enrichment and not objects_only:
             try:
                 embedding = await models.embed(text)
             except BackendError as exc:
@@ -140,14 +148,14 @@ async def ingest_bytes(
                 embedding_model=settings.embedding_model if embedding else None,
                 processing_warnings=warnings,
                 processing_ms=(perf_counter() - start) * 1000,
-                enrichment_status="pending" if defer_enrichment else "complete",
+                enrichment_status="skipped" if objects_only else "pending" if defer_enrichment else "complete",
                 captured_at=timestamp,
                 expires_at=min(
                     session_expiry, timestamp + timedelta(hours=settings.frame_retention_hours)
                 ),
             )
             async with SessionFactory() as db:
-                if defer_enrichment:
+                if defer_enrichment and not objects_only:
                     # Keep the newest representative frames without building an
                     # unbounded caption backlog. OCR/objects remain searchable.
                     pending = list((await db.scalars(

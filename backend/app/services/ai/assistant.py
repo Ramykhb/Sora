@@ -15,6 +15,7 @@ from app.db.session import SessionFactory
 from app.schemas import AnswerOut
 from app.services.ai.models import ModelAnswer, models
 from app.services.ai.retrieval import resolve_scope, retrieve_frames
+from app.services.ai.live_answer import answer_overview, is_overview
 from app.services.ai.safety import (
     IDENTITY_QUESTION,
     IDENTITY_REFUSAL,
@@ -65,11 +66,7 @@ def evidence_sheet(images):
     return jpeg(sheet)
 
 
-async def answer_question(session_id, request, source="text"):
-    start = perf_counter()
-    session = await get_session(session_id)
-    language = request.language or session.language
-    requested_scope = "recent" if ROUTE_QUESTION.search(request.question) else request.scope
+async def _answer_evidence(session_id, request, session, language, requested_scope):
     snapshot_warnings = []
     if resolve_scope(request.question, requested_scope) == "recent" and not IDENTITY_QUESTION.search(request.question):
         from app.services.streaming.session import streams
@@ -188,6 +185,36 @@ async def answer_question(session_id, request, source="text"):
             except BackendError as exc:
                 warnings.append(exc.code)
                 answer = UNKNOWN[language]
+    return answer, uncertain, evidence, warnings
+
+
+async def answer_question(session_id, request, source="text"):
+    start = perf_counter()
+    session = await get_session(session_id)
+    language = request.language or session.language
+    requested_scope = "recent" if ROUTE_QUESTION.search(request.question) else request.scope
+    scope = resolve_scope(request.question, requested_scope)
+    walking = bool(ROUTE_QUESTION.search(request.question))
+    try:
+        # Includes snapshot processing and waiting for the model gate, not just
+        # HTTP inference. Current-view questions must not wait for minutes only
+        # to lose their evidence at the end.
+        async with asyncio.timeout(settings.current_answer_timeout_seconds if scope == "recent" else None):
+            if scope == "recent" and (walking or is_overview(request.question)) and not IDENTITY_QUESTION.search(request.question):
+                answer, uncertain, evidence, warnings = await answer_overview(
+                    session_id, request, language, walking=walking,
+                )
+            else:
+                answer, uncertain, evidence, warnings = await _answer_evidence(
+                    session_id, request, session, language, requested_scope,
+                )
+    except TimeoutError:
+        answer = {
+            "en": "I'm not sure. Detailed visual analysis is taking too long; try asking what objects the camera detects.",
+            "fr": "Je ne suis pas sûr. L’analyse visuelle détaillée prend trop de temps ; demandez quels objets la caméra détecte.",
+            "ar": "لست متأكداً. يستغرق التحليل البصري المفصل وقتاً طويلاً؛ اسأل عن الأجسام التي تكتشفها الكاميرا.",
+        }[language]
+        uncertain, evidence, warnings = True, [], ["current_view_timeout"]
     await get_session(session_id)
     # Revalidate after inference: expensive CPU inference must not turn an old frame
     # into an assertion about the current scene or expose already-expired evidence.
@@ -201,7 +228,9 @@ async def answer_question(session_id, request, source="text"):
         ]
         if scope == "recent":
             filters.append(
-                Frame.captured_at >= now() - timedelta(seconds=settings.recent_evidence_seconds)
+                Frame.captured_at >= now() - timedelta(seconds=(
+                    settings.detection_max_age_seconds if walking else settings.recent_evidence_seconds
+                ))
             )
         async with SessionFactory() as db:
             valid = {str(x) for x in (await db.scalars(select(Frame.id).where(*filters))).all()}

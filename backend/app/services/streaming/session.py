@@ -43,6 +43,7 @@ class LiveState:
     history_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=32))
     last_detection_sampled: float = float("-inf")
     observation: dict | None = None
+    observation_content: bytes | None = None
     detection_error: str | None = None
     detection_dropped: int = 0
     alert_history_dropped: int = 0
@@ -102,6 +103,14 @@ class Streams:
             return state.latest, state.latest_at
         return None
 
+    def fresh_detected_snapshot(self, session_id):
+        state = self.states.get(session_id)
+        if state and state.observation_content and state.observation and (
+            now().isoformat() < state.observation["expires_at"]
+        ):
+            return state.observation_content, dict(state.observation)
+        return None
+
     def enqueue_detection(self, state, content, timestamp):
         if state.detection_queue.full():
             state.detection_queue.get_nowait()
@@ -145,6 +154,7 @@ class Streams:
                     "detected_objects": objects, "latency_ms": round(age * 1000, 1),
                 }
                 state.observation = observation
+                state.observation_content = content
                 events.publish(session_id, observation)
                 if session.alerts_enabled:
                     view = SimpleNamespace(
