@@ -48,7 +48,8 @@ async def check_webrtc(client, base, image_path):
             json={"sdp": peer.localDescription.sdp, "type": peer.localDescription.type},
         )
         response.raise_for_status()
-        await peer.setRemoteDescription(RTCSessionDescription(**response.json()))
+        answer = response.json()
+        await peer.setRemoteDescription(RTCSessionDescription(sdp=answer["sdp"], type=answer["type"]))
         for _ in range(60):
             status = await client.get(base + "/stream/status")
             status.raise_for_status()

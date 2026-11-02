@@ -237,7 +237,13 @@ def test_websocket_auth_and_frame_to_event_flow(client):
             out = BytesIO()
             source.save(out, format="JPEG")
             producer.send_bytes(out.getvalue())
-            event = event_socket.receive_json()
+            received = []
+            for _ in range(5):
+                event = event_socket.receive_json()
+                received.append(event["type"])
+                if event["type"] == "frame_stored":
+                    break
+            assert "observation" in received
             assert event["type"] == "frame_stored", event
             assert event["frame"]["ocr_text"] == "EXIT"
             assert api.get(path + "/stream/status").json()["frames_received"] == 1

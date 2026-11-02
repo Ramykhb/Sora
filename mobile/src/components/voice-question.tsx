@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, Text, View } from 'react-native';
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import { File } from 'expo-file-system';
-import * as Speech from 'expo-speech';
+import { speech } from '@/lib/speech';
 import { useAuth } from '@/providers/auth';
 import type { Answer, Language, Scope } from '@/lib/api';
 import { Action, ui } from './controls';
@@ -29,7 +29,7 @@ export function VoiceQuestion({ sessionId, language, scope, onAnswer, onError, d
     let uploadedUri: string | null = null;
     try {
       if (!recorder.isRecording) {
-        await Speech.stop();
+        await speech.stop();
         const permission = await AudioModule.requestRecordingPermissionsAsync();
         if (!permission.granted) throw new Error('Microphone access is required for voice questions.');
         await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });

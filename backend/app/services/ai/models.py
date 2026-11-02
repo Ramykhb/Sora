@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import math
+from contextlib import asynccontextmanager
 import httpx
 from pydantic import BaseModel, Field
 from app.core.config import settings
@@ -19,14 +20,46 @@ class ModelAnswer(BaseModel):
     evidence_frame_ids: list[str] = Field(default_factory=list)
 
 
+class ModelGate:
+    """One inference at a time; queued user questions precede background work."""
+
+    def __init__(self):
+        self.condition = asyncio.Condition()
+        self.waiters = []
+        self.sequence = 0
+        self.busy = False
+
+    @asynccontextmanager
+    async def slot(self, interactive=False):
+        async with self.condition:
+            ticket = (0 if interactive else 1, self.sequence)
+            self.sequence += 1
+            self.waiters.append(ticket)
+            try:
+                await self.condition.wait_for(
+                    lambda: not self.busy and ticket == min(self.waiters)
+                )
+                self.busy = True
+            finally:
+                self.waiters.remove(ticket)
+                self.condition.notify_all()
+        try:
+            yield
+        finally:
+            async with self.condition:
+                self.busy = False
+                self.condition.notify_all()
+
+
 class Models:
     def __init__(self):
-        self.gate = asyncio.Semaphore(1)
+        self.gate = ModelGate()
 
     async def chat(self, messages, schema):
         try:
             async with (
-                self.gate,
+                asyncio.timeout(settings.model_timeout_seconds),
+                self.gate.slot(interactive=schema is ModelAnswer),
                 httpx.AsyncClient(timeout=settings.model_timeout_seconds) as client,
             ):
                 response = await client.post(
@@ -36,12 +69,15 @@ class Models:
                         "stream": False,
                         "messages": messages,
                         "format": schema.model_json_schema(),
-                        "options": {"temperature": 0, "num_predict": 400},
+                        "options": {
+                            "temperature": 0, "num_predict": 160,
+                            "num_thread": settings.model_threads,
+                        },
                     },
                 )
                 response.raise_for_status()
                 return schema.model_validate_json(response.json()["message"]["content"])
-        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError) as exc:
             raise BackendError(
                 "Vision model unavailable or returned invalid output", 503, "vision_unavailable"
             ) from exc
@@ -73,13 +109,18 @@ class Models:
                 "Instruct: Retrieve camera observations relevant to the question.\nQuery: " + text
             )
         try:
-            async with httpx.AsyncClient(timeout=settings.model_timeout_seconds) as client:
+            async with (
+                asyncio.timeout(settings.model_timeout_seconds),
+                self.gate.slot(interactive=query),
+                httpx.AsyncClient(timeout=settings.model_timeout_seconds) as client,
+            ):
                 response = await client.post(
                     settings.ollama_url.rstrip("/") + "/api/embed",
                     json={
                         "model": settings.embedding_model,
                         "input": text[:12000],
                         "dimensions": settings.embedding_dimensions,
+                        "options": {"num_thread": settings.model_threads},
                     },
                 )
                 response.raise_for_status()
@@ -89,7 +130,7 @@ class Models:
                 ):
                     raise ValueError("Wrong embedding dimensions or non-finite vector")
                 return vector
-        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+        except (httpx.HTTPError, TimeoutError, ValueError, KeyError, IndexError, TypeError) as exc:
             raise BackendError("Embedding model unavailable", 503, "embedding_unavailable") from exc
 
 

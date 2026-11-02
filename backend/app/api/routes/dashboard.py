@@ -116,8 +116,11 @@ async def alerts(
         rows = (
             await db.scalars(
                 select(Alert)
-                .join(Frame, Alert.frame_id == Frame.id)
-                .where(Alert.session_id == session_id, Frame.expires_at > now())
+                .outerjoin(Frame, Alert.frame_id == Frame.id)
+                .where(
+                    Alert.session_id == session_id,
+                    (Alert.frame_id.is_(None)) | (Frame.expires_at > now()),
+                )
                 .order_by(Alert.created_at.desc())
                 .limit(limit)
                 .offset(offset)
@@ -126,10 +129,11 @@ async def alerts(
         return [
             {
                 "id": str(row.id),
-                "frame_id": str(row.frame_id),
+                "frame_id": str(row.frame_id) if row.frame_id else None,
                 "label": row.label,
                 "message": row.message,
                 "created_at": row.created_at,
+                "captured_at": row.captured_at,
             }
             for row in rows
         ]

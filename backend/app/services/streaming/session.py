@@ -1,7 +1,9 @@
 import asyncio
 from dataclasses import dataclass, field
 import logging
+from datetime import datetime, timedelta
 from time import monotonic
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 from app.core.config import settings
 from app.core.errors import BackendError
@@ -23,6 +25,7 @@ class LiveState:
     source: str
     auth_token: str | None = None
     latest: bytes | None = None
+    latest_at: datetime | None = None
     last_received: float = field(default_factory=monotonic)
     last_sampled: float = float("-inf")
     sequence: int = 0
@@ -34,6 +37,16 @@ class LiveState:
     queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=1))
     updated: asyncio.Event = field(default_factory=asyncio.Event)
     worker: asyncio.Task | None = None
+    detector_worker: asyncio.Task | None = None
+    history_worker: asyncio.Task | None = None
+    detection_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=1))
+    history_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=32))
+    last_detection_sampled: float = float("-inf")
+    observation: dict | None = None
+    detection_error: str | None = None
+    detection_dropped: int = 0
+    alert_history_dropped: int = 0
+    alert_times: dict = field(default_factory=dict)
     peer: object | None = None
     readers: list = field(default_factory=list)
     connection_id: str = field(default_factory=lambda: str(uuid4()))
@@ -56,6 +69,8 @@ class Streams:
         state = LiveState(source=source)
         self.states[session_id] = state
         state.worker = asyncio.create_task(self.consume(session_id, state))
+        state.detector_worker = asyncio.create_task(self.detect(session_id, state))
+        state.history_worker = asyncio.create_task(self.persist_alerts(session_id, state))
         events.publish(session_id, {"type": "stream_started", "source": source})
         return state
 
@@ -71,29 +86,147 @@ class Streams:
                 "Stream frames must be JPEG within upload limit", 422, "invalid_frame"
             )
         state.latest, state.last_received = content, monotonic()
+        state.latest_at = now()
         state.sequence += 1
         state.updated.set()
-        if monotonic() - state.last_sampled < settings.sample_interval_seconds:
+        if monotonic() - state.last_detection_sampled < settings.detection_interval_seconds:
             return
-        state.last_sampled = monotonic()
-        self.enqueue_sample(state, content, now())
+        state.last_detection_sampled = monotonic()
+        self.enqueue_detection(state, content, state.latest_at)
 
-    def enqueue_sample(self, state, content, timestamp):
+    def fresh_snapshot(self, session_id):
+        state = self.states.get(session_id)
+        if state and state.latest and state.latest_at and (
+            now() - state.latest_at
+        ).total_seconds() <= settings.detection_max_age_seconds:
+            return state.latest, state.latest_at
+        return None
+
+    def enqueue_detection(self, state, content, timestamp):
+        if state.detection_queue.full():
+            state.detection_queue.get_nowait()
+            state.detection_queue.task_done()
+            state.detection_dropped += 1
+        state.detection_queue.put_nowait((content, timestamp))
+
+    def enqueue_sample(self, state, content, timestamp, objects=None):
         state.sampled += 1
         if state.queue.full():
             state.queue.get_nowait()
+            state.queue.task_done()
             state.dropped += 1
-        state.queue.put_nowait((content, timestamp))
+        state.queue.put_nowait((content, timestamp, objects))
+
+    async def detect(self, session_id, state):
+        from app.services.frames.processing import detect_live
+        from app.services.sessions import get_session
+        from app.services.alerts import alert_candidates
+
+        while True:
+            content, timestamp = await state.detection_queue.get()
+            try:
+                if (now() - timestamp).total_seconds() > settings.detection_max_age_seconds:
+                    continue
+                width, height, objects = await asyncio.to_thread(detect_live, content)
+                session = await get_session(session_id, active=True)
+                if self.states.get(session_id) is not state:
+                    continue
+                age = (now() - timestamp).total_seconds()
+                if age > settings.detection_max_age_seconds:
+                    continue
+                state.detection_error = None
+                observation = {
+                    "type": "observation", "id": str(uuid4()),
+                    "captured_at": timestamp.isoformat(),
+                    "expires_at": (timestamp + timedelta(
+                        seconds=settings.detection_max_age_seconds
+                    )).isoformat(),
+                    "width": width, "height": height,
+                    "detected_objects": objects, "latency_ms": round(age * 1000, 1),
+                }
+                state.observation = observation
+                events.publish(session_id, observation)
+                if session.alerts_enabled:
+                    view = SimpleNamespace(
+                        width=width, height=height, detected_objects=objects, scene_flags=[],
+                    )
+                    candidates = alert_candidates(view, session.language)
+                    current = monotonic()
+                    # Cooldowns reset when a class disappears and never block
+                    # another class of obstacle.
+                    visible = {label for label, _ in candidates}
+                    state.alert_times = {
+                        key: value for key, value in state.alert_times.items()
+                        if key in visible and current - value < settings.alert_cooldown_seconds
+                    }
+                    for label, message in candidates:
+                        if label in state.alert_times:
+                            continue
+                        state.alert_times[label] = current
+                        alert = {
+                            "type": "alert", "id": str(uuid4()), "frame_id": None,
+                            "label": label, "message": message, "language": session.language,
+                            "captured_at": observation["captured_at"],
+                            "expires_at": observation["expires_at"],
+                            "created_at": now().isoformat(), "latency_ms": observation["latency_ms"],
+                        }
+                        # Notification is independent of persistence and OCR.
+                        events.publish(session_id, alert)
+                        if state.history_queue.full():
+                            state.history_queue.get_nowait()
+                            state.history_queue.task_done()
+                            state.alert_history_dropped += 1
+                        state.history_queue.put_nowait(alert)
+                if monotonic() - state.last_sampled >= settings.sample_interval_seconds:
+                    state.last_sampled = monotonic()
+                    self.enqueue_sample(state, content, timestamp, objects)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                state.detection_error = getattr(exc, "code", "detector_unavailable")
+                events.publish(session_id, {"type": "detection_error", "code": state.detection_error})
+                # Memory still works when the live detector is unavailable.
+                if monotonic() - state.last_sampled >= settings.sample_interval_seconds:
+                    state.last_sampled = monotonic()
+                    self.enqueue_sample(state, content, timestamp)
+            finally:
+                state.detection_queue.task_done()
+
+    async def persist_alerts(self, session_id, state):
+        from datetime import datetime
+        from app.db.models import Alert
+        from app.db.session import SessionFactory
+        from app.services.sessions import get_session
+
+        while True:
+            alert = await state.history_queue.get()
+            try:
+                await get_session(session_id)
+                async with SessionFactory() as db:
+                    db.add(Alert(
+                        id=UUID(alert["id"]), session_id=session_id, frame_id=None,
+                        label=alert["label"], message=alert["message"],
+                        captured_at=datetime.fromisoformat(alert["captured_at"]),
+                    ))
+                    await db.commit()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Live alert history could not be saved")
+                events.publish(session_id, {"type": "alert_history_error"})
+            finally:
+                state.history_queue.task_done()
 
     async def consume(self, session_id, state):
         from app.services.frames.ingestion import ingest_bytes
 
         while True:
-            content, timestamp = await state.queue.get()
+            content, timestamp, objects = await state.queue.get()
             try:
                 result = await ingest_bytes(
                     content, session_id, captured_at=timestamp,
                     defer_enrichment=settings.live_defer_enrichment,
+                    detected_objects=objects, emit_alerts=False,
                 )
                 if result.status == "stored":
                     state.stored += 1
@@ -125,6 +258,13 @@ class Streams:
             "frames_dropped": state.dropped,
             "last_frame_seconds_ago": monotonic() - state.last_received,
             "processing_error": state.error,
+            "detection_error": state.detection_error,
+            "detection_interval_seconds": settings.detection_interval_seconds,
+            "detection_frames_dropped": state.detection_dropped,
+            "alert_history_dropped": state.alert_history_dropped,
+            "observation": state.observation if state.observation and (
+                now().isoformat() < state.observation["expires_at"]
+            ) else None,
         }
 
     async def stop(self, session_id, expected=None):
@@ -136,7 +276,7 @@ class Streams:
         state.updated.set()
         tasks = [
             task
-            for task in [state.worker, *state.readers]
+            for task in [state.worker, state.detector_worker, state.history_worker, *state.readers]
             if task and task is not asyncio.current_task()
         ]
         for task in tasks:
@@ -210,9 +350,9 @@ async def accept_offer(session_id, sdp, kind, auth_token=None):
                 received = monotonic()
                 state.last_received = received
                 state.sequence += 1
-                if received - state.last_sampled < settings.sample_interval_seconds:
+                if received - state.last_detection_sampled < settings.detection_interval_seconds:
                     continue
-                state.last_sampled = received
+                state.last_detection_sampled = received
                 captured_at = now()
 
                 def encode():
@@ -227,8 +367,9 @@ async def accept_offer(session_id, sdp, kind, auth_token=None):
                 content = await asyncio.to_thread(encode)
                 if content and streams.states.get(session_id) is state:
                     state.latest = content
+                    state.latest_at = captured_at
                     state.updated.set()
-                    streams.enqueue_sample(state, content, captured_at)
+                    streams.enqueue_detection(state, content, captured_at)
         except (MediaStreamError, asyncio.CancelledError):
             pass
         except Exception:

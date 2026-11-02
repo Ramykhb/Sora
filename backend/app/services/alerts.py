@@ -7,7 +7,7 @@ from app.db.session import SessionFactory
 from app.services.events import events
 
 
-async def generate_alert(frame, language):
+def alert_candidates(frame, language):
     candidates = []
     if "central_closed_door" in frame.scene_flags:
         candidates.append(
@@ -47,7 +47,11 @@ async def generate_alert(frame, language):
                     }[language],
                 )
             )
-    for label, message in candidates:
+    return candidates
+
+
+async def generate_alert(frame, language):
+    for label, message in alert_candidates(frame, language):
         async with SessionFactory() as db:
             recent = await db.scalar(
                 select(Alert.id).where(
@@ -59,7 +63,8 @@ async def generate_alert(frame, language):
             if recent:
                 continue
             row = Alert(
-                session_id=frame.session_id, frame_id=frame.id, label=label, message=message
+                session_id=frame.session_id, frame_id=frame.id, label=label, message=message,
+                captured_at=frame.captured_at,
             )
             db.add(row)
             await db.commit()
@@ -72,6 +77,10 @@ async def generate_alert(frame, language):
                     "frame_id": str(frame.id),
                     "message": message,
                     "language": language,
+                    "captured_at": frame.captured_at.isoformat(),
+                    "expires_at": (frame.captured_at + timedelta(
+                        seconds=settings.detection_max_age_seconds
+                    )).isoformat(),
                 },
             )
         break

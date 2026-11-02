@@ -1,4 +1,41 @@
-# Current validation — 2026-10-29
+# Current validation — 2026-11-02
+
+The implementation was checked against the three-page Fall 2026/2027 project brief. Team attribution is omitted at the user's request. See the root README for the requirement mapping and `docs/presentation.html` for the presentation.
+
+- **94 backend tests pass**, with Ruff checks. Coverage includes live alerts while OCR/storage are blocked, bounded queues, fresh/stale snapshots, current-view retrieval without embeddings, English/French/Arabic OCR-question routing, numbered visual evidence, model priority/cancellation, ownership, speech contracts and retention/deletion. Server tests use SQLite/local objects and deterministic model substitutes, with actual Tesseract sign checks and aiortc transport tests.
+- **18 mobile tests pass**, plus typecheck, lint and an iOS Hermes JavaScript export. **15 dashboard tests pass**, plus the production build. These are distinct from native installation and physical-phone accessibility checks.
+- Docker Compose configuration validates; the running PostgreSQL database is at `0004_live_alerts`. Ollama's container limit is `2,000,000,000` NanoCPUs (two cores), verified at runtime. During inference it used approximately 199% CPU rather than the previously reported 1050%. The detector uses two PyTorch threads and 320-pixel inference resolution.
+
+## Real-service acceptance run
+
+The checked-in [acceptance report](acceptance-report.json), started at 10:54 UTC on November 2, passed using the running API, PostgreSQL/pgvector, RustFS, YOLO, Tesseract, Whisper, Ollama and eSpeak. The script created its own temporary account, generated person-free signs and deleted its account/session afterward.
+
+| Check | Observed result |
+| --- | --- |
+| Live publisher → server → viewer | 92 viewer frames in 3.04 seconds; no detection/processing error |
+| Server receipt → object observation | Nine sampled observations: 43–140 ms, median 65.1 ms |
+| Current-view text question during stationary live video | `EXIT 123`, fresh retained evidence, no warnings, 3.85 seconds |
+| OCR | Both generated signs correctly read: `EXIT 123`, `ROOM 215` |
+| Semantic memory search | Expected sign present in top three for both queries |
+| English/French memory answers | Both returned `215`, cited evidence, no warnings; answer times 7.79 / 7.75 seconds |
+| Speech output | Valid English and French WAV files generated |
+| Voice input | Whisper transcription and a grounded-answer request completed; see accuracy limitation below |
+| History, feedback and deletion | Four questions, automated `unsure` feedback, session deletion and temporary-account deletion passed |
+
+These are small synthetic functional checks, not representative accuracy percentages. The latest voice transcription was imperfect (`What's up but what's written after room?`) and its answer was incorrect (`The word 'up' is written after 'room'.`). The preceding run answered the same synthesized utterance correctly. This is a real remaining model-quality limitation: successful transport and valid evidence IDs do not prove that an answer is factually grounded. Human feedback is explicitly recorded as `unsure`, not invented tester approval. English/French text-question term matches were 2/2 in this run; that is not a general answer-accuracy score.
+
+The final run's forced synchronous image uploads took 51.47 and 2.05 seconds including full VLM enrichment. The first includes contention with background inference after the live question. General visual answers using a contact sheet took approximately 61–63 seconds in an earlier successful run at the same CPU cap. Explicit OCR-reading questions avoid that image encoding work. Real live memory saving defers VLM enrichment; immediate labels/alerts do not wait for captions, OCR or storage.
+
+An earlier real run exposed unreadable bordered signs; an OCR-only line-removal fallback fixed both generated signs. Another run exposed a multi-image VLM timeout; a bounded numbered contact sheet resolved the timeout. The report and tests retain the distinction between live detection, saved memory, and slow full visual interpretation.
+
+## Practical limits
+
+- Server observation timing excludes phone capture, network delay and audible speech onset. Synthetic signs contain no supported obstacle, so these timings do not measure obstacle recall. The 80-class detector does not include doors/stairs; closed-door VLM interpretation is best effort and can arrive too late for a fresh alert.
+- Camera freshness is based on server receipt timestamps. Current-view questions can save a newly received snapshot even when the scene was deduplicated; old stored timestamps are never refreshed. Evidence that ages beyond the configured window during inference produces uncertainty.
+- Xcode's signed Release build succeeded and the update was installed over `com.ramykhachab.mobile` on the connected physical iPhone 16. The embedded Hermes bundle contains the new Live objects panel and current LAN API address. The app launched, restored the existing sign-in and displayed its retained session; Metro was then stopped and the app relaunched. Native camera/microphone, VoiceOver, audio interruption and camera-to-speech latency still require device interaction and representative consented scenes. Human correctness/usefulness ratings remain necessary; use `docs/demo.md` and `scripts.evaluate`.
+- Real SMTP delivery is not exercised by the synthetic acceptance flow.
+
+## Historical validation — 2026-10-29
 
 - 75 backend tests pass in Docker, including real local aiortc producer/viewer peers, continuous video delivery, one-second sampling, connection cleanup, account isolation, temporary TURN credentials and durable background enrichment. SQLite/local storage and model substitutes are used for server-logic tests.
 - A separate smoke test used actual TURN-only ICE candidates through the running Docker/LAN relay: the viewer received **68 video frames in 2.2 seconds**, while the backend sampled **2 images**. Test media was not stored. This validates the relay path independently of JPEG previews.

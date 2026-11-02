@@ -1,0 +1,113 @@
+{
+  "started_at": "2026-11-02T10:54:03.997216+00:00",
+  "checks": {
+    "video": {
+      "viewer_frames": 92,
+      "duration_s": 3.04,
+      "server_status": {
+        "streaming": true,
+        "source": "webrtc",
+        "frames_received": 93,
+        "frames_sampled": 3,
+        "viewers": 1,
+        "sample_interval_seconds": 1.0,
+        "frames_stored": 1,
+        "frames_rejected": 2,
+        "frames_dropped": 0,
+        "last_frame_seconds_ago": 0.0073701249998521234,
+        "processing_error": null,
+        "detection_error": null,
+        "detection_interval_seconds": 0.25,
+        "detection_frames_dropped": 0,
+        "alert_history_dropped": 0,
+        "observation": {
+          "type": "observation",
+          "id": "8b34269a-7433-487e-8a51-261a10ccb52e",
+          "captured_at": "2026-11-02T10:54:07.807255+00:00",
+          "expires_at": "2026-11-02T10:54:09.807255+00:00",
+          "width": 640,
+          "height": 480,
+          "detected_objects": [],
+          "latency_ms": 47.9
+        }
+      },
+      "detection_latency_ms": [
+        62.9,
+        90.1,
+        83.7,
+        65.1,
+        74.6,
+        140.1,
+        43.0,
+        46.6,
+        47.9
+      ],
+      "current_view_question": {
+        "answer": "EXIT 123",
+        "warnings": [],
+        "elapsed_ms": 3853.0
+      },
+      "note": "Server receipt-to-observation timing; excludes phone capture, transport and speech onset."
+    },
+    "images": [
+      {
+        "expected_text": "EXIT 123",
+        "ocr_text": "EXIT 123",
+        "caption": "EXIT 123 sign",
+        "elapsed_ms": 51467.4
+      },
+      {
+        "expected_text": "ROOM 215",
+        "ocr_text": "ROOM 215",
+        "caption": "A sign indicating 'ROOM 215' with a black border.",
+        "elapsed_ms": 2046.8
+      }
+    ],
+    "search": [
+      {
+        "query": "exit sign",
+        "expected_in_top_k": true,
+        "k": 3
+      },
+      {
+        "query": "room number",
+        "expected_in_top_k": true,
+        "k": 3
+      }
+    ],
+    "answers": [
+      {
+        "language": "en",
+        "question": "What number was written after ROOM?",
+        "answer": "215",
+        "uncertain": false,
+        "warnings": [],
+        "expected_term_match": true,
+        "answer_ms": 7786.5,
+        "elapsed_ms": 7827.4,
+        "wav_bytes": 75898
+      },
+      {
+        "language": "fr",
+        "question": "Quel nombre était écrit après ROOM ?",
+        "answer": "215",
+        "uncertain": false,
+        "warnings": [],
+        "expected_term_match": true,
+        "answer_ms": 7754.1,
+        "elapsed_ms": 7774.1,
+        "wav_bytes": 47806
+      }
+    ],
+    "voice": {
+      "recognized_question": "What's up but what's written after room?",
+      "answer": "The word 'up' is written after 'room'."
+    },
+    "history_count": 4,
+    "session_deletion": true
+  },
+  "dataset": "Two generated text signs; no people or external media.",
+  "limitations": "Synthetic functional checks do not establish real-world obstacle recall, factual answer accuracy, accessibility or iPhone speech latency.",
+  "temporary_account_deleted": true,
+  "passed": true
+}

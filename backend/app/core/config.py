@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     duplicate_hash_distance: int = Field(default=5, ge=0, le=64)
     sample_interval_seconds: float = Field(default=1.0, ge=0.25)
     live_defer_enrichment: bool = True
+    detection_interval_seconds: float = Field(default=0.25, ge=0.1, le=5)
+    detection_max_age_seconds: float = Field(default=2.0, ge=0.25, le=10)
+    detection_image_size: int = Field(default=320, ge=192, le=1280)
+    detector_threads: int = Field(default=2, ge=1, le=8)
+    max_pending_enrichments: int = Field(default=2, ge=1, le=10)
     recent_evidence_seconds: int = Field(default=15, ge=1)
     retrieval_top_k: int = Field(default=3, ge=1, le=6)
     ollama_url: str = "http://localhost:11434"
@@ -63,6 +68,7 @@ class Settings(BaseSettings):
         return 1024 if isinstance(value, str) and value.strip() == "1024" else value
 
     model_timeout_seconds: int = 120
+    model_threads: int = Field(default=2, ge=1, le=8)
     yolo_model: str = "yolo11n.pt"
     yolo_confidence: float = Field(default=0.35, ge=0, le=1)
     model_device: str = "cpu"

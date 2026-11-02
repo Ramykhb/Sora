@@ -33,6 +33,8 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    # Bound sustained inference CPU usage on the development laptop.
+    cpus: 2.0
     ports:
       - "127.0.0.1:11434:11434"
     volumes:
@@ -50,14 +52,15 @@ services:
       - --static-auth-secret=${TURN_SHARED_SECRET:-}
       - --external-ip=${TURN_PUBLIC_HOST:-}
       - --listening-port=3478
-      - --min-port=49160
-      - --max-port=49259
+      - --min-port=48000
+      - --max-port=48099
       - --no-multicast-peers
       - --log-file=stdout
     ports:
       - "3478:3478/udp"
       - "3478:3478/tcp"
-      - "49160-49259:49160-49259/udp"
+      # Keep relay ports below macOS's ephemeral range (49152–65535).
+      - "48000-48099:48000-48099/udp"
     restart: unless-stopped
 
   api:
@@ -96,6 +99,7 @@ services:
       # Local development: source changes survive container recreation.
       - ./app:/app/app:ro
       - ./migrations:/app/migrations:ro
+      - ./scripts:/app/scripts:ro
     restart: unless-stopped
 
 volumes:

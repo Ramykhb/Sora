@@ -34,10 +34,12 @@ async def retrieve_frames(session_id, question, scope="auto", since=None, until=
             Frame.captured_at >= now() - timedelta(seconds=settings.recent_evidence_seconds)
         )
     warnings, query_vector = [], None
-    try:
-        query_vector = await models.embed(question, query=True)
-    except BackendError as exc:
-        warnings.append(exc.code)
+    # Current-view questions need the newest view, not a costly semantic query.
+    if scope != "recent":
+        try:
+            query_vector = await models.embed(question, query=True)
+        except BackendError as exc:
+            warnings.append(exc.code)
     async with SessionFactory() as db:
         recent = list(
             (
@@ -101,5 +103,7 @@ async def retrieve_frames(session_id, question, scope="auto", since=None, until=
             )
         return 0.75 * cosine + 0.25 * lexical
 
+    if scope == "recent":
+        return sorted(candidates.values(), key=lambda f: f.captured_at, reverse=True)[:1], warnings, scope
     ranked = sorted(candidates.values(), key=lambda f: (score(f), f.captured_at), reverse=True)
     return ranked[:limit], warnings, scope

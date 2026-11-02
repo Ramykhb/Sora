@@ -14,7 +14,7 @@ from app.db.session import SessionFactory
 from app.schemas import FrameOut, IngestResult
 from app.services.ai.models import models
 from app.services.events import events
-from app.services.frames.processing import analyze_image, prepare_image, vision_image
+from app.services.frames.processing import Analysis, analyze_image, prepare_image, read_text, vision_image
 from app.services.frames.selection import rejection_reason
 from app.services.sessions import create_session, get_session
 from app.services.storage.object_store import delete_image, put_image
@@ -40,6 +40,8 @@ async def ingest_bytes(
     captured_at: datetime | None = None,
     ocr_language: str | None = None,
     defer_enrichment: bool = False,
+    detected_objects: list[dict] | None = None,
+    emit_alerts: bool = True,
 ) -> IngestResult:
     async with session_lock(session_id):
         start = perf_counter()
@@ -65,8 +67,17 @@ async def ingest_bytes(
         if reason:
             events.publish(session_id, {"type": "frame_rejected", "reason": reason})
             return IngestResult(status="rejected", reason=reason)
-        analysis = await asyncio.to_thread(analyze_image, prepared, ocr_language)
         warnings = []
+        if detected_objects is None:
+            analysis = await asyncio.to_thread(analyze_image, prepared, ocr_language)
+        else:
+            # Reuse the fast detector's result for this exact source frame.
+            try:
+                ocr, confidence = await asyncio.to_thread(read_text, prepared, ocr_language)
+            except BackendError as exc:
+                ocr, confidence = "", 0
+                warnings.append(exc.code)
+            analysis = Analysis(ocr, confidence, detected_objects)
         caption = ""
         scene_flags = []
         if not defer_enrichment:
@@ -136,6 +147,20 @@ async def ingest_bytes(
                 ),
             )
             async with SessionFactory() as db:
+                if defer_enrichment:
+                    # Keep the newest representative frames without building an
+                    # unbounded caption backlog. OCR/objects remain searchable.
+                    pending = list((await db.scalars(
+                        select(Frame).where(
+                            Frame.session_id == session_id,
+                            Frame.enrichment_status == "pending",
+                        ).order_by(Frame.captured_at.desc())
+                    )).all())
+                    for old in pending[settings.max_pending_enrichments - 1:]:
+                        old.enrichment_status = "skipped"
+                        old.processing_warnings = list(dict.fromkeys(
+                            [*old.processing_warnings, "enrichment_superseded"]
+                        ))
                 db.add(frame)
                 await db.commit()
                 await db.refresh(frame)
@@ -150,7 +175,7 @@ async def ingest_bytes(
         events.publish(
             session_id, {"type": "frame_stored", "frame": output.model_dump(mode="json")}
         )
-        if session.alerts_enabled:
+        if emit_alerts and session.alerts_enabled:
             from app.services.alerts import generate_alert
 
             try:

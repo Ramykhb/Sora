@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sora — project presentation</title>
+<style>
+  :root{font-family:system-ui,sans-serif;color:#edf3ff;background:#101827;font-size:clamp(18px,2vw,30px)}
+  *{box-sizing:border-box}body{margin:0}main{max-width:1200px;margin:auto;padding:4vh 5vw 100px}
+  section{display:none;min-height:75vh}section.active{display:block}h1{font-size:2.5em;line-height:1.08;letter-spacing:-.045em}h2{font-size:1.8em;letter-spacing:-.035em}p,li{line-height:1.5}li{margin:.6em 0}a{color:#80e8d2}small,.muted{color:#aebed4}strong{color:#80e8d2}.flow{padding:1em;border:1px solid #425675;border-radius:16px;line-height:1.8}.grid{display:grid;grid-template-columns:1fr 1fr;gap:1em}.grid>div{padding:1em;background:#1b2940;border-radius:16px}nav{position:fixed;bottom:0;width:100%;background:#101827;display:flex;align-items:center;justify-content:center;gap:1em;padding:16px}button{font:inherit;font-size:.7em;padding:10px 20px;color:#edf3ff;background:#253b59;border:1px solid #7090b5;border-radius:8px;cursor:pointer}button:focus-visible{outline:3px solid #80e8d2}#count{font-size:.7em}
+  @media(max-width:700px){.grid{grid-template-columns:1fr}main{padding-top:1vh}h1{font-size:2em}}
+  @media print{:root{color:#142035;background:white;font-size:20px}main{padding:0;max-width:none}section,section.active{display:block;break-after:page;min-height:90vh;padding:2cm}.grid>div{background:#edf3f7}strong,a{color:#126655}nav{display:none}.muted,small{color:#456}}
+</style>
+<main>
+<section class="active" aria-label="Title">
+  <p class="muted">Multimedia Database and Image Processing · Fall 2026/2027</p>
+  <h1>Sora.<br>A voice assistant<br>with visual memory.</h1>
+  <p>A phone camera, searchable observations and short spoken answers grounded in retained evidence.</p>
+  <small>Use arrow keys or the navigation buttons. Print to export all slides as PDF.</small>
+</section>
+<section aria-label="Problem and scope">
+  <h2>Read the scene. Remember the sign.</h2>
+  <ul><li>“What is in front of me?”</li><li>“What was written on the sign I passed?”</li><li>English, French and Arabic input/output paths.</li></ul>
+  <p><strong>Honest uncertainty:</strong> no face recognition, unsupported distance claims or assurances that a route is safe.</p>
+  <p>Consent before capture; selected images expire after 24 hours by default. Users can delete their data earlier.</p>
+</section>
+<section aria-label="Architecture">
+  <h2>Two independent processing paths</h2>
+  <div class="flow">Phone camera → WebRTC server relay → live dashboard video</div>
+  <div class="grid"><div><strong>Live objects</strong><p>Newest frame → YOLO → fresh observations → optional spoken alerts.</p><p>No OCR or generative model on this path.</p></div><div><strong>Visual memory</strong><p>Sample → quality/deduplication → enhance → OCR → image/database save → deferred caption and embedding.</p></div></div>
+  <p>Whisper → question → evidence retrieval → vision-language answer → native speech or WAV.</p>
+</section>
+<section aria-label="Technology stack">
+  <h2>Technology stack</h2>
+  <div class="grid"><div><strong>Clients and transport</strong><p>Expo / React Native · React / Vite · WebRTC / aiortc · TURN · authenticated WebSockets.</p></div><div><strong>Processing and storage</strong><p>FastAPI · OpenCV · Tesseract · YOLO11n · PostgreSQL / pgvector · RustFS objects.</p></div></div>
+  <p>Whisper speech recognition, Ollama Qwen2.5-VL and Qwen3 embeddings, native mobile speech and eSpeak WAV.</p>
+  <p class="muted">Local Docker deployment. Ollama is limited to two CPU cores for this laptop.</p>
+</section>
+<section aria-label="Image processing and multimedia database">
+  <h2>Useful frames become searchable memory</h2>
+  <ul><li>Sharpness and brightness checks; perceptual-hash duplicate rejection.</li><li>CLAHE, denoising and sharpening; OCR fallback removes long sign borders on an analysis copy.</li><li>Original/enhanced image keys, OCR, boxes, captions, timestamps and embeddings stored together.</li><li>Time filters plus semantic and lexical retrieval; objects and text remain searchable when captions are skipped.</li></ul>
+  <p>Bounded queues prevent slow descriptions from creating an unlimited backlog.</p>
+</section>
+<section aria-label="Grounded answers and accessibility">
+  <h2>Answers carry their evidence</h2>
+  <ul><li>Text-reading questions use retained OCR; visual questions include camera images in a numbered contact sheet.</li><li>Only supplied frame IDs can be cited; evidence is checked again after inference.</li><li>Weak, unavailable or stale current-view evidence produces uncertainty.</li><li>Phone and dashboard share status, retained frames, questions and feedback.</li><li>Fresh alerts interrupt answer speech; paused or expired observations are not spoken.</li></ul>
+</section>
+<section aria-label="Verification">
+  <h2>Evidence, with explicit limits</h2>
+  <ul><li>94 backend tests: ownership, retention/deletion, inference scheduling, streaming, OCR and live-alert independence.</li><li>18 mobile tests; lint, typecheck and iOS JavaScript export.</li><li>15 dashboard tests and production build.</li><li>Real-service test: generated signs, continuous publisher/viewer video, OCR, semantic retrieval, multilingual answers, speech, feedback and deletion.</li></ul>
+  <p>Use the checked-in <a href="../backend/docs/acceptance-report.json">acceptance report</a> and <a href="../backend/docs/validation.md">validation notes</a> for final measured values and any failures.</p>
+  <small>Synthetic checks measure functionality; they are not human answer-accuracy or obstacle-recall results.</small>
+</section>
+<section aria-label="What we learned and limitations">
+  <h2>Latency determines the architecture</h2>
+  <ul><li>A slow vision-language model cannot be the trigger for immediate object alerts.</li><li>Freshness matters: an old observation must not become a current walking instruction.</li><li>The 80-class detector does not include doors or stairs. Closed-door VLM interpretation remains best effort.</li><li>Server timing excludes phone capture, network and audible speech onset.</li><li>Physical iPhone accessibility, real-world recall and human answer ratings require representative consented testing.</li></ul>
+</section>
+<section aria-label="Live demo">
+  <h2>Live demonstration</h2>
+  <ol><li>Consent and start phone capture; show dashboard live video.</li><li>Show an EXIT sign; inspect OCR, objects and saved evidence.</li><li>Ask by voice, then ask about an earlier sign in Memory.</li><li>Repeat in French; search by meaning and time.</li><li>Demonstrate an opt-in supported central-object alert and speech interruption.</li><li>Pause, inspect history/feedback, and delete the session.</li></ol>
+  <p><a href="demo.md">Detailed demo and physical-device checklist</a></p>
+</section>
+</main>
+<nav aria-label="Slide navigation"><button id="previous">← Previous</button><span id="count" aria-live="polite"></span><button id="next">Next →</button><button id="print">Print / PDF</button></nav>
+<script>
+  const slides=[...document.querySelectorAll('section')];let index=0;
+  function show(value){index=Math.max(0,Math.min(slides.length-1,value));slides.forEach((slide,i)=>{slide.classList.toggle('active',i===index);slide.setAttribute('aria-hidden',String(i!==index));});document.querySelector('#count').textContent=`${index+1} / ${slides.length}`;document.querySelector('#previous').disabled=index===0;document.querySelector('#next').disabled=index===slides.length-1;}
+  document.querySelector('#previous').onclick=()=>show(index-1);document.querySelector('#next').onclick=()=>show(index+1);document.querySelector('#print').onclick=()=>window.print();document.addEventListener('keydown',event=>{if(event.key==='ArrowRight')show(index+1);if(event.key==='ArrowLeft')show(index-1);});show(0);
+</script>
+</html>

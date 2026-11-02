@@ -47,7 +47,7 @@ class FrameOut(ORMModel):
     enhancements: list[str]
     processing_warnings: list[str]
     processing_ms: float
-    enrichment_status: Literal["pending", "complete", "failed"]
+    enrichment_status: Literal["pending", "processing", "complete", "failed", "skipped"]
     enrichment_ms: float | None
     captured_at: datetime
     expires_at: datetime

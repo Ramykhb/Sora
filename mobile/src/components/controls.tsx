@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, TextInput, type TextInputProps } from 'react-native';
 export function Action({ title, onPress, disabled = false }: { title: string; onPress: () => void; disabled?: boolean }) {
-  return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[ui.button, disabled && { opacity: 0.45 }]}><Text style={ui.buttonText}>{title}</Text></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[ui.button, disabled && { opacity: 0.45 }]}><Text style={ui.buttonText}>{title}</Text></Pressable>;
 }
 export function Field(props: TextInputProps) {
   return <TextInput placeholderTextColor="#74847A" {...props} accessibilityLabel={props.accessibilityLabel || props.placeholder} style={[ui.input, props.style]} />;

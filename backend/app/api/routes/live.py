@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import suppress
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
@@ -233,4 +234,5 @@ async def event_socket(socket: WebSocket, session_id: UUID):
     except WebSocketDisconnect:
         pass
     except (HTTPException, ValueError):
-        await socket.close(code=1008, reason="Session unavailable or subscriber limit reached")
+        with suppress(WebSocketDisconnect, RuntimeError):
+            await socket.close(code=1008, reason="Session unavailable or subscriber limit reached")

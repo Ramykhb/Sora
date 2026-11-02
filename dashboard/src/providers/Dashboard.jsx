@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { useAuth } from './Auth.jsx';
 import { chooseSession, subscribeEvents } from '../lib/live.js';
 import { loadDashboard } from '../lib/dashboard.js';
+import { isFreshObservation } from '../lib/observations.js';
 const DashboardContext = createContext(null);
 export function DashboardProvider({ children }) {
   const { api, tokens } = useAuth();
@@ -14,6 +15,7 @@ export function DashboardProvider({ children }) {
   const [alerts, setAlerts] = useState([]);
   const [events, setEvents] = useState([]);
   const [status, setStatus] = useState(null);
+  const [observation, setObservation] = useState(null);
   const [connection, setConnection] = useState('Connecting');
   const [error, setError] = useState('');
   const [networkError, setNetworkError] = useState('');
@@ -29,25 +31,44 @@ export function DashboardProvider({ children }) {
   const audio = useRef(null);
   const mediaUrl = useRef(null);
   const speechGeneration = useRef(0);
+  const urgentUntil = useRef(0);
   const session = sessions.find(item => item.id === selectedId) || null;
   const stopSpeaking = useCallback(() => {
     speechGeneration.current++;
+    urgentUntil.current = 0;
     audio.current?.pause(); audio.current = null;
     if (mediaUrl.current) URL.revokeObjectURL(mediaUrl.current);
     mediaUrl.current = null;
   }, []);
-  const play = useCallback(async (path, body) => {
+  const play = useCallback(async (path, body, options = {}) => {
+    if (!options.priority && urgentUntil.current > Date.now()) return;
+    if (options.expires_at && !isFreshObservation(options)) return;
     stopSpeaking(); setMediaError('');
+    // The deadline limits when an alert may start, not how long its speech
+    // remains higher priority than an ordinary answer.
+    if (options.priority) urgentUntil.current = Infinity;
     const generation = speechGeneration.current;
-    const response = await api.response(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
-    const blob = await response.blob();
+    let blob;
+    try {
+      const response = await api.response(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+      blob = await response.blob();
+    } catch (error) {
+      if (generation === speechGeneration.current) stopSpeaking();
+      throw error;
+    }
     if (generation !== speechGeneration.current) return;
+    if (options.expires_at && !isFreshObservation(options)) { stopSpeaking(); return; }
     const url = URL.createObjectURL(blob); mediaUrl.current = url;
     const player = new Audio(url); audio.current = player;
-    player.onerror = () => setMediaError('Unable to play this audio.');
+    player.onerror = () => { if (audio.current === player) stopSpeaking(); setMediaError('Unable to play this audio.'); };
     player.onended = () => { if (audio.current === player) stopSpeaking(); };
     try { await player.play(); } catch { stopSpeaking(); throw new Error('Playback was blocked. Use the answer’s Play button to hear it.'); }
   }, [api, stopSpeaking]);
+  useEffect(() => {
+    if (!observation) return;
+    const timer = setTimeout(() => setObservation(null), Math.max(0, Date.parse(observation.expires_at) - Date.now()));
+    return () => clearTimeout(timer);
+  }, [observation]);
   useEffect(() => () => stopSpeaking(), [stopSpeaking]);
   useEffect(() => {
     const hide = () => { if (document.hidden) stopSpeaking(); };
@@ -92,7 +113,7 @@ export function DashboardProvider({ children }) {
   useEffect(() => {
     current.current = selectedId;
     loaded.current = { frames: 50, questions: 50 };
-    stopSpeaking(); setFrames([]); setQuestions([]); setAlerts([]); setEvents([]); setStatus(null);
+    stopSpeaking(); setFrames([]); setQuestions([]); setAlerts([]); setEvents([]); setStatus(null); setObservation(null);
     if (!selectedId) return;
     let disposed = false;
     let timer;
@@ -101,7 +122,9 @@ export function DashboardProvider({ children }) {
     const unsubscribe = subscribeEvents(api, selectedId, event => {
       if (event.type === 'ready') refresh();
       if (event.type === 'session_updated' && event.session) setSessions(previous => previous.map(item => item.id === event.session.id ? { ...item, ...event.session } : item));
-      if (!['heartbeat', 'ready'].includes(event.type)) setEvents(previous => [{ ...event, receivedAt: new Date().toISOString() }, ...previous].slice(0, 30));
+      if (!['heartbeat', 'ready', 'observation'].includes(event.type)) setEvents(previous => [{ ...event, receivedAt: new Date().toISOString() }, ...previous].slice(0, 30));
+      if (event.type === 'observation' && isFreshObservation(event)) setObservation(event);
+      if (event.type === 'stream_stopped') setObservation(null);
       if (event.frame) setFrames(previous => [event.frame, ...previous.filter(item => item.id !== event.frame.id)].sort((a, b) => Date.parse(b.captured_at) - Date.parse(a.captured_at)).slice(0, Math.max(50, previous.length)));
       if (event.question) {
         setQuestions(previous => [event.question, ...previous.filter(item => item.id !== event.question.id)]);
@@ -109,7 +132,7 @@ export function DashboardProvider({ children }) {
       }
       if (event.type === 'alert') {
         setAlerts(previous => [{ ...event, created_at: new Date().toISOString() }, ...previous].slice(0, 50));
-        if (spokenRef.current && event.message) void play('/speech/synthesis', { text: event.message, language: event.language || 'en' }).catch(e => setMediaError(e.message));
+        if (spokenRef.current && event.message && isFreshObservation(event)) void play('/speech/synthesis', { text: event.message, language: event.language || 'en' }, { priority: true, expires_at: event.expires_at }).catch(e => setMediaError(e.message));
       }
       if (event.type === 'processing_error') setError(event.message || event.code || 'Frame processing failed.');
       if (event.type.startsWith('stream_')) {
@@ -131,6 +154,6 @@ export function DashboardProvider({ children }) {
     (kind === 'frames' ? setFrameMore : setQuestionMore)(result.length === 50);
   }
   function select(id) { setFollowLive(false); setSelectedId(id); }
-  return <DashboardContext.Provider value={{ api, sessions, session, selectedId, select, followLive, setFollowLive, metrics, frames, questions, alerts, events, status, connection, error: error || networkError, setError, loading, refreshSessions, refreshData, loadMore, frameMore, questionMore, spoken, setSpoken, play, stopSpeaking, mediaError, setMediaError }}>{children}</DashboardContext.Provider>;
+  return <DashboardContext.Provider value={{ api, sessions, session, selectedId, select, followLive, setFollowLive, metrics, frames, questions, alerts, events, status, observation, connection, error: error || networkError, setError, loading, refreshSessions, refreshData, loadMore, frameMore, questionMore, spoken, setSpoken, play, stopSpeaking, mediaError, setMediaError }}>{children}</DashboardContext.Provider>;
 }
 export function useDashboard() { return useContext(DashboardContext); }

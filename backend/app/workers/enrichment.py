@@ -24,7 +24,8 @@ async def update_frame(frame_id, **values):
     async with SessionFactory() as db:
         frame = await db.scalar(
             update(Frame)
-            .where(Frame.id == frame_id, Frame.expires_at > now(), Frame.enrichment_status == "pending")
+            .where(Frame.id == frame_id, Frame.expires_at > now(),
+                   Frame.enrichment_status.in_(["pending", "processing"]))
             .values(**values)
             .returning(Frame)
         )
@@ -41,7 +42,8 @@ async def enrich_frame(frame_id):
     async with SessionFactory() as db:
         frame = await db.scalar(
             select(Frame).where(
-                Frame.id == frame_id, Frame.expires_at > now(), Frame.enrichment_status == "pending"
+                Frame.id == frame_id, Frame.expires_at > now(),
+                Frame.enrichment_status.in_(["pending", "processing"])
             )
         )
         if frame is None:
@@ -94,17 +96,26 @@ async def enrich_frame(frame_id):
 
 
 async def enrichment_loop():
-    # Pending work stays in the database across restarts. Only one image is
-    # loaded/inferred at a time, so capture cannot create an in-memory backlog.
+    # Recover a single-process worker interrupted by a server restart.
+    async with SessionFactory() as db:
+        await db.execute(update(Frame).where(
+            Frame.enrichment_status == "processing"
+        ).values(enrichment_status="pending"))
+        await db.commit()
     while True:
         try:
             async with SessionFactory() as db:
                 frame_id = await db.scalar(
                     select(Frame.id)
                     .where(Frame.enrichment_status == "pending", Frame.expires_at > now())
-                    .order_by(Frame.captured_at)
+                    .order_by(Frame.captured_at.desc())
                     .limit(1)
                 )
+                if frame_id is not None:
+                    await db.execute(update(Frame).where(
+                        Frame.id == frame_id, Frame.enrichment_status == "pending"
+                    ).values(enrichment_status="processing"))
+                    await db.commit()
             if frame_id is None:
                 await asyncio.sleep(0.5)
                 continue

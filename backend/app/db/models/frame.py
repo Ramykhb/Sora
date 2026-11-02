@@ -97,11 +97,12 @@ class Alert(Base):
     session_id: Mapped[UUID] = mapped_column(
         ForeignKey("capture_sessions.id", ondelete="CASCADE"), index=True
     )
-    frame_id: Mapped[UUID] = mapped_column(
-        ForeignKey("stored_frames.id", ondelete="CASCADE"), index=True
+    frame_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("stored_frames.id", ondelete="CASCADE"), index=True, nullable=True
     )
     label: Mapped[str] = mapped_column(String(100))
     message: Mapped[str] = mapped_column(Text)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

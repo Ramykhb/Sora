@@ -52,6 +52,11 @@ def client(tmp_path, monkeypatch):
             monkeypatch.setattr(module, "SessionFactory", factory)
     monkeypatch.setattr(main, "engine", engine)
     monkeypatch.setattr(main, "warmup_detector", lambda: None)
+    import app.services.frames.processing as processing
+    monkeypatch.setattr(processing, "detect_live", lambda _: (
+        100, 100, [{"label": "chair", "confidence": 0.9, "box": [20, 20, 80, 95]}]
+    ))
+    monkeypatch.setattr(ingestion, "read_text", lambda *args: ("EXIT", 95))
     # Background enrichment is driven explicitly in its integration tests.
     async def idle_enrichment():
         await asyncio.Event().wait()

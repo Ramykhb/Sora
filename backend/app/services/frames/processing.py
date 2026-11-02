@@ -3,9 +3,11 @@ from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 import threading
+from time import perf_counter
 import cv2
 import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL.Image import open as open_image
 import pytesseract
 from app.core.config import settings
 from app.core.errors import BackendError
@@ -42,7 +44,9 @@ def prepare_image(content: bytes) -> PreparedImage:
     if not content or len(content) > settings.max_upload_mb * 1024 * 1024:
         raise BackendError("Image is empty or exceeds upload limit", 413, "upload_limit")
     try:
-        with Image.open(BytesIO(content)) as source:
+        # Bind Pillow's decoder before inference libraries patch Image.open with
+        # optional format installers. Malformed uploads must never install code.
+        with open_image(BytesIO(content), formats=("JPEG", "PNG", "WEBP")) as source:
             if source.width * source.height > settings.max_image_pixels:
                 raise BackendError("Image exceeds pixel limit", 413, "pixel_limit")
             source = ImageOps.exif_transpose(source).convert("RGB")
@@ -100,8 +104,10 @@ def vision_image(prepared: PreparedImage) -> bytes:
 
 @lru_cache
 def detector():
+    import torch
     from ultralytics import YOLO
 
+    torch.set_num_threads(settings.detector_threads)
     return YOLO(settings.yolo_model)
 
 
@@ -112,17 +118,38 @@ def warmup_detector():
             detector().predict(
                 np.zeros((640, 640, 3), dtype=np.uint8),
                 conf=settings.yolo_confidence, device=settings.model_device, verbose=False,
+                imgsz=settings.detection_image_size,
             )
 
 
-def analyze_image(prepared: PreparedImage, languages: str | None = None) -> Analysis:
+def read_text(prepared: PreparedImage, languages: str | None = None) -> tuple[str, float]:
+    started = perf_counter()
+    rgb = cv2.cvtColor(prepared.image, cv2.COLOR_BGR2RGB)
     try:
         data = pytesseract.image_to_data(
-            cv2.cvtColor(prepared.image, cv2.COLOR_BGR2RGB),
+            rgb,
             lang=languages or settings.ocr_languages,
             output_type=pytesseract.Output.DICT,
             timeout=25,
         )
+        if not any(word.strip() for word in data["text"]):
+            # Printed sign/table borders can make Tesseract treat the whole
+            # region as a graphic. Remove only long straight rules on an OCR
+            # copy; retain the stored image and original object observations.
+            gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+            _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+            height, width = gray.shape
+            horizontal = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((1, max(64, width // 3)), np.uint8))
+            vertical = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((max(64, height // 3), 1), np.uint8))
+            lines = cv2.bitwise_or(horizontal, vertical)
+            if np.any(lines):
+                clean = cv2.bitwise_not(cv2.subtract(ink, lines))
+                remaining = 25 - (perf_counter() - started)
+                if remaining > 0.1:
+                    data = pytesseract.image_to_data(
+                        clean, lang=languages or settings.ocr_languages, config="--psm 11",
+                        output_type=pytesseract.Output.DICT, timeout=remaining,
+                    )
     except (pytesseract.TesseractNotFoundError, pytesseract.TesseractError, RuntimeError) as exc:
         raise BackendError(
             "OCR failed; check Tesseract and installed language data", 503, "ocr_unavailable"
@@ -132,13 +159,19 @@ def analyze_image(prepared: PreparedImage, languages: str | None = None) -> Anal
         if word.strip() and float(confidence) >= 0:
             words.append(word.strip())
             confidences.append(float(confidence))
+    return " ".join(words), sum(confidences) / max(len(confidences), 1)
+
+
+def detect_objects(image: np.ndarray) -> list[dict]:
+    """Fast bounded-resolution detection; boxes remain in source-image coordinates."""
     try:
         with _detector_lock:
             result = detector().predict(
-                prepared.image,
+                image,
                 conf=settings.yolo_confidence,
                 device=settings.model_device,
                 verbose=False,
+                imgsz=settings.detection_image_size,
             )[0]
         objects = []
         for box in result.boxes:
@@ -153,4 +186,21 @@ def analyze_image(prepared: PreparedImage, languages: str | None = None) -> Anal
         raise BackendError(
             "Object detection failed; check YOLO weights and device", 503, "detector_unavailable"
         ) from exc
-    return Analysis(" ".join(words), sum(confidences) / max(len(confidences), 1), objects)
+    return objects
+
+
+def detect_live(content: bytes) -> tuple[int, int, list[dict]]:
+    # Live observations must not depend on OCR, deduplication or image enhancement.
+    image = cv2.imdecode(np.frombuffer(content, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise BackendError("Cannot decode live image", 422, "invalid_image")
+    height, width = image.shape[:2]
+    if width * height > settings.max_image_pixels:
+        raise BackendError("Image exceeds pixel limit", 413, "pixel_limit")
+    return width, height, detect_objects(image)
+
+
+def analyze_image(prepared: PreparedImage, languages: str | None = None) -> Analysis:
+    objects = detect_objects(prepared.image)
+    text, confidence = read_text(prepared, languages)
+    return Analysis(text, confidence, objects)
