@@ -3,9 +3,10 @@ import { NativeModules, Text, View } from 'react-native';
 import type * as NativeRTC from 'react-native-webrtc';
 import { useAuth } from '@/providers/auth';
 import { maintainVideo, publishVideo, type StreamConfig } from '@/lib/webrtc';
-import { ui } from './controls';
+import { useUI } from './controls';
 
-export function LiveCamera({ sessionId, active }: { sessionId: string; active: boolean }) {
+export function LiveCamera({ sessionId, active, fullscreen = false, facing = 'back', onConnectionChange }: { sessionId: string; active: boolean; fullscreen?: boolean; facing?: 'back' | 'front'; onConnectionChange?: (connected: boolean) => void }) {
+  const ui = useUI();
   const { api } = useAuth();
   const [rtc] = useState(() => {
     // Check before importing: WebRTC creates a native event emitter at import time.
@@ -18,6 +19,7 @@ export function LiveCamera({ sessionId, active }: { sessionId: string; active: b
   const [stream, setStream] = useState<NativeRTC.MediaStream | null>(null);
   const [status, setStatus] = useState('Connecting video…');
   const [attempt, setAttempt] = useState(0);
+  useEffect(() => { onConnectionChange?.(active && status === 'Streaming live video'); }, [active, status, onConnectionChange]);
   useEffect(() => {
     if (!active || !rtc) return;
     let disposed = false;
@@ -40,7 +42,7 @@ export function LiveCamera({ sessionId, active }: { sessionId: string; active: b
       try {
         const config = await api.request<StreamConfig>(`/sessions/${sessionId}/stream/config`);
         if (disposed) return;
-        media = await rtc!.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'environment', width: 1280, height: 720, frameRate: 15 } });
+        media = await rtc!.mediaDevices.getUserMedia({ audio: false, video: { facingMode: facing === 'back' ? 'environment' : 'user', width: 1280, height: 720, frameRate: 15 } });
         if (disposed) { media.getTracks().forEach(track => track.stop()); return; }
         setStream(media);
         peer = new rtc!.RTCPeerConnection({ iceServers: config.ice_servers, iceTransportPolicy: config.ice_transport_policy });
@@ -60,10 +62,10 @@ export function LiveCamera({ sessionId, active }: { sessionId: string; active: b
       disposed = true; controller.abort(); clearTimeout(retry); clearTimeout(watchdog);
       release?.(); peer?.close(); media?.getTracks().forEach(track => track.stop()); setStream(null);
     };
-  }, [active, api, rtc, sessionId, attempt]);
+  }, [active, api, rtc, sessionId, attempt, facing]);
   const Video = rtc?.RTCView;
-  return <View style={ui.card}>
-    <Text style={ui.subtitle}>{!rtc ? 'Live video requires a development build with WebRTC. Install the rebuilt app instead of opening Expo Go.' : active ? status : 'Camera paused'}</Text>
-    {active && Video && stream && <Video streamURL={stream.toURL()} objectFit="cover" style={{ height: 240, borderRadius: 16 }} />}
+  return <View style={fullscreen ? { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 } : ui.card}>
+    {(!fullscreen || !rtc || status !== 'Streaming live video') && <Text accessibilityLiveRegion="polite" style={fullscreen ? { position: 'absolute', top: 115, left: 22, right: 22, zIndex: 2, color: 'white', backgroundColor: '#080D1699', padding: 10, borderRadius: 10 } : ui.subtitle}>{!rtc ? 'Live video requires a development build with WebRTC. Install the rebuilt app instead of opening Expo Go.' : active ? status : 'Camera paused'}</Text>}
+    {active && Video && stream && <Video streamURL={stream.toURL()} objectFit="cover" style={fullscreen ? { flex: 1 } : { height: 240, borderRadius: 16 }} />}
   </View>;
 }

@@ -1,0 +1,97 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Platform, StyleSheet, Switch, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { NavigationBar } from 'expo-navigation-bar';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useAuth } from '@/providers/auth';
+import { usePreferences } from '@/providers/preferences';
+import type { Answer, CaptureSession, Frame } from '@/lib/api';
+import { speech } from '@/lib/speech';
+import { AuthScreen } from '@/components/auth-screen';
+import { LiveCamera } from '@/components/live-camera';
+import { Card, Icon, Label, Page, Primary, Tap } from '@/components/sora-ui';
+export default function CameraScreen() { const { tokens } = useAuth(); return tokens ? <Capture /> : <AuthScreen />; }
+function Capture() {
+  const params = useLocalSearchParams<{ mode?: string; sessionId?: string }>();
+  const mode = params.mode === 'text' ? 'text' : params.mode === 'scene' ? 'scene' : 'live';
+  const { api } = useAuth(); const { preferences, colors, update, dark } = usePreferences();
+  const roundStyle = [cameraStyles.round, { backgroundColor: dark ? '#272D37BB' : '#FFFFFFEE' }];
+  const controlColor = dark ? '#FFFFFF' : colors.text;
+  const [permission, requestPermission] = useCameraPermissions();
+  const camera = useRef<CameraView>(null);
+  const [session, setSession] = useState<CaptureSession | null>(null);
+  const [consent, setConsent] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [facing, setFacing] = useState<'back' | 'front'>('back');
+  const [focused, setFocused] = useState(true); const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  useFocusEffect(useCallback(() => { setFocused(true); return () => { setFocused(false); void speech.stop(); }; }, []));
+  useEffect(() => { const sub = AppState.addEventListener('change', value => { setForeground(value === 'active'); }); return () => sub.remove(); }, []);
+  useEffect(() => { if (!session) return; const timer = setTimeout(() => { setSession(null); setError('This session expired. Start a new session.'); }, Math.max(0, Date.parse(session.expires_at) - Date.now())); return () => clearTimeout(timer); }, [session]);
+  async function run(work: () => Promise<void>) { setBusy(true); setError(''); try { await work(); } catch (e) { setError(e instanceof Error ? e.message : 'Capture failed. Please try again.'); } finally { setBusy(false); } }
+  function result(frame: Frame, answerId?: string) {
+    router.push({ pathname: mode === 'text' ? '/read-text' : '/scene', params: { sessionId: frame.session_id, frameId: frame.id, ...(answerId ? { answerId } : {}) } });
+  }
+  async function upload(uri: string, mime = 'image/jpeg', name = 'capture.jpg', sessionId = session?.id) {
+    if (!sessionId) return;
+    const form = new FormData();
+    if (Platform.OS === 'web') form.append('image', await (await fetch(uri)).blob(), name);
+    else form.append('image', { uri, type: mime, name } as unknown as Blob);
+    form.append('force', 'true');
+    setUploading(true);
+    let value: { frame?: Frame | null; reason?: string };
+    try { value = await api.upload<{ frame?: Frame | null; reason?: string }>(`/sessions/${sessionId}/frames`, form); }
+    finally { setUploading(false); }
+    if (!value.frame) throw new Error(value.reason || 'This image could not be processed. Try another image.');
+    result(value.frame);
+  }
+  async function capture() {
+    if (!session) return;
+    if (mode === 'live') {
+      // The existing current-view question path saves a fresh WebRTC snapshot
+      // and returns its retained evidence IDs. Keep that capture policy on the server.
+      const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question: 'Describe the current scene', scope: 'recent', language: session.language });
+      if (!answer.evidence_frame_ids[0]) throw new Error(answer.answer || 'Waiting for a fresh scene. Keep the camera steady and try again.');
+      const frame = await api.request<Frame>(`/sessions/${session.id}/frames/${answer.evidence_frame_ids[0]}`);
+      result(frame, answer.id); return;
+    }
+    const picture = await camera.current?.takePictureAsync({ quality: 0.85 });
+    if (!picture) throw new Error('Camera is not ready. Please try again.');
+    await upload(picture.uri);
+  }
+  if (!session) return <Page title={mode === 'text' ? 'Read Text' : 'Live Assistance'}><View style={{ flex: 1, justifyContent: 'center', gap: 22 }}><Card><Icon name="camera-outline" size={42} /><Label bold size={25}>See beyond.</Label><Label muted>Camera images are analyzed to describe scenes and read text. Selected images and conversations are stored until your session expires.</Label><View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><Switch accessibilityLabel="Consent to camera processing and visual memory storage" value={consent} onValueChange={setConsent} /><Label size={13} style={{ flex: 1 }}>I consent to camera processing and visual memory storage.</Label></View></Card>{!!error && <Label accessibilityRole="alert" style={{ color: colors.danger }}>{error}</Label>}<Primary title={busy ? uploading ? 'Processing image\u2026' : 'Starting\u2026' : 'Start camera'} disabled={!consent || busy} onPress={() => void run(async () => {
+    if (mode !== 'live') { const granted = permission?.granted ? permission : await requestPermission(); if (!granted.granted) throw new Error('Camera access is required. Enable it in your device settings, then try again.'); }
+    const previous = params.sessionId ? await api.request<CaptureSession>(`/sessions/${params.sessionId}`) : null;
+    const created = previous?.status === 'active' ? previous : await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language: 'en', alerts_enabled: false }); setSession(created);
+    if (preferences.guidance) void speech.answer('Point your camera at your surroundings. Tap the center button to describe a scene, or choose an image from your gallery.', 'en');
+  })} /><Tap label="Choose image without camera" disabled={!consent || busy} onPress={() => void run(async () => {
+    // Open the picker directly from the gesture; browser file pickers need user activation.
+    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
+    if (picked.canceled) return;
+    const previous = params.sessionId ? await api.request<CaptureSession>(`/sessions/${params.sessionId}`) : null;
+    const created = previous?.status === 'active' ? previous : await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language: 'en', alerts_enabled: false });
+    const asset = picked.assets[0];
+    await upload(asset.uri, asset.mimeType || 'image/jpeg', asset.fileName || 'gallery.jpg', created.id);
+  })} style={{ alignItems: 'center', justifyContent: 'center' }}><Label bold>Choose from gallery</Label></Tap></View></Page>;
+  return <View style={{ flex: 1, backgroundColor: '#080D16' }}>{focused && <><StatusBar style="light" /><NavigationBar style="light" /></>}
+    {focused && foreground && (mode === 'live' ? <LiveCamera sessionId={session.id} active fullscreen facing={facing} onConnectionChange={setConnected} /> : <CameraView ref={camera} style={StyleSheet.absoluteFill} facing={facing} />)}
+    <SafeAreaView style={{ flex: 1, justifyContent: 'space-between' }} pointerEvents="box-none">
+      <View style={{ flexDirection: 'row', paddingHorizontal: 18, paddingTop: 12, gap: 12, alignItems: 'center' }}><Tap label="Back to home" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} style={roundStyle}><Icon name="chevron-back" color={controlColor} /></Tap><View style={{ flex: 1, alignItems: 'center' }}><View style={{ backgroundColor: dark ? '#171D25BB' : '#FFFFFFEE', borderRadius: 30, padding: 12, flexDirection: 'row', gap: 8, alignItems: 'center' }}><View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: mode !== 'live' || connected ? dark ? colors.primary : '#23D889' : colors.primary }} /><Label bold size={12} style={{ color: controlColor }}>{mode === 'live' ? connected ? 'Live Assistance' : 'Connecting...' : mode === 'text' ? 'Read Text' : 'Describe Scene'}</Label></View></View><Tap label={preferences.speak ? 'Mute descriptions' : 'Unmute descriptions'} onPress={() => { update({ speak: !preferences.speak }); void speech.stop(); }} style={roundStyle}><Icon name={preferences.speak ? 'volume-high-outline' : 'volume-mute-outline'} color={controlColor} size={23} /></Tap></View>
+      <View pointerEvents="none" style={{ height: '43%', marginHorizontal: 40 }}>{[0, 1, 2, 3].map(index => <View key={index} style={{ position: 'absolute', width: 44, height: 44, borderColor: 'white', ...(index < 2 ? { top: 0, borderTopWidth: 5 } : { bottom: 0, borderBottomWidth: 5 }), ...(index % 2 === 0 ? { left: 0, borderLeftWidth: 5 } : { right: 0, borderRightWidth: 5 }), borderTopLeftRadius: index === 0 ? 17 : 0, borderTopRightRadius: index === 1 ? 17 : 0, borderBottomLeftRadius: index === 2 ? 17 : 0, borderBottomRightRadius: index === 3 ? 17 : 0 }} />)}</View>
+      <View style={{ gap: 15, backgroundColor: dark ? '#080D1688' : '#FFFFFFCC', padding: 20, borderTopLeftRadius: 28, borderTopRightRadius: 28 }}>
+        {!!error && <Label accessibilityRole="alert" style={{ color: '#FFFFFF', backgroundColor: '#7A2035', padding: 12, borderRadius: 12 }}>{error}</Label>}
+        {busy && <Label accessibilityLiveRegion="polite" style={{ color: 'white', textAlign: 'center' }}>Processing image…</Label>}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Tap label="Choose image from gallery" disabled={busy} onPress={() => void run(async () => { const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 }); if (!picked.canceled) await upload(picked.assets[0].uri, picked.assets[0].mimeType || 'image/jpeg', picked.assets[0].fileName || 'gallery.jpg'); })} style={roundStyle}><Icon name="image-outline" color={dark ? controlColor : colors.primary} size={29} /></Tap>
+          <Tap label={mode === 'live' ? 'Capture and describe current scene' : 'Capture image'} disabled={busy} onPress={() => void run(capture)} style={{ width: 86, height: 86, borderRadius: 43, borderWidth: 5, borderColor: '#FFFFFF', padding: 4 }}><LinearGradient colors={dark ? [colors.primary, colors.primary] : [colors.accent, colors.primary]} style={{ flex: 1, borderRadius: 40 }} /></Tap>
+          <Tap label="Switch camera" disabled={busy} onPress={() => setFacing(value => value === 'back' ? 'front' : 'back')} style={roundStyle}><Icon name="camera-reverse-outline" color={controlColor} size={30} /></Tap>
+        </View>
+      </View>
+    </SafeAreaView>
+  </View>;
+}
+const cameraStyles = StyleSheet.create({ round: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#272D37BB', alignItems: 'center', justifyContent: 'center' } });

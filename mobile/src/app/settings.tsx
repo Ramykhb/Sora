@@ -1,19 +1,22 @@
+import { PreferenceControls } from '@/components/preference-controls';
+import { Header, Icon, Label, Tap } from '@/components/sora-ui';
 import { useCallback, useState } from 'react';
 import { Alert, Platform, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/providers/auth';
 import type { User } from '@/lib/api';
-import { AuthScreen } from '@/components/auth-screen';
-import { Action, Field, ui } from '@/components/controls';
+import { Action, Field, useUI } from '@/components/controls';
 
 type LoginSession = { id: string; created_at: string; expires_at: string; is_current: boolean };
 export default function SettingsScreen() {
   const { tokens } = useAuth();
-  return tokens ? <Settings key={tokens.user.id} /> : <AuthScreen />;
+  return <Settings key={tokens?.user.id || 'device'} />;
 }
 function Settings() {
+  const ui = useUI();
   const { api, tokens } = useAuth();
+  const [account, setAccount] = useState(false);
   const [name, setName] = useState(tokens?.user.display_name || '');
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -26,21 +29,22 @@ function Settings() {
     try { await work(); } catch (e) { setMessage(e instanceof Error ? e.message : 'Request failed'); } finally { setBusy(false); }
   }
   useFocusEffect(useCallback(() => {
+    if (!tokens) return;
     let cancelled = false;
     void Promise.all([api.request<LoginSession[]>('/auth/sessions'), api.request<Record<string, unknown>>('/metrics')]).then(([logins, values]) => { if (!cancelled) { setSessions(logins); setMetrics(values); } }).catch(e => { if (!cancelled) setMessage(e.message); });
     return () => { cancelled = true; };
-  }, [api]));
+  }, [api, tokens]));
   async function logout(all = false) { await api.request(all ? '/auth/logout-all' : '/auth/logout', 'POST'); await api.setTokens(null); router.replace('/'); }
   function deleteAccount() {
     const work = async () => { await api.request('/auth/me', 'DELETE', { password }); await api.setTokens(null); router.replace('/'); };
     if (Platform.OS === 'web') { if (window.confirm('Permanently delete your account and all retained data?')) void run(work); }
     else Alert.alert('Delete account?', 'This permanently removes your account and retained data.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => void run(work) }]);
   }
-  return <SafeAreaView style={ui.screen}><ScrollView contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
-    <Action title="Back to Sora" onPress={() => router.replace('/')} /><Text style={ui.title}>Settings</Text><Text style={ui.copy}>{tokens?.user.email} · {tokens?.user.email_verified ? 'Verified' : 'Unverified'}</Text>
+  return <SafeAreaView style={ui.screen}><Header title="Preferences" /><ScrollView showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
+    <PreferenceControls /><Tap label={account ? 'Hide account settings' : 'Account, security & retained data'} onPress={() => tokens ? setAccount(value => !value) : router.push('/assistant')} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 }}><Label muted size={13}>Account, security & retained data</Label><Icon name={account ? 'chevron-down' : 'chevron-forward'} size={20} /></Tap>{account && tokens && <><Text style={ui.copy}>{tokens?.user.email} · {tokens?.user.email_verified ? 'Verified' : 'Unverified'}</Text>
     {!!message && <Text accessibilityLiveRegion="polite" style={ui.copy}>{message}</Text>}
     <Field placeholder="Display name" value={name} onChangeText={setName} maxLength={100} />
-    <Action title="Save profile" disabled={busy || !name.trim()} onPress={() => void run(async () => {
+    <Action variant="primary" title="Save profile" disabled={busy || !name.trim()} onPress={() => void run(async () => {
       const user = await api.request<User>('/auth/me', 'PATCH', { display_name: name.trim() });
       if (api.tokens) await api.setTokens({ ...api.tokens, user }); setMessage('Profile saved.');
     })} />
@@ -50,5 +54,5 @@ function Settings() {
     {metrics && <View style={ui.card}><Text style={ui.subtitle}>Your retained data</Text>{Object.entries(metrics).filter(([, value]) => typeof value === 'number').map(([key, value]) => <Text key={key} style={ui.copy}>{key.replaceAll('_', ' ')}: {String(value)}</Text>)}</View>}
     <Action title="Sign out" disabled={busy} onPress={() => void run(() => logout())} /><Action title="Sign out all devices" disabled={busy} onPress={() => void run(() => logout(true))} />
     <Text style={ui.copy}>To delete your account, enter your current password above.</Text><Action title="Delete account and retained data" disabled={busy || !password} onPress={deleteAccount} />
-  </ScrollView></SafeAreaView>;
+  </>}</ScrollView></SafeAreaView>;
 }

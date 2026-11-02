@@ -5,8 +5,9 @@ import { File, Paths } from 'expo-file-system';
 import { speech } from '@/lib/speech';
 import type { Answer } from '@/lib/api';
 import { useAuth } from '@/providers/auth';
-import { Action, ui } from './controls';
+import { Action, useUI } from './controls';
 export function AnswerCard({ answer, onError }: { answer: Answer; onError: (message: string) => void }) {
+  const ui = useUI();
   const { api } = useAuth();
   const player = useAudioPlayer(null);
   const [busy, setBusy] = useState(false);

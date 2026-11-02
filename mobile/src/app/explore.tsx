@@ -7,13 +7,14 @@ import { useAuth } from '@/providers/auth';
 import type { Answer, CaptureSession, Frame } from '@/lib/api';
 import { AuthScreen } from '@/components/auth-screen';
 import { AnswerCard } from '@/components/answer-card';
-import { Action, Field, ui } from '@/components/controls';
+import { Action, Field, useUI } from '@/components/controls';
 
 export default function MomentsScreen() {
   const { tokens } = useAuth();
   return tokens ? <Moments key={tokens.user.id} /> : <AuthScreen />;
 }
 function Moments() {
+  const ui = useUI();
   const { api } = useAuth();
   const [sessions, setSessions] = useState<CaptureSession[]>([]);
   const [selected, setSelected] = useState<CaptureSession | null>(null);
@@ -65,7 +66,7 @@ function Moments() {
     if (Platform.OS === 'web') { if (window.confirm(title)) void run(work); }
     else Alert.alert(title, 'This permanently deletes the selected retained data.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => void run(work) }]);
   }
-  return <SafeAreaView style={ui.screen}><ScrollView contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
+  return <SafeAreaView style={ui.screen}><ScrollView showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
     <Action title="Back to Sora" onPress={() => router.replace('/')} /><Text style={ui.title}>Moments</Text>
     {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
     {!selected ? <><Text style={ui.copy}>Choose a retained session.</Text>{sessions.length === 0 && <Text style={ui.copy}>No retained sessions yet.</Text>}{sessions.map(session => <Action key={session.id} title={`${new Date(session.created_at).toLocaleString()} · ${session.status}`} disabled={busy} onPress={() => void run(() => load(session))} />)}</> : <>

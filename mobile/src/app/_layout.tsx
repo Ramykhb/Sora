@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
 import { AuthProvider } from '@/providers/auth';
-export default function Layout() {
-  return <AuthProvider><Stack screenOptions={{ headerShown: false }} /></AuthProvider>;
-}
+import { PreferencesProvider, usePreferences } from '@/providers/preferences';
+function Navigation() { const { colors } = usePreferences(); return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }} />; }
+export default function Layout() { return <PreferencesProvider><AuthProvider><Navigation /></AuthProvider></PreferencesProvider>; }

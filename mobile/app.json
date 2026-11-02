@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "SORA",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,7 +8,7 @@
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/icon.png",
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
@@ -20,9 +20,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#080B14",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
@@ -57,9 +56,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#F8FBFF",
+          "image": "./assets/images/sora-ribbon.png",
+          "imageWidth": 130,
+          "dark": {
+            "backgroundColor": "#080D16",
+            "image": "./assets/images/sora-ribbon.png"
+          }
         }
       ],
       [
@@ -86,6 +89,19 @@
         {
           "cameraPermission": "Allow Sora to stream your camera for live assistance",
           "microphonePermission": "Allow Sora to record spoken questions"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow SORA to describe images and read text from your photo library.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-navigation-bar",
+        {
+          "enforceContrast": false
         }
       ]
     ],

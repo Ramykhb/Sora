@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 import { ApiError } from '@/lib/api';
 import { useAuth } from '@/providers/auth';
-import { ui } from './controls';
+import { useUI } from './controls';
 type Status = { streaming: boolean; frames_received?: number; frames_sampled?: number; frames_stored?: number; frames_rejected?: number; frames_dropped?: number; processing_error?: string; detection_error?: string };
 export function StreamStatus({ sessionId, onUnavailable }: { sessionId: string; onUnavailable: (error: unknown) => void }) {
+  const ui = useUI();
   const { api } = useAuth();
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState('');

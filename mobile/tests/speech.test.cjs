@@ -46,3 +46,16 @@ test('pausing during speech interruption cancels the pending alert', async () =>
   await Promise.all([pending, stopping]);
   assert.equal(spoken.length, 0);
 });
+
+test('result playback receives completion, stop and error callbacks without changing ordinary answers', async () => {
+  const { speech, spoken } = setup();
+  let completed = 0;
+  await speech.answer('Read this text', 'en', () => completed++);
+  spoken[0].options.onDone();
+  spoken[0].options.onStopped();
+  spoken[0].options.onError(new Error('Audio unavailable'));
+  assert.equal(completed, 3);
+  await speech.answer('An ordinary answer', 'fr');
+  assert.equal(spoken[1].options.language, 'fr');
+  assert.equal(spoken[1].options.onDone, undefined);
+});

@@ -20,12 +20,12 @@ export class SpeechController {
     this.interruptors.forEach(callback => callback());
     await this.driver.stop();
   }
-  async answer(text: string, language: string) {
+  async answer(text: string, language: string, onDone?: () => void) {
     if (this.urgent) return;
     const generation = ++this.generation;
     this.interruptors.forEach(callback => callback());
     await this.driver.stop();
-    if (generation === this.generation) this.driver.speak(text, { language });
+    if (generation === this.generation) this.driver.speak(text, { language, ...(onDone ? { onDone, onStopped: onDone, onError: onDone } : {}) });
   }
   async alert(id: string, text: string, language: string, expiresAt: string) {
     const deadline = Date.parse(expiresAt);

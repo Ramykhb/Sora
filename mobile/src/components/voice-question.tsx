@@ -5,9 +5,10 @@ import { File } from 'expo-file-system';
 import { speech } from '@/lib/speech';
 import { useAuth } from '@/providers/auth';
 import type { Answer, Language, Scope } from '@/lib/api';
-import { Action, ui } from './controls';
+import { Action, useUI } from './controls';
 
 export function VoiceQuestion({ sessionId, language, scope, onAnswer, onError, disabled }: { sessionId: string; language: Language; scope: Scope; onAnswer: (answer: Answer) => void; onError: (message: string) => void; disabled: boolean }) {
+  const ui = useUI();
   const { api } = useAuth();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const state = useAudioRecorderState(recorder);
