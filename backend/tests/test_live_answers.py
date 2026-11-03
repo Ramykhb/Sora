@@ -40,6 +40,7 @@ def test_object_overview_translates_labels_and_never_invents_a_route(language, w
         {"label": "chair", "confidence": .9}, {"label": "chair", "confidence": .8},
         {"label": "door", "confidence": .99}, {"label": "dog", "confidence": .01},
     ], language)
+    assert not text.startswith(("I'm not sure", "Je ne suis pas sûr", "لست متأكداً"))
     assert text.count(word) == 1
     assert "door" not in text and "dog" not in text
 

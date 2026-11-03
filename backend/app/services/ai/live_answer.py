@@ -136,15 +136,15 @@ def object_overview(objects, language):
     ))[:5]
     if not labels:
         return {
-            "en": "I'm not sure. No supported objects were identified; that does not establish a clear route.",
-            "fr": "Je ne suis pas sûr. Aucun objet reconnu n’a été détecté ; cela ne confirme pas un passage libre.",
-            "ar": "لست متأكداً. لم يتم تحديد أجسام مدعومة؛ هذا لا يؤكد خلو الطريق.",
+            "en": "No supported objects were identified; that does not establish a clear route.",
+            "fr": "Aucun objet reconnu n’a été détecté ; cela ne confirme pas un passage libre.",
+            "ar": "لم يتم تحديد أجسام مدعومة؛ هذا لا يؤكد خلو الطريق.",
         }[language]
     names = ", ".join(LABELS[label][language] for label in labels)
     return {
-        "en": f"I'm not sure. The camera detects {names}; other objects may be missed.",
-        "fr": f"Je ne suis pas sûr. La caméra détecte {names} ; d’autres objets peuvent manquer.",
-        "ar": f"لست متأكداً. تكتشف الكاميرا {names}؛ قد لا تُكتشف أجسام أخرى.",
+        "en": f"The camera detects {names}; other objects may be missed.",
+        "fr": f"La caméra détecte {names} ; d’autres objets peuvent manquer.",
+        "ar": f"تكتشف الكاميرا {names}؛ قد لا تُكتشف أجسام أخرى.",
     }[language]
 
 

@@ -2,14 +2,14 @@ import re
 import unicodedata
 
 UNKNOWN = {
-    "en": "I'm not sure. I don't have enough clear camera evidence to answer that.",
-    "fr": "Je ne suis pas sûr. Les images disponibles ne permettent pas de répondre avec certitude.",
-    "ar": "لست متأكداً. لا تتوفر صور واضحة كافية للإجابة.",
+    "en": "I don't have enough clear camera evidence to answer that.",
+    "fr": "Les images disponibles ne permettent pas de répondre avec certitude.",
+    "ar": "لا تتوفر صور واضحة كافية للإجابة.",
 }
 STALE = {
-    "en": "I'm not sure. I don't have a recent camera view. Please show the scene again.",
-    "fr": "Je ne suis pas sûr. Je n’ai pas d’image récente. Montrez à nouveau la scène.",
-    "ar": "لست متأكداً. لا تتوفر صورة حديثة. يرجى توجيه الكاميرا إلى المشهد مجدداً.",
+    "en": "I don't have a recent camera view. Please show the scene again.",
+    "fr": "Je n’ai pas d’image récente. Montrez à nouveau la scène.",
+    "ar": "لا تتوفر صورة حديثة. يرجى توجيه الكاميرا إلى المشهد مجدداً.",
 }
 # Block safety assurances and unsupported movement directions in all supported languages.
 FORBIDDEN = re.compile(
@@ -33,12 +33,14 @@ def blocked_text(text):
 def guard_answer(text, uncertain, language, evidence_ids):
     if not evidence_ids or blocked_text(text):
         return UNKNOWN[language], True
-    if uncertain:
-        prefix = {"en": "I'm not sure. ", "fr": "Je ne suis pas sûr. ", "ar": "لست متأكداً. "}[
-            language
-        ]
-        if not text.startswith(prefix.strip()):
-            text = prefix + text
+    # Keep evidence uncertainty in metadata and specific limitations in the answer,
+    # rather than adding the same preface to every observation.
+    text = re.sub(
+        r"^(?:(?:I(?:['’]m| am) not sure|Je ne suis pas s[ûu]r|لست متأكداً)[.!]\s*)+",
+        "", text.strip(), flags=re.I,
+    )
+    if not text:
+        return UNKNOWN[language], True
     return text[:700], uncertain
 
 
