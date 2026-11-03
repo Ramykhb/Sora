@@ -1,18 +1,22 @@
 import { View } from 'react-native';
 import { useState } from 'react';
 import { usePreferences, type Preferences } from '@/providers/preferences';
+import { useVoiceCommands } from '@/providers/voice-commands';
 import { speech } from '@/lib/speech';
 import { Card, Icon, Label, Tap, Toggle, type IconName } from './sora-ui';
 const rows: { key: keyof Pick<Preferences, 'speak' | 'guidance' | 'vibration' | 'largerText' | 'highContrast'>; title: string; detail: string; icon: IconName }[] = [
-  { key: 'speak', title: 'Speak descriptions', detail: 'Read results out loud', icon: 'volume-high-outline' },
+  { key: 'speak', title: 'Read answers aloud', detail: 'Automatically speak answers and descriptions', icon: 'volume-high-outline' },
   { key: 'guidance', title: 'Voice guidance', detail: 'Give step-by-step prompts', icon: 'pulse-outline' },
   { key: 'vibration', title: 'Vibration feedback', detail: 'Confirm key actions', icon: 'phone-portrait-outline' },
   { key: 'largerText', title: 'Larger text', detail: 'Increase text size in the app', icon: 'text-outline' },
 ];
 export function PreferenceControls() {
   const { preferences, colors, update, storageError } = usePreferences();
+  const voice = useVoiceCommands();
   const [contrastExpanded, setContrastExpanded] = useState(false);
   return <View style={{ gap: 10 }}>
+    <Card style={{ gap: 10 }}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}><Icon name="mic-outline" /><View style={{ flex: 1 }}><Label bold>Hands-free voice</Label><Label muted size={12}>Ask questions while SORA is open, such as “describe the scene”. Start app commands with “Hey Sora”. Saying “Hey Sora, start stream” consents to camera processing and starts live assistance.</Label></View><Toggle label="Hands-free voice" value={preferences.voiceCommands} onChange={voiceCommands => { update({ voiceCommands }); voice.retry(); }} /></View><Label accessibilityLiveRegion="polite" muted size={12}>{voice.status}</Label><Label muted size={11}>Your phone’s speech service processes your speech and may require internet access.</Label>{preferences.voiceCommands && <Tap label="Retry voice listening" onPress={voice.retry}><Label bold size={13}>Retry voice listening</Label></Tap>}</Card>
+    <Card style={{ gap: 10 }}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}><View style={{ flex: 1 }}><Label bold>Hands-free questions</Label><Label muted size={12}>Turn off to chat freely. Hey Sora commands remain available. Say “Hey Sora, stop listening” or “Hey Sora, start listening”. Paused streams ignore ordinary speech automatically.</Label></View><Toggle label="Hands-free questions" value={preferences.handsFreeQuestions} onChange={voice.setQuestionListening} /></View></Card>
     {rows.map(row => <Card key={row.key} style={{ padding: 14, minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 14 }}><Icon name={row.icon} color={row.key === 'guidance' ? colors.accent : colors.text} size={26} /><View style={{ flex: 1, gap: 3 }}><Label bold size={14}>{row.title}</Label><Label muted size={11}>{row.detail}</Label></View><Toggle label={row.title} value={preferences[row.key]} onChange={value => { update({ [row.key]: value }); if (row.key === 'speak' && !value) void speech.stop(); }} /></Card>)}
     <Tap label="High contrast settings" expanded={contrastExpanded} onPress={() => setContrastExpanded(value => !value)}><Card tone="accent" style={{ padding: 14, minHeight: 94, flexDirection: 'row', alignItems: 'center', gap: 14 }}><Icon name="contrast-outline" size={26} color={colors.text} /><View style={{ flex: 1, gap: 3 }}><Label bold size={14}>High contrast</Label><Label muted size={11}>Use stronger colors for better visibility</Label></View><Icon name={contrastExpanded ? 'chevron-down' : 'chevron-forward'} size={21} color={colors.muted} /></Card></Tap>
     {contrastExpanded && <Card style={{ flexDirection: 'row', alignItems: 'center' }}><Label style={{ flex: 1 }}>Enable high contrast</Label><Toggle label="High contrast" value={preferences.highContrast} onChange={highContrast => update({ highContrast })} /></Card>}

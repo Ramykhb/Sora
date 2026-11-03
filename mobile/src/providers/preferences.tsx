@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as SplashScreen from 'expo-splash-screen';
@@ -36,9 +36,10 @@ export const palettes = {
     gradient: ['#102F56', '#005EDB', '#087FF4'] as const,
   },
 };
-export type Preferences = { theme: 'system' | 'light' | 'dark'; speak: boolean; guidance: boolean; vibration: boolean; largerText: boolean; highContrast: boolean; onboarded: boolean };
-const defaults: Preferences = { theme: 'system', speak: true, guidance: true, vibration: true, largerText: false, highContrast: false, onboarded: false };
+export type Preferences = { theme: 'system' | 'light' | 'dark'; speak: boolean; guidance: boolean; vibration: boolean; largerText: boolean; highContrast: boolean; onboarded: boolean; voiceCommands: boolean; handsFreeQuestions: boolean };
+const defaults: Preferences = { theme: 'system', speak: true, guidance: true, vibration: true, largerText: false, highContrast: false, onboarded: false, voiceCommands: true, handsFreeQuestions: true };
 const key = 'sora.preferences.v1';
+const speechDefaultsVersion = 1;
 const Context = createContext<{ preferences: Preferences; update: (value: Partial<Preferences>) => void; colors: typeof palettes.light | typeof palettes.dark; dark: boolean; storageError: string } | null>(null);
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const system = useColorScheme();
@@ -57,6 +58,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
           if (name === 'theme') { if (['system', 'light', 'dark'].includes(saved.theme)) next.theme = saved.theme; }
           else if (typeof saved[name] === 'boolean') next[name] = saved[name];
         }
+        // Enable automatic answers once on upgrade; later mute choices still persist.
+        if (saved.speechDefaultsVersion !== speechDefaultsVersion) next.speak = true;
         setPreferences(next);
       }
     } catch { if (mounted) setStorageError('Preferences could not be restored. Please select them again.'); }
@@ -69,13 +72,14 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   useEffect(() => { if (ready && (fonts || fontError)) void SplashScreen.hideAsync().catch(() => {}); }, [ready, fonts, fontError]);
   useEffect(() => {
     if (!ready) return;
-    const value = JSON.stringify(preferences);
+    const value = JSON.stringify({ ...preferences, speechDefaultsVersion });
     saveQueue.current = saveQueue.current.then(async () => {
       try { if (Platform.OS === 'web') localStorage.setItem(key, value); else await SecureStore.setItemAsync(key, value); }
       catch { setStorageError('Your changes apply now but could not be saved on this device.'); }
     });
   }, [preferences, ready]);
+  const update = useCallback((value: Partial<Preferences>) => setPreferences(previous => ({ ...previous, ...value })), []);
   if (!ready || (!fonts && !fontError)) return null;
-  return <Context.Provider value={{ preferences, update: value => setPreferences(previous => ({ ...previous, ...value })), colors, dark, storageError }}><StatusBar style={dark ? 'light' : 'dark'} /><NavigationBar style={dark ? 'light' : 'dark'} />{children}</Context.Provider>;
+  return <Context.Provider value={{ preferences, update, colors, dark, storageError }}><StatusBar style={dark ? 'light' : 'dark'} /><NavigationBar style={dark ? 'light' : 'dark'} />{children}</Context.Provider>;
 }
 export function usePreferences() { const value = useContext(Context); if (!value) throw new Error('PreferencesProvider is missing'); return value; }

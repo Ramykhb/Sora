@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Text, View } from 'react-native';
-import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
+import { voiceAudioGate } from '@/lib/voice-commands';
 import { speech } from '@/lib/speech';
 import type { Answer } from '@/lib/api';
 import { useAuth } from '@/providers/auth';
@@ -10,6 +11,10 @@ export function AnswerCard({ answer, onError }: { answer: Answer; onError: (mess
   const ui = useUI();
   const { api } = useAuth();
   const player = useAudioPlayer(null);
+  const playback = useAudioPlayerStatus(player);
+  useEffect(() => {
+    if (playback.playing) return voiceAudioGate.suspend();
+  }, [playback.playing]);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const media = useRef<string | File | null>(null);

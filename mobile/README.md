@@ -69,3 +69,86 @@ npm test
 Automated tests validate the API client and live protocol with fake transports. Physical camera/microphone, real model inference, native permissions, and device networking require a device smoke test: register → start capture → verify a stored scene → ask by text and voice → play a server answer → search Moments → delete data → sign out and restore/revoke sign-in.
 
 Implementation follows the [Expo SDK 58 reference](https://docs.expo.dev/versions/v58.0.0/), including its [camera](https://docs.expo.dev/versions/v58.0.0/sdk/camera/), [audio](https://docs.expo.dev/versions/v58.0.0/sdk/audio/) and [SecureStore](https://docs.expo.dev/versions/v58.0.0/sdk/securestore/) APIs.
+
+
+## Hands-free voice
+
+After signing in and finishing onboarding, SORA listens while the app is open.
+Allow microphone and speech recognition permissions when prompted. Say
+**“Hey Sora, start stream”** to open live assistance and start the camera stream.
+This command consents to the same camera processing and session storage described
+on the camera screen. The phone may show its camera permission dialog the first time.
+
+With a stream running, say **“describe the scene”** or ask another question without
+pressing a button. SORA waits for a completed utterance, sends it to the current
+session, and speaks the answer. Live camera questions use the current view;
+questions on an image result refer to that image; the workspace uses its selected
+session and question scope. One hands-free question is processed at a time. If no
+session is open, SORA explains how to start a stream by voice.
+
+Every utterance beginning with **“Hey Sora”** is reserved for app commands.
+Unsupported commands receive spoken feedback and are never submitted as questions.
+Supported stream commands:
+
+- **“Hey Sora, start stream”** starts live assistance.
+- **“Hey Sora, pause stream”** releases the camera while keeping the session open.
+- **“Hey Sora, resume stream”** reconnects the same session and returns to its camera view.
+- **“Hey Sora, stop stream”** ends capture on the server and keeps saved moments.
+
+Each command receives spoken confirmation. Voice listening remains available while
+the stream is paused, so resume and stop work without touching the screen. Open
+sessions remain controllable when you visit Preferences or another screen.
+
+Preferences includes a **Hands-free voice** switch, listening status and a retry
+button. The switch controls automatic questions and commands. Listening pauses in
+the background, during SORA speech/audio playback, and while recording a voice
+question, then resumes. The phone’s speech service may use the network. The listener
+does not save audio recordings; recognized questions are submitted as text to the
+session question endpoint and retained with the session conversation.
+
+The `expo-speech-recognition` native module requires a **new development build**;
+a Metro reload or OTA update cannot add it to an older binary. Generate native
+configuration from `app.json` and rebuild using the existing Expo development-build
+workflow. Expo Go and older builds show an explanation instead of loading the
+missing module. Real recognition, camera permissions and microphone sharing need
+verification on Android and iPhone before release. Background and lock-screen
+listening are not implemented.
+
+
+Answers and descriptions read aloud automatically by default, including on an
+iPhone in silent mode. The first launch after this update enables automatic
+reading for existing installs. You can mute future automatic descriptions using
+**Read answers aloud** in Preferences or the camera's speaker button; that choice
+is saved. Direct hands-free questions continue to receive spoken replies.
+
+
+### Chatting without automatic questions
+
+Say **“Hey Sora, stop listening”** to ignore ordinary speech while keeping app
+commands available. Say **“Hey Sora, start listening”** (or **“resume listening”**)
+to accept hands-free questions again. The preference is saved across launches and
+can also be changed using **Hands-free questions** in Preferences.
+
+Paused streams automatically ignore all speech without the Hey Sora prefix,
+without submitting questions or reading an error aloud. Resume the stream to
+restore questions, unless you explicitly turned question listening off. Starting
+or resuming a stream does not override that choice. Responses to questions already
+in progress stay silent after pausing or saying stop listening.
+
+The microphone remains active for Hey Sora recognition while the app is open.
+Stop listening disables automatic question handling; use the master Hands-free
+voice switch to disable microphone listening completely.
+
+
+## Accessible home screen
+
+After onboarding and sign-in, the main home area is one large **Start live stream**
+button. Tap anywhere in that area to begin live assistance directly, including
+camera permissions when needed. VoiceOver/TalkBack users can focus the button and
+double-tap to activate it. Voice guidance announces the shortcut when a screen
+reader is not running. The button describes camera processing and storage in its
+accessibility hint and visible text.
+
+Navigation remains outside the start surface at the bottom. **More tools** opens
+the previous dashboard, including Read Text, Describe Scene and recent activity.
+The Hey Sora stream command continues to use the same startup flow.

@@ -17,12 +17,23 @@ export async function errorFrom(response: Response) {
   return new ApiError(response.status, message);
 }
 
-async function fetchBounded(url: string, init: RequestInit, timeoutMs = 120000) {
+// Keep the deadline active while consuming the body, not just until headers arrive.
+async function fetchBounded<T = Response>(url: string, init: RequestInit, timeoutMs = 120000, consume: (response: Response) => Promise<T> = async response => response as T) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try { return await fetch(url, { ...init, signal: controller.signal }); }
-  catch (error) {
-    if (controller.signal.aborted) throw new ApiError(408, 'The server took too long. Try again.');
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(new ApiError(408, 'The server is taking too long to respond and may be unavailable. Please try again.'));
+      controller.abort();
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      fetch(url, { ...init, signal: controller.signal }).then(consume),
+      deadline,
+    ]);
+  } catch (error) {
+    if (error instanceof TypeError) throw new ApiError(0, 'Unable to reach the server. Check your internet connection and try again.');
     throw error;
   } finally { clearTimeout(timeout); }
 }
@@ -44,10 +55,12 @@ export class ApiClient {
     this.expiresAt = tokens ? Date.now() + tokens.expires_in * 1000 : 0;
   }
   async publicRequest<T>(path: string, body: unknown): Promise<T> {
-    const response = await fetchBounded(this.url(path), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 30000);
-    if (!response.ok) throw await errorFrom(response);
-    return response.status === 204 ? undefined as T : response.json();
+    return fetchBounded(this.url(path), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 15000, async response => {
+      if (!response.ok) throw await errorFrom(response);
+      return response.status === 204 ? undefined as T : response.json();
+    });
   }
+
   async restore(refreshToken: string) {
     this.tokens = { refresh_token: refreshToken } as Tokens;
     this.expiresAt = 0;

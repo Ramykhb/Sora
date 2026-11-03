@@ -4,6 +4,7 @@ import { AppState, ScrollView, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { speech } from '@/lib/speech';
+import { useHandsFreeQuestions, useVoiceCommands, useVoiceStreamControls } from '@/providers/voice-commands';
 import { useAuth } from '@/providers/auth';
 import { ApiError, type Answer, type CaptureSession, type Frame, type Language, type Scope, type Observation } from '@/lib/api';
 import { connectLive } from '@/lib/live';
@@ -41,6 +42,9 @@ function Assistant() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [connection, setConnection] = useState('');
+  const voice = useVoiceCommands();
+  const voicePending = useRef(false);
+  const closingStream = useRef(false);
   const spoken = useRef(new Set<string>());
   const selectedId = useRef<string | null>(null);
   const select = useCallback((value: CaptureSession | null) => {
@@ -69,13 +73,13 @@ function Assistant() {
   const receiveAnswer = useCallback((answer: Answer, readAloud = false) => {
     if (answer.session_id !== selectedId.current) return;
     setAnswers(previous => [answer, ...previous.filter(value => value.id !== answer.id)]);
-    if (readAloud && speak && !spoken.current.has(answer.id)) {
+    if (readAloud && !voicePending.current && speak && !spoken.current.has(answer.id)) {
       spoken.current.add(answer.id); void speech.answer(answer.answer, answer.language);
     }
   }, [speak]);
   useEffect(() => {
-    if (!active || !foreground || !focused) void speech.stop();
-  }, [active, foreground, focused]);
+    if (!foreground || !focused) void speech.stop();
+  }, [foreground, focused]);
   useEffect(() => {
     if (!observation) return;
     const timer = setTimeout(() => setObservation(null), Math.max(0, Date.parse(observation.expires_at) - Date.now()));
@@ -126,6 +130,38 @@ function Assistant() {
     const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope, language });
     receiveAnswer(answer, true); setQuestion('');
   }
+  useHandsFreeQuestions(async question => {
+    if (!session) throw new Error('Say Hey Sora, start stream first. Then ask about your surroundings.');
+    if (scope === 'recent' && !active) throw new Error('Your stream is paused. Say Hey Sora, resume stream first.');
+    if (busy) throw new Error('Please wait for the current request to finish, then ask again.');
+    voicePending.current = true; setBusy(true); setError('');
+    try {
+      const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope, language });
+      spoken.current.add(answer.id);
+      receiveAnswer(answer);
+      return answer;
+    } finally { voicePending.current = false; setBusy(false); }
+  }, `${session?.id}:${scope}:${language}:${active}`);
+  useVoiceStreamControls(async command => {
+    if (closingStream.current) throw new Error('Your stream is stopping. Please wait.');
+    if (!session || session.status !== 'active') throw new Error('There is no active stream. Say Hey Sora, start stream first.');
+    if (command === 'pause-stream') {
+      setActive(false); setObservation(null);
+      return active ? 'Stream paused. Say Hey Sora, resume stream when you are ready.' : 'Your stream is already paused.';
+    }
+    if (command === 'resume-stream') {
+      setActive(true);
+      if (!focused) router.navigate('/assistant');
+      return active && focused ? 'Your stream is already running.' : 'Resuming your stream.';
+    }
+    closingStream.current = true;
+    setActive(false); setObservation(null);
+    try {
+      setSession(await api.request<CaptureSession>(`/sessions/${session.id}/close`, 'POST'));
+      listSessions();
+      return 'Stream stopped. Your saved moments are still available.';
+    } finally { closingStream.current = false; }
+  }, !!session && session.status === 'active', !active);
   async function preferences(nextLanguage: Language, nextAlerts: boolean) {
     if (session) setSession(await api.request<CaptureSession>(`/sessions/${session.id}`, 'PATCH', { language: nextLanguage, alerts_enabled: nextAlerts }));
     setLanguage(nextLanguage); setAlerts(nextAlerts);
@@ -153,6 +189,7 @@ function Assistant() {
       {active && <View style={ui.card}><Text style={ui.subtitle}>Live objects</Text><Text style={ui.copy}>{observation ? observation.detected_objects.length ? observation.detected_objects.map(object => `${object.label} (${Math.round(object.confidence * 100)}%)`).join(', ') : 'No supported objects detected. This does not mean the route is clear.' : 'Waiting for fresh detections…'}</Text>{observation && <Text style={ui.copy}>Server detection latency: {Math.round(observation.latency_ms)} ms</Text>}</View>}
       {frame && <View style={ui.card}><Text style={ui.subtitle}>Latest saved scene</Text><Text style={ui.copy}>{frame.caption || (['pending', 'processing'].includes(frame.enrichment_status || '') ? 'Frame saved. AI description is being prepared.' : 'Saved observations available below.')}</Text><Text style={ui.copy}>{frame.detected_objects.map(object => object.label).join(', ')}</Text>{!!frame.ocr_text && <Text style={ui.copy}>Text: {frame.ocr_text}</Text>}<Text style={ui.copy}>{new Date(frame.captured_at).toLocaleTimeString()}</Text>{frame.processing_warnings.map(w => <Text key={w} style={ui.error}>{w}</Text>)}</View>}
       <View style={ui.row}>{(['recent', 'memory', 'auto'] as const).map(value => <Action key={value} title={`${scope === value ? '✓ ' : ''}${value === 'recent' ? 'Current view' : value === 'memory' ? 'Memory' : 'Auto'}`} onPress={() => setScope(value)} />)}</View>
+      {appPreferences.voiceCommands && <Text accessibilityLiveRegion="polite" style={ui.copy}>{voice.status}</Text>}
       <Field placeholder="Ask about your surroundings or memory" value={question} onChangeText={setQuestion} multiline maxLength={2000} />
       <Action title={busy ? 'Thinking…' : 'Ask Sora'} disabled={busy || !question.trim()} onPress={() => void run(ask)} />
       {foreground && focused && <VoiceQuestion key={session.id} sessionId={session.id} language={language} scope={scope} disabled={busy} onAnswer={answer => receiveAnswer(answer, true)} onError={setError} />}

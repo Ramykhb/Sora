@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, Text, View } from 'react-native';
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import { File } from 'expo-file-system';
+import { voiceAudioGate } from '@/lib/voice-commands';
 import { speech } from '@/lib/speech';
 import { useAuth } from '@/providers/auth';
 import type { Answer, Language, Scope } from '@/lib/api';
@@ -15,10 +16,12 @@ export function VoiceQuestion({ sessionId, language, scope, onAnswer, onError, d
   const [busy, setBusy] = useState(false);
   const mounted = useRef(true);
   const stopping = useRef(false);
+  const releaseMic = useRef<(() => void) | undefined>(undefined);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      releaseMic.current?.(); releaseMic.current = undefined;
       if (recorder.isRecording) void recorder.stop().then(() => {
         if (recorder.uri && Platform.OS !== 'web') new File(recorder.uri).delete();
       }).catch(() => {}).finally(() => setAudioModeAsync({ allowsRecording: false }).catch(() => {}));
@@ -30,6 +33,10 @@ export function VoiceQuestion({ sessionId, language, scope, onAnswer, onError, d
     let uploadedUri: string | null = null;
     try {
       if (!recorder.isRecording) {
+        releaseMic.current = voiceAudioGate.suspend();
+        // Let the speech recognizer release the microphone before recording.
+        await new Promise(resolve => setTimeout(resolve, 200));
+        if (!mounted.current) return;
         await speech.stop();
         const permission = await AudioModule.requestRecordingPermissionsAsync();
         if (!permission.granted) throw new Error('Microphone access is required for voice questions.');
@@ -58,6 +65,7 @@ export function VoiceQuestion({ sessionId, language, scope, onAnswer, onError, d
       if (uploadedUri) {
         try { if (Platform.OS === 'web') URL.revokeObjectURL(uploadedUri); else new File(uploadedUri).delete(); } catch { /* The OS may already have removed the temporary recording. */ }
       }
+      if (!recorder.isRecording) { releaseMic.current?.(); releaseMic.current = undefined; }
       stopping.current = false; if (mounted.current) setBusy(false);
     }
   }

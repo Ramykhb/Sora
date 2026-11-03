@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, View } from 'react-native';
 import { Image } from 'expo-image';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useHandsFreeQuestions } from '@/providers/voice-commands';
 import { useAuth } from '@/providers/auth';
 import { usePreferences } from '@/providers/preferences';
 import { speech } from '@/lib/speech';
@@ -71,6 +72,18 @@ function Result({ text }: { text: boolean }) {
     if (!content || !preferences.speak || !focused || spoken.current === content) return;
     spoken.current = content; void speech.answer(content, language);
   }, [content, preferences.speak, focused, language]);
+  useHandsFreeQuestions(async question => {
+    if (!sessionId || !frame) throw new Error('Please wait for this image to load, then ask again.');
+    if (busy) throw new Error('Please wait for the current description to finish, then ask again.');
+    setBusy(true); setError('');
+    try {
+      const reply = await api.request<Answer>(`/sessions/${sessionId}/questions`, 'POST', { question, scope: 'memory', since: frame.captured_at, until: frame.captured_at, language });
+      // The global voice listener reads this reply once, even with automatic speech enabled.
+      spoken.current = reply.answer;
+      setAnswer(reply.answer); setUncertain(reply.uncertain); setWarnings(reply.processing_warnings);
+      return reply;
+    } finally { setBusy(false); }
+  }, `${sessionId}:${frameId}`);
   async function play() {
     if (playing) { await speech.stop(); setPlaying(false); return; }
     if (content) { await speech.answer(content, language, () => setPlaying(false)); setPlaying(true); }

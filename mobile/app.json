@@ -103,6 +103,13 @@
         {
           "enforceContrast": false
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow SORA to listen for questions and Hey Sora app commands while the app is open.",
+          "speechRecognitionPermission": "Allow SORA to recognize questions and Hey Sora commands so you can use the app hands-free."
+        }
       ]
     ],
     "experiments": {

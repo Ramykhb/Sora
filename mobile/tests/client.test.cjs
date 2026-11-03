@@ -146,7 +146,7 @@ test('transient refresh failure preserves credentials for a retry', async () => 
   const api = new ApiClient('https://example.test', async () => {});
   await api.setTokens({ ...pair(), expires_in: 0 });
   global.fetch = async () => { throw new TypeError('Offline'); };
-  await assert.rejects(api.token(), /Offline/);
+  await assert.rejects(api.token(), /Unable to reach the server/);
   assert.equal(api.tokens.refresh_token, 'refresh-access');
   global.fetch = async () => json(pair('recovered'));
   assert.equal(await api.token(), 'recovered');
@@ -210,4 +210,36 @@ test('live transport authenticates before accepting binary frames and respects b
     ws.bufferedAmount = 600000; assert.equal(live.send(jpeg), false);
     live.close(); assert.equal(live.send(jpeg), false);
   } finally { live.close(); }
+});
+
+
+test('sign-in times out after 15 seconds, aborts the request, and permits retry', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const api = new ApiClient('https://example.test', async () => {});
+  let signal;
+  let resolve;
+  global.fetch = (_url, init) => { signal = init.signal; return new Promise(done => { resolve = done; }); };
+  const rejected = assert.rejects(api.publicRequest('/auth/login', {}), e => e instanceof ApiError && e.status === 408 && /may be unavailable/.test(e.message));
+  t.mock.timers.tick(14999);
+  assert.equal(signal.aborted, false);
+  t.mock.timers.tick(1);
+  await rejected;
+  assert.equal(signal.aborted, true);
+  resolve(json(pair('late')));
+  assert.equal(api.tokens, null);
+  global.fetch = async () => json(pair('retry'));
+  assert.equal((await api.publicRequest('/auth/login', {})).access_token, 'retry');
+});
+
+test('saved sign-in also times out when headers arrive but the response body stalls', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const api = new ApiClient('https://example.test', async () => {});
+  global.fetch = async () => ({ ok: true, status: 200, json: () => new Promise(() => {}) });
+  const rejected = assert.rejects(api.restore('saved-refresh'), e => e instanceof ApiError && e.status === 408);
+  await Promise.resolve();
+  t.mock.timers.tick(15000);
+  await rejected;
+  assert.equal(api.tokens.refresh_token, 'saved-refresh');
+  global.fetch = async () => json(pair('restored'));
+  assert.equal(await api.refresh(), 'restored');
 });
