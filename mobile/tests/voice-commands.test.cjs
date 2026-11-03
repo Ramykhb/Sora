@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const ts = require('typescript');
 const vm = require('node:vm');
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
+const { VoiceLevelMeter } = require('../src/lib/voice-level.ts');
 const { voiceCommand, voiceInput, VoiceAudioGate } = require('../src/lib/voice-commands.ts');
 
 test('only a wake-prefixed start-stream command controls the app', () => {
@@ -32,6 +33,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
   const preferences = { onboarded: true, voiceCommands: enabled, handsFreeQuestions: questionsEnabled };
   const preferenceUpdates = [];
   const gate = new VoiceAudioGate();
+  const meter = new VoiceLevelMeter();
   const appState = { currentState: 'active', addEventListener: () => ({ remove() {} }) };
   let imports = 0, aborts = 0, stops = 0, speechStops = 0, now = 10000;
   const recognizer = {
@@ -59,6 +61,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
       if (name === 'expo-router') return { router: { navigate: route => navigation.push(route) } };
       if (name === './auth') return { useAuth: () => ({ ready: true, tokens: {} }) };
       if (name === './preferences') return { usePreferences: () => ({ preferences, update(value) { preferenceUpdates.push(value); Object.assign(preferences, value); } }) };
+      if (name === '@/lib/voice-level') return { voiceLevel: meter };
       if (name === '@/lib/voice-commands') return { voiceAudioGate: gate, voiceInput };
       if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() { speechStops++; } } };
       if (name === 'expo-speech-recognition') { imports++; assert.equal(native, true); return { ExpoSpeechRecognitionModule: recognizer }; }
@@ -68,7 +71,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
   const view = exports.VoiceCommandsProvider({ children: null });
   effects.forEach(fn => { const cleanup = fn(); if (cleanup) cleanups.push(cleanup); });
   return {
-    navigation, starts, spoken, statuses, gate, appState, view, imports, preferenceUpdates, preferences,
+    navigation, starts, spoken, statuses, gate, appState, view, imports, preferenceUpdates, preferences, meter,
     get stops() { return stops; },
     get speechStops() { return speechStops; },
     get aborts() { return aborts; },
@@ -531,4 +534,29 @@ test('a new Hey Sora command keeps its wake words when the answer also mentions 
   const release = gate.playback('I will only respond to Hey Sora commands.');
   assert.equal(gate.userTranscript('Hey Sora pause stream'), 'Hey Sora pause stream');
   release();
+});
+
+
+test('native voice levels feed the waveform and reset on silence, end and cleanup', async () => {
+  const app = mount(); await flush(); app.tick();
+  assert.equal(app.starts[0].volumeChangeEventOptions.enabled, true);
+  assert.equal(app.starts[0].volumeChangeEventOptions.intervalMillis, 80);
+  app.emit('start');
+  app.emit('volumechange', { value: 7 });
+  assert.equal(app.meter.getSnapshot().listening, true);
+  assert.ok(app.meter.getSnapshot().level > 0.5);
+  app.tick(); assert.equal(app.meter.getSnapshot().level, 0);
+  app.emit('volumechange', { value: 9 });
+  app.emit('end');
+  assert.deepEqual(app.meter.getSnapshot(), { listening: false, level: 0 });
+  app.emit('start'); app.emit('volumechange', { value: 8 });
+  app.cleanup(); assert.deepEqual(app.meter.getSnapshot(), { listening: false, level: 0 });
+});
+
+test('background microphone events cannot animate the voice waveform', async () => {
+  const app = mount(); await flush(); app.tick();
+  app.emit('start'); app.appState.currentState = 'background';
+  app.emit('volumechange', { value: 10 });
+  assert.equal(app.meter.getSnapshot().level, 0);
+  app.cleanup();
 });

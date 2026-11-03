@@ -4,6 +4,7 @@ import { requireOptionalNativeModule } from 'expo';
 import { router, useFocusEffect } from 'expo-router';
 import type { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import { voiceAudioGate, voiceInput, type StreamCommand } from '@/lib/voice-commands';
+import { voiceLevel } from '@/lib/voice-level';
 import { speech } from '@/lib/speech';
 import type { Answer } from '@/lib/api';
 import { useAuth } from './auth';
@@ -97,6 +98,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
     let interrupting = false;
     let utterancePlayback: string[] = [];
     let utteranceTimer: ReturnType<typeof setTimeout> | undefined;
+    let levelTimer: ReturnType<typeof setTimeout> | undefined;
     const listeningStatus = 'Listening. Ask a question, or say “Hey Sora” for an app command.';
     function stillHere(target: QuestionTarget) {
       return questionTarget.current === target && questionsEnabled.current && !streamPaused.current && AppState.currentState === 'active';
@@ -139,6 +141,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
     }
     function fail(message: string) {
       blocked.current = true;
+      clearTimeout(levelTimer); voiceLevel.setListening(false);
       voiceAudioGate.setRecognitionState('off');
       setStatus(message);
       AccessibilityInfo.announceForAccessibility(message);
@@ -146,11 +149,17 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
     function start() {
       if (disposed || AppState.currentState !== 'active' || voiceAudioGate.paused || blocked.current) return;
       try {
-        recognizer!.start({ lang: 'en-US', continuous: true, interimResults: true, maxAlternatives: 1, iosVoiceProcessingEnabled: true, iosCategory: { category: 'playAndRecord', categoryOptions: ['defaultToSpeaker', 'allowBluetooth'], mode: 'voiceChat' }, contextualStrings: ['Hey Sora', 'Hey Sora start stream', 'Hey Sora pause stream', 'Hey Sora resume stream', 'Hey Sora stop stream', 'Hey Sora stop listening', 'Hey Sora start listening', 'Hey Sora resume listening', 'Describe the scene'], recordingOptions: { persist: false } });
+        recognizer!.start({ lang: 'en-US', continuous: true, interimResults: true, maxAlternatives: 1, volumeChangeEventOptions: { enabled: true, intervalMillis: 80 }, iosVoiceProcessingEnabled: true, iosCategory: { category: 'playAndRecord', categoryOptions: ['defaultToSpeaker', 'allowBluetooth'], mode: 'voiceChat' }, contextualStrings: ['Hey Sora', 'Hey Sora start stream', 'Hey Sora pause stream', 'Hey Sora resume stream', 'Hey Sora stop stream', 'Hey Sora stop listening', 'Hey Sora start listening', 'Hey Sora resume listening', 'Describe the scene'], recordingOptions: { persist: false } });
       } catch { fail('Voice listening could not start. Retry voice commands in Preferences.'); }
     }
     const subscriptions = [
-      recognizer.addListener('start', () => { voiceAudioGate.setRecognitionState('ready'); utterancePlayback = []; if (!disposed) setStatus(listeningStatus); }),
+      recognizer.addListener('start', () => { voiceLevel.setListening(true); voiceAudioGate.setRecognitionState('ready'); utterancePlayback = []; if (!disposed) setStatus(listeningStatus); }),
+      recognizer.addListener('volumechange', event => {
+        if (disposed || AppState.currentState !== 'active' || voiceAudioGate.paused || blocked.current) return;
+        voiceLevel.update(event.value);
+        clearTimeout(levelTimer);
+        levelTimer = setTimeout(() => voiceLevel.update(0), 300);
+      }),
       recognizer.addListener('result', event => {
         if (disposed || AppState.currentState !== 'active' || voiceAudioGate.paused || blocked.current) return;
         failures = 0;
@@ -193,6 +202,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
         } else void askQuestion(input.question);
       }),
       recognizer.addListener('error', event => {
+        clearTimeout(levelTimer); voiceLevel.setListening(false);
         utterancePlayback = [];
         clearTimeout(utteranceTimer);
         if (disposed || event.error === 'aborted' || event.error === 'no-speech') return;
@@ -202,6 +212,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
         }
       }),
       recognizer.addListener('end', () => {
+        clearTimeout(levelTimer); voiceLevel.setListening(false);
         voiceAudioGate.setRecognitionState(disposed || blocked.current ? 'off' : 'starting');
         utterancePlayback = [];
         clearTimeout(utteranceTimer);
@@ -218,7 +229,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
         timer = setTimeout(start, 350);
       } catch { if (!disposed) fail('Unable to enable voice listening. Retry in Preferences.'); }
     })();
-    return () => { disposed = true; voiceAudioGate.setRecognitionState('off'); clearTimeout(timer); clearTimeout(utteranceTimer); subscriptions.forEach(sub => sub.remove()); recognizer.abort(); };
+    return () => { disposed = true; clearTimeout(levelTimer); voiceLevel.setListening(false); voiceAudioGate.setRecognitionState('off'); clearTimeout(timer); clearTimeout(utteranceTimer); subscriptions.forEach(sub => sub.remove()); recognizer.abort(); };
   }, [ready, tokens, preferences.onboarded, preferences.voiceCommands, recognizer, foreground, paused, attempt, cancelQuestions, refreshStreamState, setQuestionListening]);
   const displayStatus = !ready || !tokens || !preferences.onboarded || !preferences.voiceCommands ? 'Voice commands are off.' : !recognizer ? Platform.OS === 'web' ? 'Voice commands are available in the mobile app.' : 'Install a new development build to enable Hey Sora voice commands.' : !foreground ? 'Voice listening pauses while SORA is in the background.' : paused ? 'Voice listening paused for audio.' : commandsOnlyForStream ? 'Stream paused. Only Hey Sora commands are active.' : !preferences.handsFreeQuestions ? 'Only Hey Sora commands are active. Say “Hey Sora, start listening” for questions.' : thinking ? 'Thinking about your question…' : status;
   return <Context.Provider value={{ status: displayStatus, registerQuestions, registerStream, refreshStreamState, setQuestionListening, retry: () => { blocked.current = false; setAttempt(value => value + 1); } }}>{children}</Context.Provider>;

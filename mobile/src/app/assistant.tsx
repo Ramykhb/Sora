@@ -10,6 +10,7 @@ import { ApiError, type Answer, type CaptureSession, type Frame, type Language, 
 import { connectLive } from '@/lib/live';
 import { AuthScreen } from '@/components/auth-screen';
 import { Action, Field, useUI } from '@/components/controls';
+import { VoiceWaveform } from '@/components/voice-waveform';
 import { StreamStatus } from '@/components/stream-status';
 import { LiveCamera } from '@/components/live-camera';
 import { VoiceQuestion } from '@/components/voice-question';
@@ -189,6 +190,7 @@ function Assistant() {
       {active && <View style={ui.card}><Text style={ui.subtitle}>Live objects</Text><Text style={ui.copy}>{observation ? observation.detected_objects.length ? observation.detected_objects.map(object => `${object.label} (${Math.round(object.confidence * 100)}%)`).join(', ') : 'No supported objects detected. This does not mean the route is clear.' : 'Waiting for fresh detections…'}</Text>{observation && <Text style={ui.copy}>Server detection latency: {Math.round(observation.latency_ms)} ms</Text>}</View>}
       {frame && <View style={ui.card}><Text style={ui.subtitle}>Latest saved scene</Text><Text style={ui.copy}>{frame.caption || (['pending', 'processing'].includes(frame.enrichment_status || '') ? 'Frame saved. AI description is being prepared.' : 'Saved observations available below.')}</Text><Text style={ui.copy}>{frame.detected_objects.map(object => object.label).join(', ')}</Text>{!!frame.ocr_text && <Text style={ui.copy}>Text: {frame.ocr_text}</Text>}<Text style={ui.copy}>{new Date(frame.captured_at).toLocaleTimeString()}</Text>{frame.processing_warnings.map(w => <Text key={w} style={ui.error}>{w}</Text>)}</View>}
       <View style={ui.row}>{(['recent', 'memory', 'auto'] as const).map(value => <Action key={value} title={`${scope === value ? '✓ ' : ''}${value === 'recent' ? 'Current view' : value === 'memory' ? 'Memory' : 'Auto'}`} onPress={() => setScope(value)} />)}</View>
+      <VoiceWaveform commandsOnly={!active || !appPreferences.handsFreeQuestions} />
       {appPreferences.voiceCommands && <Text accessibilityLiveRegion="polite" style={ui.copy}>{voice.status}</Text>}
       <Field placeholder="Ask about your surroundings or memory" value={question} onChangeText={setQuestion} multiline maxLength={2000} />
       <Action title={busy ? 'Thinking…' : 'Ask Sora'} disabled={busy || !question.trim()} onPress={() => void run(ask)} />
