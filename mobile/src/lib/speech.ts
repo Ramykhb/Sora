@@ -23,11 +23,15 @@ export const speech = new SpeechController({
       callback?.();
     };
     try {
-      // Full-duplex audio keeps recognition and its echo cancellation running
-      // while answers remain audible in iPhone silent mode.
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      // Reuse the recognizer's active session. Changing its route at utterance
+      // start, or speaking before a restart is ready, can soften the first words.
+      const recognitionReady = await voiceAudioGate.waitForRecognitionReady();
       if (generation !== audioGeneration) { done(); return; }
-      Speech.speak(text, { ...options, useApplicationAudioSession: true, onDone: () => done(options.onDone), onStopped: () => done(options.onStopped), onError: error => done(() => options.onError?.(error)) });
+      if (!recognitionReady) {
+        await setAudioModeAsync({ allowsRecording: voiceAudioGate.recognitionExpected, playsInSilentMode: true });
+      }
+      if (generation !== audioGeneration) { done(); return; }
+      Speech.speak(text, { ...options, volume: 1, useApplicationAudioSession: true, onDone: () => done(options.onDone), onStopped: () => done(options.onStopped), onError: error => done(() => options.onError?.(error)) });
     } catch (error) { done(); throw error; }
   },
 });

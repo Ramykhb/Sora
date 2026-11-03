@@ -91,6 +91,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
     if (!recognizer) return;
     if (!foreground || paused || blocked.current) return;
     let disposed = false;
+    voiceAudioGate.setRecognitionState('starting');
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     let interrupting = false;
@@ -138,6 +139,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
     }
     function fail(message: string) {
       blocked.current = true;
+      voiceAudioGate.setRecognitionState('off');
       setStatus(message);
       AccessibilityInfo.announceForAccessibility(message);
     }
@@ -148,7 +150,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
       } catch { fail('Voice listening could not start. Retry voice commands in Preferences.'); }
     }
     const subscriptions = [
-      recognizer.addListener('start', () => { utterancePlayback = []; if (!disposed) setStatus(listeningStatus); }),
+      recognizer.addListener('start', () => { voiceAudioGate.setRecognitionState('ready'); utterancePlayback = []; if (!disposed) setStatus(listeningStatus); }),
       recognizer.addListener('result', event => {
         if (disposed || AppState.currentState !== 'active' || voiceAudioGate.paused || blocked.current) return;
         failures = 0;
@@ -200,6 +202,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
         }
       }),
       recognizer.addListener('end', () => {
+        voiceAudioGate.setRecognitionState(disposed || blocked.current ? 'off' : 'starting');
         utterancePlayback = [];
         clearTimeout(utteranceTimer);
         if (!disposed && !blocked.current) { clearTimeout(timer); timer = setTimeout(start, Math.min(500 * 2 ** failures, 5000)); }
@@ -215,7 +218,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
         timer = setTimeout(start, 350);
       } catch { if (!disposed) fail('Unable to enable voice listening. Retry in Preferences.'); }
     })();
-    return () => { disposed = true; clearTimeout(timer); clearTimeout(utteranceTimer); subscriptions.forEach(sub => sub.remove()); recognizer.abort(); };
+    return () => { disposed = true; voiceAudioGate.setRecognitionState('off'); clearTimeout(timer); clearTimeout(utteranceTimer); subscriptions.forEach(sub => sub.remove()); recognizer.abort(); };
   }, [ready, tokens, preferences.onboarded, preferences.voiceCommands, recognizer, foreground, paused, attempt, cancelQuestions, refreshStreamState, setQuestionListening]);
   const displayStatus = !ready || !tokens || !preferences.onboarded || !preferences.voiceCommands ? 'Voice commands are off.' : !recognizer ? Platform.OS === 'web' ? 'Voice commands are available in the mobile app.' : 'Install a new development build to enable Hey Sora voice commands.' : !foreground ? 'Voice listening pauses while SORA is in the background.' : paused ? 'Voice listening paused for audio.' : commandsOnlyForStream ? 'Stream paused. Only Hey Sora commands are active.' : !preferences.handsFreeQuestions ? 'Only Hey Sora commands are active. Say “Hey Sora, start listening” for questions.' : thinking ? 'Thinking about your question…' : status;
   return <Context.Provider value={{ status: displayStatus, registerQuestions, registerStream, refreshStreamState, setQuestionListening, retry: () => { blocked.current = false; setAttempt(value => value + 1); } }}>{children}</Context.Provider>;

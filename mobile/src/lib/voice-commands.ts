@@ -24,6 +24,41 @@ export class VoiceAudioGate {
   private listeners = new Set<() => void>();
   private playbacks = new Map<symbol, string>();
   private recentPlayback: { text: string; until: number }[] = [];
+  private recognitionState: 'off' | 'starting' | 'ready' = 'off';
+  private recognitionReadyAt = 0;
+  get recognitionExpected() { return this.recognitionState !== 'off'; }
+  setRecognitionState(state: 'off' | 'starting' | 'ready') {
+    if (state === this.recognitionState) return;
+    this.recognitionState = state;
+    if (state === 'ready') this.recognitionReadyAt = Date.now();
+    this.listeners.forEach(listener => listener());
+  }
+  waitForRecognitionReady(timeoutMs = 2000): Promise<boolean> {
+    if (this.recognitionState === 'off') return Promise.resolve(false);
+    return new Promise(resolve => {
+      let settled = false;
+      let settleTimer: ReturnType<typeof setTimeout> | undefined;
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      let unsubscribe = () => {};
+      const finish = (ready: boolean) => {
+        if (settled) return;
+        settled = true; clearTimeout(settleTimer); clearTimeout(deadline); unsubscribe();
+        resolve(ready);
+      };
+      const check = () => {
+        clearTimeout(settleTimer);
+        if (this.recognitionState === 'off') { finish(false); return; }
+        if (this.recognitionState !== 'ready') return;
+        // Route/voice-processing changes settle before the first audible word.
+        const remaining = 150 - (Date.now() - this.recognitionReadyAt);
+        if (remaining <= 0) finish(true);
+        else settleTimer = setTimeout(check, remaining);
+      };
+      unsubscribe = this.subscribe(check);
+      deadline = setTimeout(() => finish(false), timeoutMs);
+      check();
+    });
+  }
   get playing() { return this.playbacks.size > 0; }
   playback(text: string) {
     const id = Symbol();

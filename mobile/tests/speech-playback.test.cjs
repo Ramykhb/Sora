@@ -25,7 +25,7 @@ test('automatic answers use the configured playback session and resume listening
   const { speech, spoken, modes, gate } = setup();
   await speech.answer('A chair is ahead.', 'en');
   assert.equal(modes[0].playsInSilentMode, true);
-  assert.equal(modes[0].allowsRecording, true);
+  assert.equal(modes[0].allowsRecording, false);
   assert.equal(spoken[0].options.useApplicationAudioSession, true);
   assert.equal(gate.paused, false);
   assert.equal(gate.playing, true);
@@ -38,7 +38,7 @@ test('stopping while audio config is pending prevents a delayed answer from spea
   let ready;
   const app = setup(() => new Promise(resolve => { ready = resolve; }));
   const pending = app.speech.answer('Old answer.', 'en');
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  for (let i = 0; i < 10; i++) await Promise.resolve();
   assert.equal(app.gate.paused, false);
   assert.equal(app.gate.playing, true);
   await app.speech.stop();
@@ -54,4 +54,50 @@ test('audio setup errors release the microphone gate', async () => {
   assert.equal(app.spoken.length, 0);
   assert.equal(app.gate.paused, false);
   assert.equal(app.gate.playing, false);
+});
+
+
+test('an answer waits for the recognition route to settle and reuses it without lowering startup volume', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 10000 });
+  const app = setup();
+  app.gate.setRecognitionState('starting');
+  const pending = app.speech.answer('I detect a laptop.', 'en');
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.equal(app.spoken.length, 0);
+  app.gate.setRecognitionState('ready');
+  t.mock.timers.tick(149);
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.equal(app.spoken.length, 0);
+  t.mock.timers.tick(1);
+  await pending;
+  assert.equal(app.modes.length, 0, 'do not reconfigure an active recognition audio session');
+  assert.equal(app.spoken[0].text, 'I detect a laptop.');
+  assert.equal(app.spoken[0].options.volume, 1);
+  assert.equal(app.spoken[0].options.useApplicationAudioSession, true);
+});
+
+test('stopping an answer while recognition is restarting prevents delayed playback', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 10000 });
+  const app = setup();
+  app.gate.setRecognitionState('starting');
+  const pending = app.speech.answer('An old answer.', 'en');
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  await app.speech.stop();
+  app.gate.setRecognitionState('ready');
+  t.mock.timers.tick(150);
+  await pending;
+  assert.equal(app.spoken.length, 0);
+  assert.equal(app.gate.playing, false);
+});
+
+test('an unavailable recognizer cannot leave answer playback waiting indefinitely', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 10000 });
+  const app = setup();
+  app.gate.setRecognitionState('starting');
+  const pending = app.speech.answer('A laptop.', 'en');
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  t.mock.timers.tick(2000);
+  await pending;
+  assert.equal(app.spoken.length, 1);
+  assert.equal(app.modes[0].allowsRecording, true);
 });

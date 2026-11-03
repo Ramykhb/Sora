@@ -6,7 +6,7 @@ Expo SDK 58 client for the World Out Loud FastAPI backend. Auth, camera capture,
 
 The native app publishes continuous camera video using WebRTC on Android and iOS. Install a build containing the native WebRTC module; Expo Go cannot publish this stream.
 
-iOS builds Expo modules from source to avoid an ABI mismatch between the bundled ExpoCamera and ExpoModulesCore frameworks. `npm install` also applies a small Swift compiler workaround in `scripts/patch-expo-swift.cjs`, removing an unnecessary cast in Expo's consuming result switch ([Swift issue #93625](https://github.com/swiftlang/swift/issues/93625)). If dependencies are installed with scripts disabled, run `npm run postinstall` before building iOS.
+iOS builds Expo modules from source to avoid an ABI mismatch between the bundled ExpoCamera and ExpoModulesCore frameworks. `npm install` also applies a small Swift compiler workaround in `scripts/patch-expo-swift.cjs`, removing an unnecessary cast in Expo's consuming result switch ([Swift issue #93625](https://github.com/swiftlang/swift/issues/93625)). Postinstall also applies the speech-recognition ducking adjustment described below. If dependencies are installed with scripts disabled, run `npm run postinstall` before building iOS.
 
 For cloud builds without local Xcode or Android Studio, sign in to Expo and configure this project once:
 
@@ -170,3 +170,21 @@ stream is paused. Turning off Hands-free voice disables voice interruption too.
 
 Verify interruption speed, speaker feedback, and headphone/Bluetooth routing on
 a physical phone; these depend on the device's speech recognition service.
+
+
+### Consistent volume at the beginning of answers
+
+Speech waits for an active recognition audio session and its brief route-settling
+period, then reuses that session instead of changing its category at the first word.
+If recognition cannot become ready within two seconds, playback falls back to the
+configured audio session so an unavailable listener cannot block an answer forever.
+The server-voice player uses the same readiness check.
+
+On iOS 17 and newer, `scripts/patch-speech-recognition.cjs` configures the native
+voice-processing engine with fixed, minimum ducking. This reduces attenuation of
+AVSpeechSynthesizer/AVPlayer while preserving microphone echo cancellation and voice
+interruption. Apple documents this behavior in [Other audio ducking](https://developer.apple.com/videos/play/wwdc2023/10235/).
+The patch is applied by `npm run postinstall`, checks its upstream anchor, and is
+safe to reapply. It edits the installed dependency rather than generated iOS files.
+It requires a new native build to take effect on a phone; app builds and installs
+should only run when explicitly requested.
