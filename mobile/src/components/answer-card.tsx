@@ -13,8 +13,8 @@ export function AnswerCard({ answer, onError }: { answer: Answer; onError: (mess
   const player = useAudioPlayer(null);
   const playback = useAudioPlayerStatus(player);
   useEffect(() => {
-    if (playback.playing) return voiceAudioGate.suspend();
-  }, [playback.playing]);
+    if (playback.playing) return voiceAudioGate.playback(answer.answer);
+  }, [playback.playing, answer.answer]);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const media = useRef<string | File | null>(null);
@@ -32,7 +32,7 @@ export function AnswerCard({ answer, onError }: { answer: Answer; onError: (mess
     try {
       await speech.stop();
       const generation = playbackGeneration.current;
-      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       // Fetch through the shared client so expired credentials and speech errors are handled.
       const response = await api.response(`/sessions/${answer.session_id}/questions/${answer.id}/audio`);
       const data = await response.arrayBuffer();

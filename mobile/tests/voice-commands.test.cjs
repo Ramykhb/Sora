@@ -33,7 +33,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
   const preferenceUpdates = [];
   const gate = new VoiceAudioGate();
   const appState = { currentState: 'active', addEventListener: () => ({ remove() {} }) };
-  let imports = 0, aborts = 0, stops = 0, now = 10000;
+  let imports = 0, aborts = 0, stops = 0, speechStops = 0, now = 10000;
   const recognizer = {
     isRecognitionAvailable: () => true,
     requestPermissionsAsync: () => permissionPromise || Promise.resolve({ granted }),
@@ -60,7 +60,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
       if (name === './auth') return { useAuth: () => ({ ready: true, tokens: {} }) };
       if (name === './preferences') return { usePreferences: () => ({ preferences, update(value) { preferenceUpdates.push(value); Object.assign(preferences, value); } }) };
       if (name === '@/lib/voice-commands') return { voiceAudioGate: gate, voiceInput };
-      if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); } } };
+      if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() { speechStops++; } } };
       if (name === 'expo-speech-recognition') { imports++; assert.equal(native, true); return { ExpoSpeechRecognitionModule: recognizer }; }
       throw new Error(`Unexpected import ${name}`);
     },
@@ -70,6 +70,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
   return {
     navigation, starts, spoken, statuses, gate, appState, view, imports, preferenceUpdates, preferences,
     get stops() { return stops; },
+    get speechStops() { return speechStops; },
     get aborts() { return aborts; },
     emit: (name, event) => listeners.get(name)?.(event),
     tick() { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); now += 1000; },
@@ -437,4 +438,97 @@ test('saved commands-only preference ignores questions immediately after launch 
   app.emit('result', { results: [{ transcript: 'hey sora start stream' }], isFinal: true }); await flush();
   assert.equal(app.navigation.length, 1);
   app.cleanup();
+});
+
+
+test('answer playback keeps the microphone available, ignores echoes, and preserves exclusive recording', () => {
+  const gate = new VoiceAudioGate();
+  const release = gate.playback('There is a blue chair near the table.');
+  assert.equal(gate.paused, false);
+  assert.equal(gate.playing, true);
+  assert.equal(gate.userTranscript('a blue chair'), '');
+  assert.equal(gate.userTranscript('What is beside it?'), 'What is beside it?');
+  assert.equal(gate.userTranscript('blue chair near the table hey sora pause stream'), 'hey sora pause stream');
+  const recorded = gate.suspend();
+  assert.equal(gate.paused, true);
+  release();
+  assert.equal(gate.playing, false);
+  assert.equal(gate.paused, true);
+  recorded(); assert.equal(gate.paused, false);
+});
+
+test('speaking interrupts an answer on a partial result while the complete question is still accepted', async () => {
+  const app = mount(), questions = [];
+  app.view.props.value.registerQuestions(async question => { questions.push(question); return { answer: 'Beside the window.', language: 'en' }; });
+  await flush(); app.tick();
+  const release = app.gate.playback('There is a blue chair near the table.');
+  assert.equal(app.starts[0].iosVoiceProcessingEnabled, true);
+  assert.equal(app.starts[0].iosCategory.mode, 'voiceChat');
+  const aborts = app.aborts;
+  app.emit('result', { results: [{ transcript: 'What is beside' }], isFinal: false });
+  await flush();
+  assert.equal(app.speechStops, 1);
+  assert.equal(app.aborts, aborts, 'interrupting speech must keep the current recognition session');
+  assert.equal(questions.length, 0);
+  release();
+  app.emit('result', { results: [{ transcript: 'What is beside the chair?' }], isFinal: true });
+  await flush();
+  assert.deepEqual(questions, ['What is beside the chair?']);
+  assert.equal(app.spoken.at(-1), 'Beside the window.');
+  app.cleanup();
+});
+
+test('speaker echoes do not interrupt or execute commands, including delayed final results', async () => {
+  const app = mount(), questions = [];
+  app.view.props.value.registerQuestions(async question => { questions.push(question); return { answer: 'Unused', language: 'en' }; });
+  await flush(); app.tick();
+  const release = app.gate.playback('Say Hey Sora stop listening to chat freely.');
+  for (const final of [false, true]) app.emit('result', { results: [{ transcript: 'Hey Sora stop listening' }], isFinal: final });
+  assert.equal(app.speechStops, 0);
+  assert.equal(app.preferenceUpdates.length, 0);
+  release();
+  app.emit('result', { results: [{ transcript: 'Hey Sora stop listening' }], isFinal: true });
+  assert.equal(app.speechStops, 0);
+  assert.equal(app.preferenceUpdates.length, 0);
+  assert.equal(questions.length, 0);
+  app.cleanup();
+});
+
+test('ordinary speech can interrupt in commands-only mode without submitting a question', async () => {
+  const app = mount({ questionsEnabled: false }), questions = [];
+  app.view.props.value.registerQuestions(async question => { questions.push(question); return { answer: 'Unused', language: 'en' }; });
+  await flush(); app.tick();
+  const release = app.gate.playback('I will only respond to Hey Sora commands.');
+  app.emit('result', { results: [{ transcript: 'Hello how are you' }], isFinal: false });
+  await flush(); assert.equal(app.speechStops, 1);
+  release();
+  app.emit('result', { results: [{ transcript: 'Hello how are you' }], isFinal: true });
+  await flush(); assert.equal(questions.length, 0);
+  app.cleanup();
+});
+
+
+test('an interrupted speaker prefix is removed from the final command even after its echo tail expires', async t => {
+  const app = mount(), controls = [], questions = [];
+  app.view.props.value.registerStream(async command => { controls.push(command); return 'Stream paused.'; });
+  app.view.props.value.registerQuestions(async question => { questions.push(question); return { answer: 'Unused', language: 'en' }; });
+  await flush(); app.tick();
+  const release = app.gate.playback('There is a blue chair near the table.');
+  app.emit('result', { results: [{ transcript: 'a blue chair hey sora pause' }], isFinal: false });
+  await flush(); release();
+  const later = Date.now() + 2000;
+  t.mock.method(Date, 'now', () => later);
+  app.emit('result', { results: [{ transcript: 'a blue chair hey sora pause stream' }], isFinal: true });
+  await flush();
+  assert.deepEqual(controls, ['pause-stream']);
+  assert.equal(questions.length, 0);
+  app.cleanup();
+});
+
+
+test('a new Hey Sora command keeps its wake words when the answer also mentions Hey Sora', () => {
+  const gate = new VoiceAudioGate();
+  const release = gate.playback('I will only respond to Hey Sora commands.');
+  assert.equal(gate.userTranscript('Hey Sora pause stream'), 'Hey Sora pause stream');
+  release();
 });

@@ -93,6 +93,8 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
+    let interrupting = false;
+    let utterancePlayback: string[] = [];
     let utteranceTimer: ReturnType<typeof setTimeout> | undefined;
     const listeningStatus = 'Listening. Ask a question, or say “Hey Sora” for an app command.';
     function stillHere(target: QuestionTarget) {
@@ -142,15 +144,25 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
     function start() {
       if (disposed || AppState.currentState !== 'active' || voiceAudioGate.paused || blocked.current) return;
       try {
-        recognizer!.start({ lang: 'en-US', continuous: true, interimResults: true, maxAlternatives: 1, contextualStrings: ['Hey Sora', 'Hey Sora start stream', 'Hey Sora pause stream', 'Hey Sora resume stream', 'Hey Sora stop stream', 'Hey Sora stop listening', 'Hey Sora start listening', 'Hey Sora resume listening', 'Describe the scene'], recordingOptions: { persist: false } });
+        recognizer!.start({ lang: 'en-US', continuous: true, interimResults: true, maxAlternatives: 1, iosVoiceProcessingEnabled: true, iosCategory: { category: 'playAndRecord', categoryOptions: ['defaultToSpeaker', 'allowBluetooth'], mode: 'voiceChat' }, contextualStrings: ['Hey Sora', 'Hey Sora start stream', 'Hey Sora pause stream', 'Hey Sora resume stream', 'Hey Sora stop stream', 'Hey Sora stop listening', 'Hey Sora start listening', 'Hey Sora resume listening', 'Describe the scene'], recordingOptions: { persist: false } });
       } catch { fail('Voice listening could not start. Retry voice commands in Preferences.'); }
     }
     const subscriptions = [
-      recognizer.addListener('start', () => { if (!disposed) setStatus(listeningStatus); }),
+      recognizer.addListener('start', () => { utterancePlayback = []; if (!disposed) setStatus(listeningStatus); }),
       recognizer.addListener('result', event => {
         if (disposed || AppState.currentState !== 'active' || voiceAudioGate.paused || blocked.current) return;
         failures = 0;
         clearTimeout(utteranceTimer);
+        if (!utterancePlayback.length) utterancePlayback = voiceAudioGate.playbackTexts;
+        const transcript = voiceAudioGate.userTranscript(event.results[0]?.transcript || '', utterancePlayback);
+        if (event.isFinal) utterancePlayback = [];
+        if (!transcript) return;
+        if (voiceAudioGate.playing && !interrupting) {
+          // Interrupt on the first user partial result; do not wait for a final question.
+          // Keep recognition running so the rest of that utterance is still captured.
+          interrupting = true;
+          void speech.stop().catch(() => {}).finally(() => { interrupting = false; });
+        }
         if (!event.isFinal) {
           // iOS continuous recognition may only finalize when explicitly stopped.
           // Wait for a pause, then request the final transcript before acting.
@@ -159,7 +171,6 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
           }, 1200);
           return;
         }
-        const transcript = event.results[0]?.transcript.trim() || '';
         const input = voiceInput(transcript);
         if (!input) return;
         const key = transcript.toLocaleLowerCase().replace(/\s+/g, ' ');
@@ -180,6 +191,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
         } else void askQuestion(input.question);
       }),
       recognizer.addListener('error', event => {
+        utterancePlayback = [];
         clearTimeout(utteranceTimer);
         if (disposed || event.error === 'aborted' || event.error === 'no-speech') return;
         failures++;
@@ -188,6 +200,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
         }
       }),
       recognizer.addListener('end', () => {
+        utterancePlayback = [];
         clearTimeout(utteranceTimer);
         if (!disposed && !blocked.current) { clearTimeout(timer); timer = setTimeout(start, Math.min(500 * 2 ** failures, 5000)); }
       }),

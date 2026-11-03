@@ -18,10 +18,49 @@ export function voiceInput(transcript: string): VoiceInput | null {
   return { kind: 'question', question: text };
 }
 
-// Coordinate the microphone with question recording and SORA's own audio.
+// Question recording owns the microphone; answer playback keeps recognition active.
 export class VoiceAudioGate {
   private holders = new Set<symbol>();
   private listeners = new Set<() => void>();
+  private playbacks = new Map<symbol, string>();
+  private recentPlayback: { text: string; until: number }[] = [];
+  get playing() { return this.playbacks.size > 0; }
+  playback(text: string) {
+    const id = Symbol();
+    this.playbacks.set(id, text);
+    this.listeners.forEach(listener => listener());
+    return () => {
+      if (!this.playbacks.delete(id)) return;
+      // Recognition can deliver a few late speaker results after playback ends.
+      this.recentPlayback = this.recentPlayback.filter(value => value.until > Date.now());
+      this.recentPlayback.push({ text, until: Date.now() + 700 });
+      this.listeners.forEach(listener => listener());
+    };
+  }
+  get playbackTexts() {
+    this.recentPlayback = this.recentPlayback.filter(value => value.until > Date.now());
+    return [...this.playbacks.values(), ...this.recentPlayback.map(value => value.text)];
+  }
+  userTranscript(transcript: string, utterancePlayback: readonly string[] = []) {
+    const tokens = (value: string) => [...value.toLocaleLowerCase().matchAll(/[\p{L}\p{N}]+/gu)];
+    const heard = tokens(transcript);
+    if (!heard.length) return '';
+    const sources = [...this.playbackTexts, ...utterancePlayback];
+    let prefix = 0;
+    for (const text of sources) {
+      const spoken = tokens(text).map(value => value[0]);
+      for (let start = 0; start < spoken.length; start++) {
+        let length = 0;
+        while (start + length < spoken.length && length < heard.length && spoken[start + length] === heard[length][0]) length++;
+        prefix = Math.max(prefix, length);
+      }
+    }
+    if (prefix === heard.length) return '';
+    // Shared wake words must stay attached to a genuinely new app command.
+    if (voiceInput(transcript)?.kind === 'command') return transcript.trim();
+    // A cumulative result may contain a speaker echo followed by the user's voice.
+    return prefix >= 3 ? transcript.slice(heard[prefix].index).trim() : transcript.trim();
+  }
   get paused() { return this.holders.size > 0; }
   subscribe(listener: () => void) {
     this.listeners.add(listener);

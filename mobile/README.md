@@ -101,8 +101,8 @@ sessions remain controllable when you visit Preferences or another screen.
 
 Preferences includes a **Hands-free voice** switch, listening status and a retry
 button. The switch controls automatic questions and commands. Listening pauses in
-the background, during SORA speech/audio playback, and while recording a voice
-question, then resumes. The phone’s speech service may use the network. The listener
+the background and while recording a voice question, then resumes. During SORA
+answer playback it remains active so speaking can interrupt the answer. The phone’s speech service may use the network. The listener
 does not save audio recordings; recognized questions are submitted as text to the
 session question endpoint and retained with the session conversation.
 
@@ -152,3 +152,21 @@ accessibility hint and visible text.
 Navigation remains outside the start surface at the bottom. **More tools** opens
 the previous dashboard, including Read Text, Describe Scene and recent activity.
 The Hey Sora stream command continues to use the same startup flow.
+
+
+## Interrupting spoken answers
+
+With Hands-free voice enabled and the app open, start speaking while SORA reads an
+answer. Playback stops on the first recognized user words, before the sentence is
+finalized. The listener keeps the rest of that utterance so you can ask a follow-up
+question or issue a Hey Sora command. This also pauses the optional server voice.
+
+Recognition uses the shared play-and-record audio session and iOS voice processing
+for speaker echo cancellation. Known words from SORA's playback are filtered out,
+including a short tail of delayed recognition results, to reduce false interruptions and
+Hey Sora commands picked up from the speaker. Normal conversation can stop playback in commands-only
+mode, but it still cannot submit questions while question listening is off or the
+stream is paused. Turning off Hands-free voice disables voice interruption too.
+
+Verify interruption speed, speaker feedback, and headphone/Bluetooth routing on
+a physical phone; these depend on the device's speech recognition service.

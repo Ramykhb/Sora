@@ -25,11 +25,13 @@ test('automatic answers use the configured playback session and resume listening
   const { speech, spoken, modes, gate } = setup();
   await speech.answer('A chair is ahead.', 'en');
   assert.equal(modes[0].playsInSilentMode, true);
-  assert.equal(modes[0].allowsRecording, false);
+  assert.equal(modes[0].allowsRecording, true);
   assert.equal(spoken[0].options.useApplicationAudioSession, true);
-  assert.equal(gate.paused, true);
+  assert.equal(gate.paused, false);
+  assert.equal(gate.playing, true);
   spoken[0].options.onDone();
   assert.equal(gate.paused, false);
+  assert.equal(gate.playing, false);
 });
 
 test('stopping while audio config is pending prevents a delayed answer from speaking', async () => {
@@ -37,11 +39,13 @@ test('stopping while audio config is pending prevents a delayed answer from spea
   const app = setup(() => new Promise(resolve => { ready = resolve; }));
   const pending = app.speech.answer('Old answer.', 'en');
   for (let i = 0; i < 5; i++) await Promise.resolve();
-  assert.equal(app.gate.paused, true);
+  assert.equal(app.gate.paused, false);
+  assert.equal(app.gate.playing, true);
   await app.speech.stop();
   ready(); await pending;
   assert.equal(app.spoken.length, 0);
   assert.equal(app.gate.paused, false);
+  assert.equal(app.gate.playing, false);
 });
 
 test('audio setup errors release the microphone gate', async () => {
@@ -49,4 +53,5 @@ test('audio setup errors release the microphone gate', async () => {
   await assert.rejects(app.speech.answer('An answer.', 'en'), /Audio unavailable/);
   assert.equal(app.spoken.length, 0);
   assert.equal(app.gate.paused, false);
+  assert.equal(app.gate.playing, false);
 });
