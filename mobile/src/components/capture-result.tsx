@@ -60,7 +60,8 @@ function Result({ text }: { text: boolean }) {
           setAnswer(result.answer); setUncertain(result.uncertain); setWarnings(result.processing_warnings); answerLoaded = true;
         }
         setHeaders({ Authorization: `Bearer ${token}` }); setLanguage(sessionLanguage); setFrame(value); setError('');
-        if (['pending', 'processing'].includes(value.enrichment_status || '') && ++polls < 90) timer = setTimeout(() => void load(), 2000);
+        if (text) timer = setTimeout(() => void load(), 5000);
+        else if (['pending', 'processing'].includes(value.enrichment_status || '') && ++polls < 90) timer = setTimeout(() => void load(), 2000);
         else if (['pending', 'processing'].includes(value.enrichment_status || '')) setError('Processing is taking longer than expected. Tap refresh to check again.');
       } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : 'Unable to load this image.'); }
     }

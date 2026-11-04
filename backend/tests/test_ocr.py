@@ -51,3 +51,8 @@ def test_preprocessing_is_bounded_and_does_not_mutate_saved_pixels(shape):
     candidate = ocr.ocr_image(image)
     assert max(candidate.shape) <= 2560
     assert np.array_equal(image, original)
+
+
+def test_upscaled_ocr_can_preserve_native_200_percent_dimensions():
+    image = np.zeros((2160, 3840, 3), np.uint8)
+    assert ocr.ocr_image(image, rescale=False).shape == (2160, 3840)

@@ -60,7 +60,7 @@ def upscaler():
     import torch
     from spandrel import ImageModelDescriptor, ModelLoader
 
-    torch.set_num_threads(1)
+    torch.set_num_threads(settings.upscale_threads)
     model = ModelLoader().load_from_state_dict(checkpoint_weights(settings.upscale_model_path))
     if not isinstance(model, ImageModelDescriptor) or model.scale != 4:
         raise ValueError("Expected an image-to-image Real-ESRGAN x4+ model")

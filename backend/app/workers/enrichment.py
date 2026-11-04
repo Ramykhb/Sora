@@ -20,21 +20,29 @@ logger = logging.getLogger(__name__)
 
 
 async def update_frame(frame_id, **values):
-    # A frame may have expired or been deleted while inference was running.
+    # Serialize with the image/OCR worker. A delayed caption must not replace
+    # search text with OCR that was superseded during model inference.
     async with SessionFactory() as db:
-        frame = await db.scalar(
-            update(Frame)
-            .where(Frame.id == frame_id, Frame.expires_at > now(),
-                   Frame.enrichment_status.in_(["pending", "processing"]))
-            .values(**values)
-            .returning(Frame)
-        )
+        frame = await db.scalar(select(Frame).where(
+            Frame.id == frame_id, Frame.expires_at > now(),
+            Frame.enrichment_status.in_(["pending", "processing"]),
+        ).with_for_update())
+        if frame is None:
+            return None
+        if "search_text" in values:
+            current_text = " ".join([
+                values.get("caption", frame.caption), frame.ocr_text,
+                " ".join(obj["label"] for obj in frame.detected_objects),
+            ]).strip()
+            if current_text != values["search_text"]:
+                values.update(search_text=current_text, embedding=None, embedding_model=None)
+        if "processing_warnings" in values:
+            values["processing_warnings"] = list(dict.fromkeys([*frame.processing_warnings, *values["processing_warnings"]]))
+        for key, value in values.items():
+            setattr(frame, key, value)
         await db.commit()
-        if frame is not None:
-            output = FrameOut.model_validate(frame)
-            events.publish(
-                frame.session_id, {"type": "frame_updated", "frame": output.model_dump(mode="json")}
-            )
+        output = FrameOut.model_validate(frame)
+        events.publish(frame.session_id, {"type": "frame_updated", "frame": output.model_dump(mode="json")})
         return frame
 
 

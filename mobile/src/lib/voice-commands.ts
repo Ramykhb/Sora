@@ -1,10 +1,12 @@
 // Only complete, wake-prefixed commands may control the app.
 export type StreamCommand = 'pause-stream' | 'resume-stream' | 'stop-stream';
-export type VoiceCommand = 'start-stream' | StreamCommand | 'stop-listening' | 'start-listening';
+export type VoiceCommand = 'start-stream' | StreamCommand | 'stop-listening' | 'start-listening' | 'mute' | 'unmute';
 export function voiceCommand(transcript: string): VoiceCommand | null {
   const words = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   if (/^hey sora stop listening(?: please)?$/.test(words)) return 'stop-listening';
   if (/^hey sora (?:start|resume) listening(?: please)?$/.test(words)) return 'start-listening';
+  const voice = /^hey sora (mute|unmute)(?: (?:your )?voice)?(?: please)?$/.exec(words);
+  if (voice) return voice[1] as 'mute' | 'unmute';
   const match = /^hey sora (start|pause|resume|stop) (?:the )?stream(?: please)?$/.exec(words);
   return match ? `${match[1]}-stream` as VoiceCommand : null;
 }

@@ -109,7 +109,7 @@ services:
       context: .
       dockerfile: Dockerfile.upscaler
     ports: []
-    cpus: 1.0
+    cpus: ${UPSCALE_CPUS:-5.0}
     mem_limit: 2g
     command: ["python", "-m", "app.workers.upscaling"]
 

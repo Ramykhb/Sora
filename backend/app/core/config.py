@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     ocr_min_word_confidence: float = Field(default=60, ge=0, le=100)
     ocr_timeout_seconds: float = Field(default=4, ge=0.5, le=25)
     upscale_model_path: str = "/app/models/realesrgan_x4plus_f16.ckpt"
+    upscale_threads: int = Field(default=5, ge=1, le=16)
+    upscale_ocr_timeout_seconds: float = Field(default=8, ge=0.5, le=25)
     upscale_tile_size: int = Field(default=128, ge=32, le=256)
     ocr_languages: str = "eng+fra+ara"
     espeak_binary: str = "espeak-ng"

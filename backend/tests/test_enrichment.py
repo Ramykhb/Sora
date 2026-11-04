@@ -93,3 +93,23 @@ def test_deletion_during_enrichment_cannot_resurrect_an_image(client, monkeypatc
     monkeypatch.setattr(models, "describe", deleted_during_inference)
     api.portal.call(enrich_frame, result.frame.id)
     assert api.get(f"/api/v1/sessions/{sid}/frames").json() == []
+
+
+def test_delayed_caption_does_not_replace_search_with_pre_upscale_ocr(client, monkeypatch):
+    api, factory = client
+    result = save_fast(api, create(api))
+    async def describe(_):
+        async with factory() as db:
+            row = await db.get(Frame, result.frame.id)
+            row.ocr_text = "PLATFORM 7"
+            await db.commit()
+        return Scene(caption="A sign", uncertain=False)
+    monkeypatch.setattr(models, "describe", describe)
+    api.portal.call(enrich_frame, result.frame.id)
+    async def verify():
+        async with factory() as db:
+            row = await db.get(Frame, result.frame.id)
+            assert row.ocr_text == "PLATFORM 7"
+            assert "PLATFORM 7" in row.search_text and "EXIT" not in row.search_text
+            assert row.embedding is None
+    api.portal.call(verify)

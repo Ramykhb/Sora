@@ -85,3 +85,73 @@ def test_deleted_frame_cannot_be_resurrected_after_slow_upscaling(client, monkey
     monkeypatch.setattr(worker, "enhance_saved_image", enhance)
     assert api.portal.call(worker.enhance_frame, UUID(frame["id"])) is False
     assert not list(settings.local_storage_dir.rglob("*.jpg"))
+
+
+@pytest.fixture(autouse=True)
+def deterministic_worker_ocr(monkeypatch):
+    from app.workers import upscaling as worker
+    monkeypatch.setattr(worker, "recognize_text", lambda *args, **kwargs: ("EXIT", 95))
+
+
+def test_ocr_runs_after_upscaling_and_updates_search_and_embedding(client, monkeypatch):
+    from app.workers import upscaling as worker
+
+    api, factory = client
+    monkeypatch.setattr(worker, "SessionFactory", factory)
+    frame = upload(api, create(api))
+    async def low_confidence():
+        async with factory() as db:
+            row = await db.get(Frame, UUID(frame["id"]))
+            row.ocr_text, row.ocr_confidence = "unclear", 40
+            await db.commit()
+    api.portal.call(low_confidence)
+    monkeypatch.setattr(worker, "enhance_saved_image", lambda *args: (np.zeros((200, 200, 3), np.uint8), "realesrgan_x4plus_2x"))
+    def recognize(image, **kwargs):
+        assert image.shape == (200, 200, 3)
+        assert kwargs["rescale"] is False
+        return "PLATFORM 7", 96
+    monkeypatch.setattr(worker, "recognize_text", recognize)
+    api.portal.call(worker.enhance_frame, UUID(frame["id"]))
+    async def verify():
+        async with factory() as db:
+            row = await db.get(Frame, UUID(frame["id"]))
+            assert row.ocr_text == "PLATFORM 7" and row.ocr_confidence == 96
+            assert "PLATFORM 7" in row.search_text
+            assert row.embedding is not None
+            assert worker.OCR_MARKER in row.enhancements
+    api.portal.call(verify)
+
+
+def test_lower_confidence_upscaled_ocr_keeps_original_reading(client, monkeypatch):
+    from app.workers import upscaling as worker
+
+    api, factory = client
+    monkeypatch.setattr(worker, "SessionFactory", factory)
+    frame = upload(api, create(api))
+    monkeypatch.setattr(worker, "enhance_saved_image", lambda *args: (np.zeros((200, 200, 3), np.uint8), "realesrgan_x4plus_2x"))
+    monkeypatch.setattr(worker, "recognize_text", lambda *args, **kwargs: ("wrong reading", 65))
+    api.portal.call(worker.enhance_frame, UUID(frame["id"]))
+    value = api.get(f"/api/v1/sessions/{frame['session_id']}/frames/{frame['id']}").json()
+    assert value["ocr_text"] == "EXIT" and value["ocr_confidence"] == 95
+
+
+def test_existing_200_percent_images_get_ocr_without_being_upscaled_again(client, monkeypatch):
+    from app.workers import upscaling as worker
+    from app.services.storage.object_store import put_image
+    from app.services.frames.processing import jpeg
+
+    api, factory = client
+    monkeypatch.setattr(worker, "SessionFactory", factory)
+    frame = upload(api, create(api))
+    async def legacy_upscale():
+        async with factory() as db:
+            row = await db.get(Frame, UUID(frame["id"]))
+            row.enhancements = [*row.enhancements, upscaling.UPSCALE_MARKER]
+            put_image(row.processed_object_key, jpeg(np.zeros((200, 200, 3), np.uint8)))
+            await db.commit()
+    api.portal.call(legacy_upscale)
+    def forbidden(*args):
+        raise AssertionError("Previously upscaled images need only the OCR stage")
+    monkeypatch.setattr(worker, "enhance_saved_image", forbidden)
+    assert api.portal.call(worker.enhance_frame, UUID(frame["id"])) is True
+    assert api.portal.call(worker.enhance_frame, UUID(frame["id"])) is False

@@ -59,3 +59,21 @@ test('result playback receives completion, stop and error callbacks without chan
   assert.equal(spoken[1].options.language, 'fr');
   assert.equal(spoken[1].options.onDone, undefined);
 });
+
+
+test('global mute stops playback and suppresses answers and alerts until unmuted', async () => {
+  const { speech, spoken } = setup();
+  let interrupted = 0, completed = 0;
+  speech.registerInterruptor(() => interrupted++);
+  await speech.answer('Speaking', 'en');
+  await speech.setMuted(true);
+  assert.equal(speech.isMuted, true);
+  assert.equal(interrupted, 2);
+  await speech.answer('Silent answer', 'en', () => completed++);
+  await speech.alert('muted-alert', 'Silent alert', 'en', new Date(Date.now() + 2000).toISOString());
+  assert.equal(spoken.length, 1);
+  assert.equal(completed, 1);
+  await speech.setMuted(false);
+  await speech.answer('Voice unmuted', 'en');
+  assert.equal(spoken.at(-1).text, 'Voice unmuted');
+});

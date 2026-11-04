@@ -188,3 +188,7 @@ The patch is applied by `npm run postinstall`, checks its upstream anchor, and i
 safe to reapply. It edits the installed dependency rather than generated iOS files.
 It requires a new native build to take effect on a phone; app builds and installs
 should only run when explicitly requested.
+
+## Muting Sora by voice
+
+Say **Hey Sora, mute** to stop current speech and mute subsequent answers, guidance and alerts. Speech recognition and questions stay active. Say **Hey Sora, unmute** to restore voice and hear a brief confirmation. These commands update the same saved voice preference as the screen's speaker button. The mute setting also stops server-voice playback and prevents it from starting while muted.

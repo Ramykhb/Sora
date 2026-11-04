@@ -30,12 +30,12 @@ test('listening stays paused until every audio user releases it', () => {
 const providerSource = ts.transpileModule(fs.readFileSync(require.resolve('../src/providers/voice-commands.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 function mount({ native = true, granted = true, permissionPromise, enabled = true, questionsEnabled = true } = {}) {
   const effects = [], cleanups = [], listeners = new Map(), navigation = [], starts = [], spoken = [], statuses = [], timers = new Map();
-  const preferences = { onboarded: true, voiceCommands: enabled, handsFreeQuestions: questionsEnabled };
+  const preferences = { speak: true, onboarded: true, voiceCommands: enabled, handsFreeQuestions: questionsEnabled };
   const preferenceUpdates = [];
   const gate = new VoiceAudioGate();
   const meter = new VoiceLevelMeter();
   const appState = { currentState: 'active', addEventListener: () => ({ remove() {} }) };
-  let imports = 0, aborts = 0, stops = 0, speechStops = 0, now = 10000;
+  let imports = 0, aborts = 0, stops = 0, speechStops = 0, now = 10000, muted = false;
   const recognizer = {
     isRecognitionAvailable: () => true,
     requestPermissionsAsync: () => permissionPromise || Promise.resolve({ granted }),
@@ -63,7 +63,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
       if (name === './preferences') return { usePreferences: () => ({ preferences, update(value) { preferenceUpdates.push(value); Object.assign(preferences, value); } }) };
       if (name === '@/lib/voice-level') return { voiceLevel: meter };
       if (name === '@/lib/voice-commands') return { voiceAudioGate: gate, voiceInput };
-      if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() { speechStops++; } } };
+      if (name === '@/lib/speech') return { speech: { async setMuted(value) { muted = value; if (value) speechStops++; }, async answer(text) { if (!muted) spoken.push(text); }, async stop() { speechStops++; } } };
       if (name === 'expo-speech-recognition') { imports++; assert.equal(native, true); return { ExpoSpeechRecognitionModule: recognizer }; }
       throw new Error(`Unexpected import ${name}`);
     },
@@ -558,5 +558,32 @@ test('background microphone events cannot animate the voice waveform', async () 
   app.emit('start'); app.appState.currentState = 'background';
   app.emit('volumechange', { value: 10 });
   assert.equal(app.meter.getSnapshot().level, 0);
+  app.cleanup();
+});
+
+
+test('mute and unmute require a complete Hey Sora command', () => {
+  for (const text of ['Hey Sora mute', 'Hey Sora, mute your voice please']) assert.equal(voiceCommand(text), 'mute');
+  assert.equal(voiceCommand('Hey Sora unmute'), 'unmute');
+  for (const text of ['mute', 'unmute', 'hey sora do not mute', 'hey sora mute tomorrow']) assert.equal(voiceCommand(text), null);
+});
+
+test('muting persists the voice preference while recognition and questions stay active', async () => {
+  const app = mount(), questions = [];
+  app.view.props.value.registerQuestions(async question => { questions.push(question); return { answer: 'A chair.', language: 'en' }; });
+  await flush(); app.tick();
+  const say = async transcript => { app.emit('result', { results: [{ transcript }], isFinal: true }); await flush(); };
+  await say('Hey Sora mute');
+  assert.equal(app.preferences.speak, false);
+  assert.equal(app.preferences.handsFreeQuestions, true);
+  assert.ok(app.speechStops > 0);
+  await say('What is in front of me');
+  assert.deepEqual(questions, ['What is in front of me']);
+  assert.equal(app.spoken.length, 0);
+  await say('Hey Sora unmute');
+  assert.equal(app.preferences.speak, true);
+  assert.equal(app.spoken.at(-1), 'Voice unmuted.');
+  await say('Describe the scene');
+  assert.equal(app.spoken.at(-1), 'A chair.');
   app.cleanup();
 });
