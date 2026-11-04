@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     vision_model: str = "qwen2.5vl:3b"
     # Captioning needs scene context; OCR and storage retain max_image_side.
     vision_image_max_side: int = Field(default=448, ge=224, le=2048)
+    gemini_enabled: bool = False
+    gemini_api_key: SecretStr = SecretStr("")
+    gemini_model: str = Field(default="gemini-3.5-flash-lite", pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]{1,100}$")
+    gemini_thinking_level: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH"] = "MINIMAL"
+    gemini_deadline_seconds: float = Field(default=5, ge=1, le=10)
+    gemini_http_timeout_seconds: float = Field(default=4, ge=0.1, le=8)
+    gemini_image_max_side: int = Field(default=1024, ge=320, le=2048)
     embedding_model: str = "qwen3-embedding:0.6b"
     embedding_dimensions: Literal[1024] = 1024
 

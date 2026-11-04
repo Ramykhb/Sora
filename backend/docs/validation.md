@@ -87,3 +87,9 @@ The smoke script runs image storage/retrieval, text answers, TTS, an audio quest
 - New Alembic migration `0002_authentication` is implemented but was not applied to a running PostgreSQL deployment here. The local `.venv` has not been populated; installation failed because PyPI DNS resolution is unavailable. Run `uv pip install -r requirements-dev.txt`, then `alembic upgrade head` in the configured environment.
 - Real SMTP delivery has not been tested; configure SMTP and exercise verification/reset with your mailbox or a local mail sandbox.
 - Frontend authentication remains outside this change; the web dashboard still uses sample data.
+
+### Gemini current-view path — 2026-11-04
+
+- 173 backend tests passed with cloud credentials mocked and explicitly disabled outside the cloud tests. Tests cover a redacted retained image, key-free error responses, structured output, provider failure/deadline fallback, identity-request exclusion, local memory queries, and walking-answer guards. Lint passed.
+- With the configured private key, one generated `EXIT 123` image request to Gemini 3.5 Flash-Lite returned the correct text in 3.18 seconds. The first complete pipeline probe hit its former four-second cloud allocation and returned local detection in 4.04 seconds. The allocation now reserves 0.5 seconds of the five-second analysis deadline for fallback. A warmed complete pipeline probe then returned the correct text with one retained evidence ID in 1.59 seconds. Temporary probe sessions, questions, and images were deleted.
+- These are individual synthetic checks, not real-world accuracy, hazard recall or a latency guarantee. Actual network/provider load, image preparation, frame age, database work and phone speech timing vary. Walking evidence still expires after two seconds; a slow cloud walking response must fall back or report unavailable recent evidence.

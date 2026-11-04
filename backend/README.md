@@ -122,3 +122,25 @@ docker compose -f backend/docker-compose.yml exec api python -m scripts.blur_sav
 ```
 
 The command reports checked/blurred frames and skips frames already processed by the current privacy policy. It can resume after interruption. The bundled MIT-licensed YuNet detector scans all four image orientations, with padded blur regions. Detection is automated and cannot guarantee that every face is found.
+
+### Optional Gemini current-view analysis
+
+Get a key from [Google AI Studio](https://aistudio.google.com/apikey), then set the following **only in private `backend/.env`**:
+
+```dotenv
+GEMINI_ENABLED=true
+GEMINI_API_KEY=your-key-here
+GEMINI_MODEL=gemini-3.5-flash-lite
+```
+
+Apply changed environment values with:
+
+```sh
+docker compose -f backend/docker-compose.yml --profile app --profile webrtc up -d --no-build --force-recreate api
+```
+
+When enabled with a key, detailed current-view and text-reading questions send one face-redacted JPEG to Google's Gemini API. A forced evidence save uses the shared privacy path, skipping OCR, detector inference and the local generative-model queue. Retained images are compressed to `GEMINI_IMAGE_MAX_SIDE=1024` for upload. The server assigns the real evidence ID and validates it after inference. Historical-memory questions, background captions/embeddings and basic object overviews remain local. No cloud calls occur with the flag off or the key empty. The key is sent only in an HTTPS request header and is never returned to phone/dashboard clients.
+
+`GEMINI_DEADLINE_SECONDS=5` bounds the current-view analysis stage, including evidence preparation and fallback. Half a second is reserved for local detection; the provider HTTP timeout is `GEMINI_HTTP_TIMEOUT_SECONDS=4`. Gemini uses `GEMINI_THINKING_LEVEL=MINIMAL` and at most 256 output tokens. There are no slow retries or local-VLM fallback on this path. Database authentication/persistence, speech recognition and speech playback add overhead outside the analysis budget; this is a latency target, not a five-second guarantee for every spoken interaction. Model, key, quota and network errors fall back to local object observations, with explicit warning codes. Without recent evidence the answer reports that limitation.
+
+Walking questions never establish that a route is navigable. They retain the stricter two-second evidence age limit, including after cloud inference; a stale cloud response falls back to a fresh local observation. Identity questions never send images to Gemini. Automated face detection can miss small or obscured faces. Google receives the redacted camera image and question when cloud analysis is used; configure the flag deliberately. Refer to Google's API account terms and quotas for your project.

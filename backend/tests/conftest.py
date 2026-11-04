@@ -44,6 +44,7 @@ def client(tmp_path, monkeypatch):
             await connection.run_sync(Base.metadata.create_all)
 
     asyncio.run(initialize())
+    monkeypatch.setattr(settings, "gemini_enabled", False)
     monkeypatch.setattr(settings, "auto_migrate", False)
     monkeypatch.setattr(settings, "storage_backend", "local")
     monkeypatch.setattr(settings, "local_storage_dir", tmp_path / "objects")

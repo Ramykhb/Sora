@@ -2,7 +2,7 @@
 
 Multimedia Database and Image Processing, Fall 2026/2027. An iPhone/Android camera streams live video to a server. The server detects supported objects, selects and enhances useful frames, reads text, stores searchable visual memory, and answers spoken questions from retained camera evidence. A web dashboard shares live video, timeline, search, conversations and feedback with the phone account.
 
-This assistant describes observations and uncertainty. It does not establish that a walking route is clear or replace a white cane or guide dog. Detected faces are blurred in saved images; there is no face recognition. Start capture only with consenting participants; selected frames expire after 24 hours by default and can be deleted sooner. Raw camera video and uploaded voice recordings are not retained by the server.
+This assistant describes observations and uncertainty. It does not establish that a walking route is clear or replace a white cane or guide dog. Detected faces are blurred in saved images; there is no face recognition. Start capture only with consenting participants; selected frames expire after 24 hours by default and can be deleted sooner. Raw camera video and uploaded voice recordings are not retained by the server. Optional [Gemini current-view analysis](backend/README.md#optional-gemini-current-view-analysis) sends a face-redacted snapshot and question to Google when configured.
 
 ## Run the whole application
 
