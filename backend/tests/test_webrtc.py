@@ -23,7 +23,7 @@ def test_webrtc_relays_continuous_video_and_samples_once_per_second(client, monk
     class Camera(VideoStreamTrack):
         async def recv(self):
             pts, time_base = await self.next_timestamp()
-            pixels = np.indices((240, 320)).sum(axis=0) % 2 * 200 + 30
+            pixels = np.indices((720, 1280)).sum(axis=0) % 2 * 200 + 30
             frame = VideoFrame.from_ndarray(np.repeat(pixels[:, :, None], 3, axis=2).astype(np.uint8), format="rgb24")
             frame.pts, frame.time_base = pts, time_base
             return frame
@@ -48,7 +48,7 @@ def test_webrtc_relays_continuous_video_and_samples_once_per_second(client, monk
             await viewer.setRemoteDescription(RTCSessionDescription(sdp=response["sdp"], type="answer"))
             track = await asyncio.wait_for(received_track, 5)
             first = await asyncio.wait_for(track.recv(), 5)
-            assert first.width == 320 and first.height == 240
+            assert first.width == 1280 and first.height == 720
             initial = streams.states[sid].sampled
             count, start = 1, monotonic()
             while monotonic() - start < 2.2:
@@ -103,3 +103,26 @@ def test_stream_config_issues_temporary_turn_credentials_not_the_shared_secret(c
     assert relay["credential"] == expected
     assert config["ice_transport_policy"] == "relay"
     assert "test-relay-secret" not in str(config)
+
+
+@pytest.mark.parametrize("codec_name,encoder_name", [("vpx", "Vp8Encoder"), ("h264", "H264Encoder")])
+def test_hd_encoder_budget_still_respects_congestion(monkeypatch, codec_name, encoder_name):
+    from aiortc import codecs
+    from app.services.streaming.quality import configure_video_encoders
+
+    # Restore process-wide codec constants after exercising the compatibility shim.
+    for module in (codecs.vpx, codecs.h264):
+        monkeypatch.setattr(module, "MAX_BITRATE", module.MAX_BITRATE)
+        monkeypatch.setattr(module, "DEFAULT_BITRATE", module.DEFAULT_BITRATE)
+    monkeypatch.setattr(settings, "stream_video_max_bitrate", 6_000_000)
+    configure_video_encoders()
+    codec = getattr(codecs, codec_name)
+    encoder = getattr(codec, encoder_name)()
+    assert encoder.target_bitrate == 3_000_000
+    encoder.target_bitrate = 5_000_000
+    assert encoder.target_bitrate == 5_000_000, "HD must not hit aiortc's old codec ceiling"
+    encoder.target_bitrate = 20_000_000
+    assert encoder.target_bitrate == 6_000_000
+    encoder.target_bitrate = 300_000
+    assert encoder.target_bitrate == max(300_000, codec.MIN_BITRATE)
+    assert encoder.target_bitrate < 3_000_000, "Congestion feedback must still reduce bandwidth"

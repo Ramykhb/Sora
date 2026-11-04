@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     turn_public_host: str = ""
     turn_internal_host: str = "turn"
     turn_shared_secret: SecretStr = SecretStr("")
+    stream_video_max_bitrate: int = Field(default=6_000_000, ge=500_000, le=20_000_000)
     max_stream_viewers: int = Field(default=8, ge=1, le=32)
     max_live_sessions: int = Field(default=4, ge=1, le=32)
     model_config = SettingsConfigDict(env_file=BACKEND_ROOT / ".env", extra="ignore")

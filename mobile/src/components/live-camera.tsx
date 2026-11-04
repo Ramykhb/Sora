@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import { useAuth } from '@/providers/auth';
-import { maintainVideo, publishVideo, type StreamConfig } from '@/lib/webrtc';
+import { configureVideoSender, maintainVideo, publishVideo, VIDEO_CAPTURE, type StreamConfig } from '@/lib/webrtc';
 import { useUI } from './controls';
 
 export function LiveCamera({ sessionId, active, fullscreen = false, facing = 'back', onConnectionChange }: { sessionId: string; active: boolean; fullscreen?: boolean; facing?: 'back' | 'front'; onConnectionChange?: (connected: boolean) => void }) {
@@ -34,7 +34,7 @@ export function LiveCamera({ sessionId, active, fullscreen = false, facing = 'ba
         const config = await api.request<StreamConfig>(`/sessions/${sessionId}/stream/config`);
         if (disposed) return;
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('Browser camera streaming requires HTTPS or localhost.');
-        media = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: facing === 'back' ? 'environment' : 'user', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 15, max: 15 } } });
+        media = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: facing === 'back' ? 'environment' : 'user', width: { ideal: VIDEO_CAPTURE.width }, height: { ideal: VIDEO_CAPTURE.height }, frameRate: { ideal: VIDEO_CAPTURE.frameRate, max: VIDEO_CAPTURE.frameRate } } });
         if (disposed) { media.getTracks().forEach(track => track.stop()); return; }
         if (video.current) { video.current.srcObject = media; await video.current.play(); }
         peer = new RTCPeerConnection({ iceServers: config.ice_servers, iceTransportPolicy: config.ice_transport_policy });
@@ -46,6 +46,8 @@ export function LiveCamera({ sessionId, active, fullscreen = false, facing = 'ba
         });
         const id = await publishVideo(api, sessionId, peer, controller.signal);
         release = maintainVideo(api, sessionId, id, fail);
+        const sender = peer.getSenders().find(sender => sender.track?.kind === 'video');
+        if (sender && !disposed) await configureVideoSender(sender);
         if (disposed) { release(); release = undefined; }
       } catch (error) { fail(error); }
     }
@@ -56,6 +58,6 @@ export function LiveCamera({ sessionId, active, fullscreen = false, facing = 'ba
     };
   }, [active, api, sessionId, attempt, facing]);
   return <View style={fullscreen ? { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 } : ui.card}>{(!fullscreen || status !== 'Streaming live video') && <Text accessibilityLiveRegion="polite" style={fullscreen ? { position: 'absolute', top: 115, left: 22, right: 22, zIndex: 2, color: 'white', backgroundColor: '#080D1699', padding: 10 } : ui.subtitle}>{active ? status : 'Camera paused'}</Text>}
-    {active && <video ref={video} autoPlay muted playsInline style={{ width: '100%', height: fullscreen ? '100%' : 240, objectFit: 'cover', borderRadius: fullscreen ? 0 : 16 }} />}
+    {active && <video ref={video} autoPlay muted playsInline style={{ width: '100%', height: fullscreen ? '100%' : 240, objectFit: 'contain', borderRadius: fullscreen ? 0 : 16 }} />}
   </View>;
 }

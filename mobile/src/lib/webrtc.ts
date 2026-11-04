@@ -11,6 +11,32 @@ type SignalingPeer = {
   removeEventListener(type: 'icegatheringstatechange' | 'icecandidate', listener: () => void): void;
 };
 
+// Shared capture/encoding budget for native and browser publishers. Keep this in
+// JavaScript so an existing WebRTC development client can load it through Metro.
+export const VIDEO_CAPTURE = { width: 1920, height: 1080, frameRate: 15 };
+export const VIDEO_MAX_BITRATE = 6_000_000;
+
+type VideoSendParameters = {
+  encodings: { maxBitrate?: number | null; maxFramerate?: number | null; scaleResolutionDownBy?: number | null }[];
+  degradationPreference?: string | null;
+};
+
+export async function configureVideoSender<T extends VideoSendParameters>(sender: {
+  getParameters(): T;
+  setParameters(parameters: T): Promise<void>;
+}) {
+  // Call after negotiation, when encodings exist. Preserve native parameter
+  // objects (including their setters/toJSON), transaction ID and encoding count.
+  const parameters = sender.getParameters();
+  parameters.degradationPreference = 'maintain-resolution';
+  for (const encoding of parameters.encodings) {
+    encoding.maxBitrate = VIDEO_MAX_BITRATE;
+    encoding.maxFramerate = VIDEO_CAPTURE.frameRate;
+    encoding.scaleResolutionDownBy = 1;
+  }
+  await sender.setParameters(parameters);
+}
+
 export function waitForIce(peer: SignalingPeer, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
     let settled = false;

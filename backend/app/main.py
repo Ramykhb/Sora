@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app):
+    from app.services.streaming.quality import configure_video_encoders
+
+    configure_video_encoders()
     if settings.auto_migrate:
         from alembic import command
         from alembic.config import Config
