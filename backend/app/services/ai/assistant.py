@@ -122,7 +122,7 @@ async def _answer_evidence(session_id, request, session, language, requested_sco
             try:
                 if not text_only:
                     images.append(await asyncio.to_thread(
-                        lambda key=frame.processed_object_key: answer_image(get_image(key))
+                        lambda key=frame.original_object_key: answer_image(get_image(key))
                     ))
                 context.append(
                     {

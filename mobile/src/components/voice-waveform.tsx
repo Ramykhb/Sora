@@ -41,7 +41,7 @@ export function VoiceWaveform({ commandsOnly = false }: { commandsOnly?: boolean
   }, [amplitude, target, reduceMotion]);
   const label = !enabled ? 'Microphone off' : !listening ? 'Microphone idle' : commandsOnly ? 'Hey Sora commands only' : 'Listening for your voice';
   const color = enabled && listening ? colors.primary : colors.muted;
-  return <View accessible accessibilityLabel={label} style={{ gap: 6, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 16, paddingVertical: 12 }}>
+  return <View accessible accessibilityLabel={label} style={{ gap: 6, backgroundColor: 'transparent', paddingHorizontal: 16, paddingVertical: 12 }}>
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.wave}>
       <View style={[styles.centerline, { backgroundColor: color }]} />
       {spikes.map((scaleY, index) => <View key={index} style={styles.column}>

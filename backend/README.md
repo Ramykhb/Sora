@@ -122,3 +122,21 @@ docker compose -f backend/docker-compose.yml exec api python -m scripts.blur_sav
 ```
 
 The command reports checked/blurred frames and skips frames already processed by the current privacy policy. It can resume after interruption. The bundled MIT-licensed YuNet detector scans all four image orientations, with padded blur regions. Detection is automated and cannot guarantee that every face is found.
+
+### Optional 200% saved-image enhancement
+
+The `enhancement` Compose profile runs a separate Real-ESRGAN worker capped at one CPU and 2 GB RAM. It produces a processed image with twice the source width and height. CPU inference on full-size frames can take several minutes or longer; newly saved frames remain available immediately and recent images take priority. Streaming, OCR and captioning do not wait for it. Frames already marked as upscaled are skipped. Original blurred JPEGs and source dimensions/object coordinates are preserved; OCR and assistant image evidence use those originals. Generated detail is intended for display.
+
+This importer accepts the Draw Things `realesrgan_x4plus_f16.ckpt` SQLite tensor format (not an arbitrary pickled checkpoint). Copy the model into the persistent model volume once. The USB file is read only and can be disconnected after copying:
+
+```sh
+# First set up/build the API normally (the default Compose project is backend).
+docker compose -f backend/docker-compose.yml --profile app build api
+docker cp "/Volumes/YOUR_USB/Models/realesrgan_x4plus_f16.ckpt" backend-api-1:/app/models/realesrgan_x4plus_f16.ckpt
+docker compose -f backend/docker-compose.yml --profile enhancement build upscaler
+docker compose -f backend/docker-compose.yml --profile enhancement up -d upscaler
+```
+
+`Dockerfile.upscaler` uses the local `backend-api` image as its base, then installs the pinned model loader without replacing CPU PyTorch. If using another Compose project/image name, build it with `--build-arg API_IMAGE=YOUR_API_IMAGE`. `UPSCALE_TILE_SIZE=128` bounds inference tile memory; overlapping tiles reduce seams. The x4 network output is reduced to the requested 2x size. Existing privacy-blurred frames use non-generative Lanczos 2x scaling because their original blur coordinates were not retained. Other outputs are checked for faces and blurred before storage. Inference is always based on the original object, so retrying after interruption cannot multiply the scale repeatedly.
+
+Stop only this optional work with `docker compose -f backend/docker-compose.yml stop upscaler`. To retry a row marked `upscale_failed`, correct the model/storage error and remove that warning using a trusted database maintenance workflow.

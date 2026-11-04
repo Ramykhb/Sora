@@ -63,7 +63,7 @@ services:
       - "48000-48099:48000-48099/udp"
     restart: unless-stopped
 
-  api:
+  api: &api-service
     profiles: ["app"]
     build: .
     env_file:
@@ -101,6 +101,17 @@ services:
       - ./migrations:/app/migrations:ro
       - ./scripts:/app/scripts:ro
     restart: unless-stopped
+
+  upscaler:
+    <<: *api-service
+    profiles: ["enhancement"]
+    build:
+      context: .
+      dockerfile: Dockerfile.upscaler
+    ports: []
+    cpus: 1.0
+    mem_limit: 2g
+    command: ["python", "-m", "app.workers.upscaling"]
 
 volumes:
   postgres_data:
