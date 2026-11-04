@@ -79,3 +79,9 @@ Start the relay with `docker compose --profile webrtc up -d turn`, then recreate
 The phone/browser publisher requests 1920×1080 at 15 fps (device support permitting), with a 6 Mbps encoding ceiling and a preference for preserving resolution under load. The phone preview fits the whole camera image instead of cropping and enlarging it. Dashboard WebRTC playback relays the source resolution independently of detector and memory resizing. `STREAM_VIDEO_MAX_BITRATE=6000000` controls the server encoder ceiling; encoders start at up to 3 Mbps and may reduce bitrate in response to congestion. aiortc’s default VP8 budget (500 kbps start, 1.5 Mbps maximum) is too restrictive for detailed HD scenes.
 
 These changes need no native rebuild. Reload the existing WebRTC development app from Metro and restart the stream to apply capture settings. Restart the API after changing server encoder settings; existing video connections will reconnect.
+
+### Camera text recognition
+
+`MAX_IMAGE_SIDE=1920` preserves full-HD detail in retained frames and sampled JPEGs; detector inference and VLM image sizes remain independently bounded. Existing installations with an explicit smaller value must update it to retain the additional detail from future captures.
+
+OCR uses an enlarged grayscale copy of face-redacted pixels, compares sparse-text and page layouts, and can retry with long borders/rules removed. Stored images are not thresholded for OCR. `OCR_MIN_WORD_CONFIDENCE=60` filters unreliable words (isolated glyphs require higher confidence); `OCR_TIMEOUT_SECONDS=4` bounds all passes together. English, French and Arabic remain enabled through `OCR_LANGUAGES`. Confidence is an engine score, not a measured accuracy percentage. Small, defocused, skewed or glare-obscured text can still be unreadable. Text-reading requests without accepted OCR return a request for a clearer view rather than asking the VLM to reconstruct missing text from a small image.

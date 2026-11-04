@@ -352,3 +352,31 @@ def test_identity_requests_are_refused_without_model_identification(client, monk
         f"/api/v1/sessions/{sid}/questions", json={"question": "Who is this person?"}
     ).json()
     assert answer["uncertain"] and "don't identify people" in answer["answer"]
+
+
+def test_unreadable_text_does_not_ask_vision_model_to_invent_a_reading(client, monkeypatch):
+    from uuid import UUID
+
+    api, factory = client
+    sid = create(api)
+    frame = upload(api, sid)
+
+    async def erase_ocr():
+        async with factory() as db:
+            row = await db.get(Frame, UUID(frame["id"]))
+            row.ocr_text = ""
+            row.ocr_confidence = 0
+            await db.commit()
+
+    async def forbidden(*args):
+        raise AssertionError("Unreadable text must not be reconstructed from the small VLM image")
+
+    asyncio.run(erase_ocr())
+    monkeypatch.setattr(models, "chat", forbidden)
+    response = api.post(f"/api/v1/sessions/{sid}/questions",
+                        json={"question": "Read the text in front of me", "scope": "recent"})
+    assert response.status_code == 200, response.text
+    answer = response.json()
+    assert answer["uncertain"] is True
+    assert "cannot read" in answer["answer"]
+    assert "ocr_unreadable" in answer["processing_warnings"]

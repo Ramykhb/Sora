@@ -3,12 +3,10 @@ from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 import threading
-from time import perf_counter
 import cv2
 import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
 from PIL.Image import open as open_image
-import pytesseract
 from app.core.config import settings
 from app.core.errors import BackendError
 from app.services.frames.privacy import PRIVACY_VERSION, blur_regions, face_regions
@@ -133,43 +131,9 @@ def warmup_detector():
 
 
 def read_text(prepared: PreparedImage, languages: str | None = None) -> tuple[str, float]:
-    started = perf_counter()
-    rgb = cv2.cvtColor(prepared.image, cv2.COLOR_BGR2RGB)
-    try:
-        data = pytesseract.image_to_data(
-            rgb,
-            lang=languages or settings.ocr_languages,
-            output_type=pytesseract.Output.DICT,
-            timeout=25,
-        )
-        if not any(word.strip() for word in data["text"]):
-            # Printed sign/table borders can make Tesseract treat the whole
-            # region as a graphic. Remove only long straight rules on an OCR
-            # copy; retain the stored image and original object observations.
-            gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-            _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
-            height, width = gray.shape
-            horizontal = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((1, max(64, width // 3)), np.uint8))
-            vertical = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((max(64, height // 3), 1), np.uint8))
-            lines = cv2.bitwise_or(horizontal, vertical)
-            if np.any(lines):
-                clean = cv2.bitwise_not(cv2.subtract(ink, lines))
-                remaining = 25 - (perf_counter() - started)
-                if remaining > 0.1:
-                    data = pytesseract.image_to_data(
-                        clean, lang=languages or settings.ocr_languages, config="--psm 11",
-                        output_type=pytesseract.Output.DICT, timeout=remaining,
-                    )
-    except (pytesseract.TesseractNotFoundError, pytesseract.TesseractError, RuntimeError) as exc:
-        raise BackendError(
-            "OCR failed; check Tesseract and installed language data", 503, "ocr_unavailable"
-        ) from exc
-    words, confidences = [], []
-    for word, confidence in zip(data["text"], data["conf"]):
-        if word.strip() and float(confidence) >= 0:
-            words.append(word.strip())
-            confidences.append(float(confidence))
-    return " ".join(words), sum(confidences) / max(len(confidences), 1)
+    from app.services.frames.ocr import recognize_text
+
+    return recognize_text(prepared.image, languages)
 
 
 def detect_objects(image: np.ndarray) -> list[dict]:

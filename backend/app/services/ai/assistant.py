@@ -97,8 +97,18 @@ async def _answer_evidence(session_id, request, session, language, requested_sco
         True,
         [],
     )
+    reading_text = bool(TEXT_QUESTION.search(request.question)) and not (
+        VISUAL_QUESTION.search(request.question) or ROUTE_QUESTION.search(request.question)
+    )
     if IDENTITY_QUESTION.search(request.question):
         answer = IDENTITY_REFUSAL[language]
+    elif frames and reading_text and not any(frame.ocr_text.strip() for frame in frames):
+        answer = {
+            "en": "I cannot read the text clearly. Move closer, hold the camera steady, and avoid glare.",
+            "fr": "Je ne peux pas lire clairement le texte. Rapprochez la caméra, stabilisez-la et évitez les reflets.",
+            "ar": "لا أستطيع قراءة النص بوضوح. قرّب الكاميرا وثبّتها وتجنّب الانعكاسات.",
+        }[language]
+        warnings.append("ocr_unreadable")
     elif frames:
         images, context = [], []
         # Reading retained text does not need another expensive image encoding
@@ -120,6 +130,7 @@ async def _answer_evidence(session_id, request, session, language, requested_sco
                         "frame_id": str(frame.id),
                         "captured_at": frame.captured_at.isoformat(),
                         "ocr": frame.ocr_text[:3000],
+                        "ocr_confidence": frame.ocr_confidence,
                         "objects": frame.detected_objects,
                         "caption": frame.caption[:1500],
                         "warnings": frame.processing_warnings,
@@ -149,7 +160,8 @@ async def _answer_evidence(session_id, request, session, language, requested_sco
                             "The supplied image may be a numbered contact sheet; image_panel maps each "
                             "panel to its frame metadata. OCR is from the retained full-resolution image. "
                             "When there is no image, answer text-reading questions only from supplied OCR; "
-                            "do not infer missing visual attributes. "
+                            "do not infer missing visual attributes. OCR can be partial or incorrect: never "
+                            "complete missing words or treat fragments as a complete sentence. "
                             "Return JSON with answer, uncertain, evidence_frame_ids. Reply in "
                             + {"en": "English", "fr": "French", "ar": "Arabic"}[language]
                             + (". Use fully diacritized Arabic." if language == "ar" else "."),

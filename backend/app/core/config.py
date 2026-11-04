@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     cleanup_interval_seconds: int = Field(default=60, ge=1)
     max_upload_mb: int = Field(default=15, ge=1, le=100)
     max_image_pixels: int = Field(default=20_000_000, ge=1000)
-    max_image_side: int = Field(default=1280, ge=320, le=4096)
+    max_image_side: int = Field(default=1920, ge=320, le=4096)
     min_sharpness: float = 20.0
     min_brightness: float = 5.0
     duplicate_hash_distance: int = Field(default=5, ge=0, le=64)
@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     whisper_model: str = "base"
     whisper_compute_type: str = "int8"
     max_audio_seconds: int = Field(default=60, ge=1, le=120)
+    ocr_min_word_confidence: float = Field(default=60, ge=0, le=100)
+    ocr_timeout_seconds: float = Field(default=4, ge=0.5, le=25)
     ocr_languages: str = "eng+fra+ara"
     espeak_binary: str = "espeak-ng"
     alert_cooldown_seconds: int = 30
