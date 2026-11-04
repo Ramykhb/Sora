@@ -15,7 +15,8 @@ def ice_servers(*, internal=False):
             hmac.new(secret.encode(), username.encode(), hashlib.sha1).digest()
         ).decode()
         servers.append({
-            "urls": [f"turn:{host}:3478?transport=udp", f"turn:{host}:3478?transport=tcp"],
+            "urls": (settings.turn_public_urls if not internal and settings.turn_public_urls else
+                     [f"turn:{host}:3478?transport=udp", f"turn:{host}:3478?transport=tcp"]),
             "username": username, "credential": credential,
         })
     return servers

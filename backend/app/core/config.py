@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     alert_cooldown_seconds: int = 30
     ice_servers: list[dict] = []
     turn_public_host: str = ""
+    turn_public_urls: list[str] = []
     turn_internal_host: str = "turn"
     turn_shared_secret: SecretStr = SecretStr("")
     stream_preview_max_side: int = Field(default=1280, ge=320, le=1920)
