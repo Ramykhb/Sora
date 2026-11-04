@@ -23,7 +23,7 @@ def test_webrtc_relays_continuous_video_and_samples_once_per_second(client, monk
     class Camera(VideoStreamTrack):
         async def recv(self):
             pts, time_base = await self.next_timestamp()
-            pixels = np.indices((720, 1280)).sum(axis=0) % 2 * 200 + 30
+            pixels = np.indices((1080, 1920)).sum(axis=0) % 2 * 200 + 30
             frame = VideoFrame.from_ndarray(np.repeat(pixels[:, :, None], 3, axis=2).astype(np.uint8), format="rgb24")
             frame.pts, frame.time_base = pts, time_base
             return frame
@@ -50,12 +50,17 @@ def test_webrtc_relays_continuous_video_and_samples_once_per_second(client, monk
             first = await asyncio.wait_for(track.recv(), 5)
             assert first.width == 1280 and first.height == 720
             initial = streams.states[sid].sampled
+            import cv2
+            latest = cv2.imdecode(np.frombuffer(streams.states[sid].latest, np.uint8), 1)
+            assert latest.shape[:2] == (1080, 1920), "OCR sampling must retain source detail"
             count, start = 1, monotonic()
             while monotonic() - start < 2.2:
                 await asyncio.wait_for(track.recv(), 3)
                 count += 1
             state = streams.states[sid]
-            assert count > 20, "Viewer must receive continuous video, not one image per sample"
+            measured_fps = count / (monotonic() - start)
+            print(f"1080p source → 720p preview: {measured_fps:.1f} fps")
+            assert measured_fps >= 12, "Viewer must receive continuous video, not one image per sample"
             assert 2 <= state.sampled - initial <= 3
             assert state.sequence > state.sampled * 10
             await close_viewer(state, response["connection_id"])
@@ -118,11 +123,11 @@ def test_hd_encoder_budget_still_respects_congestion(monkeypatch, codec_name, en
     configure_video_encoders()
     codec = getattr(codecs, codec_name)
     encoder = getattr(codec, encoder_name)()
-    assert encoder.target_bitrate == 3_000_000
+    assert encoder.target_bitrate == 1_500_000
     encoder.target_bitrate = 5_000_000
     assert encoder.target_bitrate == 5_000_000, "HD must not hit aiortc's old codec ceiling"
     encoder.target_bitrate = 20_000_000
     assert encoder.target_bitrate == 6_000_000
     encoder.target_bitrate = 300_000
     assert encoder.target_bitrate == max(300_000, codec.MIN_BITRATE)
-    assert encoder.target_bitrate < 3_000_000, "Congestion feedback must still reduce bandwidth"
+    assert encoder.target_bitrate < 1_500_000, "Congestion feedback must still reduce bandwidth"

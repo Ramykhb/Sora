@@ -258,8 +258,8 @@ test('video quality preserves negotiated encoding objects and transaction metada
   assert.equal(applied, parameters);
   assert.equal(applied.encodings[0], encoding);
   assert.equal(applied.transactionId, 'negotiated');
-  assert.equal(applied.degradationPreference, 'maintain-resolution');
+  assert.equal(applied.degradationPreference, 'balanced');
   assert.equal(encoding.toJSON().maxBitrate, VIDEO_MAX_BITRATE);
-  assert.equal(encoding.maxFramerate, 15);
+  assert.equal(encoding.maxFramerate, 20);
   assert.equal(encoding.scaleResolutionDownBy, 1);
 });

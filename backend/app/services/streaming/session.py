@@ -425,7 +425,9 @@ async def accept_viewer_offer(session_id, sdp, kind, auth_token):
     if len(state.viewers) >= settings.max_stream_viewers:
         raise BackendError("Viewer capacity reached", 429, "viewer_capacity")
     peer = RTCPeerConnection(configuration=rtc_configuration())
-    track = state.relay.subscribe(state.video_track, buffered=False)
+    from app.services.streaming.preview import PreviewTrack
+
+    track = PreviewTrack(state.relay.subscribe(state.video_track, buffered=False))
     viewer_id = str(uuid4())
     state.viewers[viewer_id] = ViewerState(peer=peer, track=track, auth_token=auth_token)
 

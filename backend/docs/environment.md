@@ -76,9 +76,11 @@ Start the relay with `docker compose --profile webrtc up -d turn`, then recreate
 
 ### Live video quality
 
-The phone/browser publisher requests 1920×1080 at 15 fps (device support permitting), with a 6 Mbps encoding ceiling and a preference for preserving resolution under load. The phone preview fits the whole camera image instead of cropping and enlarging it. Dashboard WebRTC playback relays the source resolution independently of detector and memory resizing. `STREAM_VIDEO_MAX_BITRATE=6000000` controls the server encoder ceiling; encoders start at up to 3 Mbps and may reduce bitrate in response to congestion. aiortc’s default VP8 budget (500 kbps start, 1.5 Mbps maximum) is too restrictive for detailed HD scenes.
+The phone/browser publisher requests 1920×1080 at 20 fps (device support permitting), with a 4 Mbps encoding ceiling and balanced adaptation under load. The phone preview fits the whole camera image. Saved/OCR frames retain source detail up to `MAX_IMAGE_SIDE` independently of dashboard playback.
 
-These changes need no native rebuild. Reload the existing WebRTC development app from Metro and restart the stream to apply capture settings. Restart the API after changing server encoder settings; existing video connections will reconnect.
+Dashboard viewers receive an unbuffered preview bounded by `STREAM_PREVIEW_MAX_SIDE=1280` (720p for 16:9 video) and `STREAM_PREVIEW_MAX_FPS=20`. Frames above the preview rate are skipped, not queued. This limits software re-encoding cost while keeping full-resolution camera sampling independent. `STREAM_VIDEO_MAX_BITRATE=3000000` caps dashboard encoding at 3 Mbps; encoders start at up to 1.5 Mbps and respond to congestion feedback. These are ceilings, not guaranteed frame rates or bandwidth.
+
+These changes need no native rebuild. Reload the WebRTC development app and restart the stream to apply capture settings. Restart the API after changing preview/encoder settings; existing video connections will reconnect.
 
 ### Camera text recognition
 
