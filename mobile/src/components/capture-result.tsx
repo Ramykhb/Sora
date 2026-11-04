@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, View } from 'react-native';
+import { ActivityIndicator, AppState, ScrollView, View } from 'react-native';
 import { Image } from 'expo-image';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useHandsFreeQuestions } from '@/providers/voice-commands';
@@ -69,6 +69,7 @@ function Result({ text }: { text: boolean }) {
   }, [api, sessionId, frameId, answerId, attempt, focused, text]);
   const processing = frame && !answer && ['pending', 'processing'].includes(frame.enrichment_status || '');
   const content = text ? frame?.ocr_text : answer || frame?.caption;
+  const resultCopy = content || (error && !frame ? 'Refresh or capture another image to continue.' : processing ? 'Your image is being analyzed.' : frame ? text ? 'No readable text detected. Try a closer, well-lit image.' : 'No scene description available. Try describing again.' : 'Loading your result…');
   useEffect(() => {
     if (!content || !preferences.speak || !focused || spoken.current === content) return;
     spoken.current = content; void speech.answer(content, language);
@@ -104,15 +105,15 @@ function Result({ text }: { text: boolean }) {
   }
   return <Page title={text ? 'Read Text' : 'Scene Description'}>
     {!sessionId || !frameId ? <Card><Label>No captured image selected.</Label><Tap label="Open camera" onPress={retake}><Label>Open camera →</Label></Tap></Card> : <>
-      <View style={{ height: 226, borderRadius: 22, overflow: 'hidden', backgroundColor: colors.elevated, marginTop: 2 }}>
+      <View style={{ height: 226, borderRadius: 22, overflow: 'hidden', backgroundColor: colors.elevated, borderWidth: 1, borderColor: colors.border, boxShadow: colors.cardShadow, marginTop: 2 }}>
         {frame && headers ? <Image source={{ uri: api.url(`/sessions/${sessionId}/frames/${frameId}/image`), headers }} style={{ flex: 1 }} contentFit="cover" cachePolicy="none" accessibilityLabel={frame.caption || 'Captured image'} onError={() => setError('Image unavailable. Refresh to renew access.')} /> : error ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}><Icon name="image-outline" /><Label muted>Image unavailable</Label></View> : <ActivityIndicator style={{ flex: 1 }} color={colors.primary} accessibilityLabel="Loading captured image" />}
       </View>
       <Card style={{ gap: 12 }}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}><Icon name={text ? 'scan-outline' : 'sparkles'} size={22} /><Label bold size={13}>{!frame ? error ? 'Result unavailable' : 'Loading image…' : processing ? 'Processing image…' : text ? frame.ocr_text ? 'Text Detected' : 'No Text Detected' : 'Scene Detected'}</Label></View>
         {processing && <ActivityIndicator color={colors.primary} accessibilityLabel="AI processing" />}
-        <View style={text ? { borderRadius: 14, padding: 18, backgroundColor: colors.elevated } : {}}><Label bold size={text ? 24 : 23} selectable style={text ? { textAlign: 'center' } : {}}>{content || (error && !frame ? 'Refresh or capture another image to continue.' : processing ? 'Your image is being analyzed.' : frame ? text ? 'No readable text detected. Try a closer, well-lit image.' : 'No scene description available. Try describing again.' : 'Loading your result…')}</Label></View>
+        {text ? <View style={{ borderRadius: 14, padding: 16, backgroundColor: colors.elevated }}><ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} style={{ maxHeight: 260 }}><Label bold size={20} selectable style={{ textAlign: 'center' }}>{resultCopy}</Label></ScrollView></View> : <Label bold size={22} selectable>{resultCopy}</Label>}
       </Card>
       {uncertain && <Label muted>Sora is uncertain about this description.</Label>}
-      {!!content && <Tap label={playing ? 'Stop audio' : text ? 'Read Aloud' : 'Play Description'} onPress={() => void play()}><Card tone="accent" style={{ flexDirection: 'row', alignItems: 'center', padding: 12, gap: 14 }}><View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: colors.primary, boxShadow: colors.primaryShadow, alignItems: 'center', justifyContent: 'center' }}><Icon name={playing ? 'stop' : 'play'} color="white" size={23} /></View><Label bold size={13} style={{ flex: 1 }}>{playing ? 'Stop audio' : text ? 'Read Aloud' : 'Play Description'}</Label><Icon name="volume-high-outline" size={19} color={colors.muted} /></Card></Tap>}
+      {!!content && <Tap label={playing ? 'Stop audio' : text ? 'Read Aloud' : 'Play Description'} onPress={() => void play()}><Card tone="accent" style={{ flexDirection: 'row', alignItems: 'center', padding: 12, gap: 14 }}><View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: colors.primary, boxShadow: colors.primaryShadow, alignItems: 'center', justifyContent: 'center' }}><Icon name={playing ? 'stop' : 'play'} color={colors.onPrimary} size={23} /></View><Label bold size={13} style={{ flex: 1 }}>{playing ? 'Stop audio' : text ? 'Read Aloud' : 'Play Description'}</Label><Icon name="volume-high-outline" size={19} color={colors.muted} /></Card></Tap>}
       {!!error && <Card><Label accessibilityRole="alert" style={{ color: colors.danger }}>{error}</Label><Tap label="Refresh result" onPress={() => setAttempt(v => v + 1)}><Label bold>Refresh →</Label></Tap></Card>}
       {frame?.processing_warnings.map(warning => <Label key={warning} accessibilityRole="alert" style={{ color: colors.danger }}>{warning}</Label>)}
       {warnings.filter(warning => !frame?.processing_warnings.includes(warning)).map(warning => <Label key={warning} accessibilityRole="alert" style={{ color: colors.danger }}>{warning}</Label>)}

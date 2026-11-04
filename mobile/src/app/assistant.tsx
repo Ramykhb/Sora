@@ -29,7 +29,7 @@ function Assistant() {
   const [language, setLanguage] = useState<Language>('en');
   const [scope, setScope] = useState<Scope>('recent');
   const [alerts, setAlerts] = useState(false);
-  const { preferences: appPreferences, update } = usePreferences();
+  const { preferences: appPreferences, update, colors } = usePreferences();
   const speak = appPreferences.speak;
   const setSpeak = (value: boolean) => update({ speak: value });
   const [active, setActive] = useState(false);
@@ -174,10 +174,10 @@ function Assistant() {
     {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
     {!!notice && <Text accessibilityLiveRegion="polite" style={ui.copy}>{notice}</Text>}
     <View style={ui.row}>{(['en', 'fr', 'ar'] as const).map(value => <Action key={value} title={`${language === value ? '✓ ' : ''}${{ en: 'English', fr: 'Français', ar: 'العربية' }[value]}`} disabled={busy || session?.status === 'closed'} onPress={() => void run(() => preferences(value, alerts))} />)}</View>
-    <View style={ui.row}><Switch accessibilityLabel="Spoken answers" value={speak} onValueChange={value => { setSpeak(value); if (!value) void speech.stop(); }} /><Text style={ui.copy}>Speak answers</Text><Switch accessibilityLabel="Obstacle alerts" disabled={busy || session?.status === 'closed'} value={alerts} onValueChange={value => { if (!value) void speech.stop(); void run(() => preferences(language, value)); }} /><Text style={ui.copy}>Obstacle alerts</Text></View>
+    <View style={ui.row}><Switch accessibilityLabel="Spoken answers" value={speak} trackColor={{ false: colors.trackOff, true: colors.primary }} onValueChange={value => { setSpeak(value); if (!value) void speech.stop(); }} /><Text style={ui.copy}>Speak answers</Text><Switch accessibilityLabel="Obstacle alerts" disabled={busy || session?.status === 'closed'} value={alerts} trackColor={{ false: colors.trackOff, true: colors.primary }} onValueChange={value => { if (!value) void speech.stop(); void run(() => preferences(language, value)); }} /><Text style={ui.copy}>Obstacle alerts</Text></View>
     {!session ? <View style={ui.card}>
       <Text style={ui.subtitle}>Start live assistance</Text><Text style={ui.copy}>Camera frames are analyzed and selected images and conversations are retained until the session expires. Voice uploads are processed without being retained.</Text>
-      <View style={ui.row}><Switch accessibilityLabel="Consent to camera processing and retention" value={consent} onValueChange={setConsent} /><Text style={[ui.copy, { flex: 1 }]}>I consent to camera processing and visual memory storage.</Text></View>
+      <View style={ui.row}><Switch accessibilityLabel="Consent to camera processing and retention" value={consent} trackColor={{ false: colors.trackOff, true: colors.primary }} onValueChange={setConsent} /><Text style={[ui.copy, { flex: 1 }]}>I consent to camera processing and visual memory storage.</Text></View>
       <Action variant="primary" title={busy ? 'Starting…' : 'Start a new session'} disabled={!consent || busy} onPress={() => void run(async () => {
         const created = await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language, alerts_enabled: alerts });
         select(created); setActive(true); listSessions();

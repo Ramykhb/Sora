@@ -8,6 +8,7 @@ import * as Haptics from 'expo-haptics';
 import { usePreferences } from '@/providers/preferences';
 
 export type IconName = ComponentProps<typeof Ionicons>['name'];
+export const layoutTokens = { pageInset: 20, sectionGap: 15, cardRadius: 21, cardPadding: 18, buttonRadius: 28 } as const;
 export function Icon({ name, size = 26, color }: { name: IconName; size?: number; color?: string }) {
   const { colors } = usePreferences(); return <Ionicons accessible={false} name={name} size={size} color={color || colors.primary} />;
 }
@@ -25,7 +26,7 @@ export function Card({ children, style, tone = 'default' }: { children: ReactNod
   const top = style?.backgroundColor || (tone === 'accent' ? colors.accentSurface : colors.surface);
   const bottom = style?.backgroundColor || (tone === 'accent' ? colors.accentSurfaceBottom : colors.surfaceBottom);
   return <View style={[styles.card, { backgroundColor: top, borderColor: colors.border, boxShadow: tone === 'quiet' ? colors.quietShadow : colors.cardShadow }, style]}>
-    <LinearGradient pointerEvents="none" colors={[top, bottom]} start={{ x: 0, y: 0 }} end={{ x: 0.8, y: 1 }} style={{ position: 'absolute', top: 1, bottom: 1, left: 1, right: 1, borderRadius: 21, zIndex: Platform.OS === 'web' ? -1 : 0 }} />
+    <LinearGradient pointerEvents="none" colors={[top, bottom]} start={{ x: 0, y: 0 }} end={{ x: 0.8, y: 1 }} style={{ position: 'absolute', top: 1, bottom: 1, left: 1, right: 1, borderRadius: layoutTokens.cardRadius - 1, zIndex: Platform.OS === 'web' ? -1 : 0 }} />
     {children}
   </View>;
 }
@@ -33,11 +34,11 @@ export function Toggle({ label, value, onChange }: { label: string; value: boole
   const { colors, preferences } = usePreferences();
   function toggle() { if (preferences.vibration) void Haptics.selectionAsync().catch(() => {}); onChange(!value); }
   const keyboard: Pick<ComponentProps<typeof Pressable>, 'onKeyDown'> = Platform.OS === 'web' ? { onKeyDown: event => { if ('key' in event && event.key === ' ') { event.preventDefault(); toggle(); } } } : {};
-  return <Pressable {...keyboard} accessibilityRole="switch" accessibilityLabel={label} aria-checked={value} accessibilityState={{ checked: value }} onPress={toggle} style={{ minWidth: 50, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}><View style={{ width: 48, height: 28, padding: 3, borderRadius: 16, backgroundColor: value ? colors.primary : colors.trackOff, alignItems: value ? 'flex-end' : 'flex-start', borderWidth: 1, borderColor: value ? colors.primaryBright : colors.border }}><View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFFFFF', boxShadow: '0 1px 3px rgba(15,35,65,0.20)' }} /></View></Pressable>;
+  return <Pressable {...keyboard} accessibilityRole="switch" accessibilityLabel={label} aria-checked={value} accessibilityState={{ checked: value }} onPress={toggle} style={{ minWidth: 50, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}><View style={{ width: 48, height: 28, padding: 3, borderRadius: 16, backgroundColor: value ? colors.primary : colors.trackOff, alignItems: value ? 'flex-end' : 'flex-start', borderWidth: 1, borderColor: value ? colors.primaryBright : colors.border }}><View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFFFFF', boxShadow: '0 1px 3px rgba(48,22,8,0.20)' }} /></View></Pressable>;
 }
 export function Primary({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) {
   const { colors } = usePreferences();
-  return <Tap label={title} onPress={onPress} disabled={disabled} style={{ borderRadius: 29, boxShadow: colors.primaryShadow }}><LinearGradient colors={[colors.primaryBright, colors.primary]} style={{ minHeight: 58, borderRadius: 29, borderWidth: 1, borderColor: colors.heroEdge, paddingHorizontal: 24, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 15, overflow: 'hidden' }}><LinearGradient pointerEvents="none" colors={['#FFFFFF32', '#FFFFFF00']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 28 }} /><Label bold style={{ color: '#FFFFFF' }}>{title}</Label><Icon name="arrow-forward" size={21} color="#FFFFFF" /></LinearGradient></Tap>;
+  return <Tap label={title} onPress={onPress} disabled={disabled} style={{ borderRadius: layoutTokens.buttonRadius, boxShadow: colors.primaryShadow }}><LinearGradient colors={colors.buttonGradient} style={{ minHeight: 58, borderRadius: layoutTokens.buttonRadius, borderWidth: 1, borderColor: colors.heroEdge, paddingHorizontal: 24, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 15, overflow: 'hidden' }}><LinearGradient pointerEvents="none" colors={['#FFFFFF30', '#FFFFFF00']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 24 }} /><Label bold style={{ color: colors.onPrimary }}>{title}</Label><Icon name="arrow-forward" size={21} color={colors.onPrimary} /></LinearGradient></Tap>;
 }
 export function Header({ title }: { title: string }) {
   const { colors } = usePreferences();
@@ -53,8 +54,8 @@ export function BottomNav({ active = 'Home' }: { active?: string }) {
   return <View style={[styles.nav, { backgroundColor: colors.nav, borderColor: colors.border, boxShadow: colors.navShadow }]}>{tabs.map(tab => <Tap key={tab.label} selected={active === tab.label} label={tab.label} onPress={() => router.push(tab.route)} style={styles.tab}><View style={{ width: 38, height: 30, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: active === tab.label ? colors.elevated : 'transparent' }}><Icon name={active === tab.label && tab.label === 'Home' ? 'home' : tab.icon} size={23} color={active === tab.label ? colors.primary : colors.muted} /></View><Label size={10} bold={active === tab.label} style={{ color: active === tab.label ? colors.primary : colors.muted }}>{tab.label}</Label></Tap>)}</View>;
 }
 export const styles = StyleSheet.create({
-  content: { padding: 22, gap: 16, paddingBottom: 24, flexGrow: 1 },
-  card: { borderRadius: 22, borderWidth: 1, padding: 20, gap: 12, zIndex: 0 },
+  content: { padding: layoutTokens.pageInset, gap: layoutTokens.sectionGap, paddingBottom: 24, flexGrow: 1 },
+  card: { borderRadius: layoutTokens.cardRadius, borderWidth: 1, padding: layoutTokens.cardPadding, gap: 12, zIndex: 0 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
   nav: { flexDirection: 'row', borderTopWidth: 1, paddingTop: 10, paddingBottom: 5, paddingHorizontal: 8 },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 4 },

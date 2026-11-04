@@ -11,8 +11,9 @@ function home({ onboarded = true, signedIn = true, screenReader = false, guidanc
   const jsx = (type, props) => ({ type, props });
   vm.runInNewContext(source + '\nexports.startHomeForTest = StartStreamHome;', { exports, Date, require(name) {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
-    if (name === 'react') return { useRef: current => ({ current }), useCallback: fn => fn };
-    if (name === 'react-native') return { Pressable: 'Pressable', View: 'View', AccessibilityInfo: { async isScreenReaderEnabled() { return screenReader; } } };
+    if (name === 'react') return { useRef: current => ({ current }), useCallback: fn => fn, useState: initial => [initial, () => {}] };
+    if (name === 'react-native') return { Pressable: 'Pressable', View: 'View', Image: 'Image', AccessibilityInfo: { async isScreenReaderEnabled() { return screenReader; } } };
+    if (name === '../../assets/images/sora-ribbon.png') return { uri: 'sora-ribbon' };
     if (name === 'react-native-safe-area-context') return { SafeAreaView: 'SafeAreaView' };
     if (name === 'expo-router') return { useFocusEffect: fn => effects.push(fn), router: { navigate: route => navigation.push(route), push: route => navigation.push(route) } };
     if (name === 'expo-linear-gradient') return { LinearGradient: 'LinearGradient' };

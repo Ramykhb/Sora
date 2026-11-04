@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, type TextInputProps } from 'rea
 export function Action({ title, onPress, disabled = false, variant = 'secondary' }: { title: string; onPress: () => void; disabled?: boolean; variant?: 'primary' | 'secondary' }) {
   const ui = useUI();
   const { colors } = usePreferences();
-  return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[ui.button, variant === 'primary' && { backgroundColor: colors.primary, borderColor: colors.primary, boxShadow: colors.primaryShadow }, disabled && { opacity: 0.45 }]}><Text style={[ui.buttonText, variant === 'primary' && { color: '#FFFFFF' }]}>{title}</Text></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [ui.button, variant === 'primary' && { backgroundColor: colors.primary, borderColor: colors.primary, boxShadow: colors.primaryShadow }, { opacity: disabled ? 0.45 : pressed ? 0.82 : 1 }]}><Text style={[ui.buttonText, variant === 'primary' && { color: colors.onPrimary }]}>{title}</Text></Pressable>;
 }
 export function Field(props: TextInputProps) {
   const ui = useUI();

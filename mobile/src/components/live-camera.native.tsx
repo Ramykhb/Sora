@@ -67,7 +67,7 @@ export function LiveCamera({ sessionId, active, fullscreen = false, facing = 'ba
   }, [active, api, rtc, sessionId, attempt, facing]);
   const Video = rtc?.RTCView;
   return <View style={fullscreen ? { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 } : ui.card}>
-    {(!fullscreen || !rtc || status !== 'Streaming live video') && <Text accessibilityLiveRegion="polite" style={fullscreen ? { position: 'absolute', top: 115, left: 22, right: 22, zIndex: 2, color: 'white', backgroundColor: '#080D1699', padding: 10, borderRadius: 10 } : ui.subtitle}>{!rtc ? 'Live video requires a development build with WebRTC. Install the rebuilt app instead of opening Expo Go.' : active ? status : 'Camera paused'}</Text>}
+    {(!fullscreen || !rtc || status !== 'Streaming live video') && <Text accessibilityLiveRegion="polite" style={fullscreen ? { position: 'absolute', top: 115, left: 22, right: 22, zIndex: 2, color: ui.subtitle.color, backgroundColor: ui.card.backgroundColor, padding: 10, borderRadius: 12 } : ui.subtitle}>{!rtc ? 'Live video requires a development build with WebRTC. Install the rebuilt app instead of opening Expo Go.' : active ? status : 'Camera paused'}</Text>}
     {active && Video && stream && <Video streamURL={stream.toURL()} objectFit="contain" style={fullscreen ? { flex: 1 } : { height: 240, borderRadius: 16 }} />}
   </View>;
 }

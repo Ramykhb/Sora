@@ -4,7 +4,7 @@ import { voiceLevel } from '@/lib/voice-level';
 import { usePreferences } from '@/providers/preferences';
 import { Icon, Label } from './sora-ui';
 
-const WAVE_HEIGHT = 104;
+const WAVE_HEIGHT = 76;
 // A tapered speech envelope with several uneven bursts and a dominant center.
 // Only the envelope is illustrative; its amplitude follows the actual microphone.
 const spikeWeights = Array.from({ length: 73 }, (_, index) => {
@@ -41,7 +41,7 @@ export function VoiceWaveform({ commandsOnly = false }: { commandsOnly?: boolean
   }, [amplitude, target, reduceMotion]);
   const label = !enabled ? 'Microphone off' : !listening ? 'Microphone idle' : commandsOnly ? 'Hey Sora commands only' : 'Listening for your voice';
   const color = enabled && listening ? colors.primary : colors.muted;
-  return <View accessible accessibilityLabel={label} style={{ gap: 6, backgroundColor: 'transparent', paddingHorizontal: 16, paddingVertical: 12 }}>
+  return <View accessible accessibilityLabel={label} style={{ gap: 6, backgroundColor: 'transparent', paddingHorizontal: 10, paddingVertical: 8 }}>
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.wave}>
       <View style={[styles.centerline, { backgroundColor: color }]} />
       {spikes.map((scaleY, index) => <View key={index} style={styles.column}>

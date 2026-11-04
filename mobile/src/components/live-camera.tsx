@@ -57,7 +57,7 @@ export function LiveCamera({ sessionId, active, fullscreen = false, facing = 'ba
       release?.(); peer?.close(); media?.getTracks().forEach(track => track.stop());
     };
   }, [active, api, sessionId, attempt, facing]);
-  return <View style={fullscreen ? { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 } : ui.card}>{(!fullscreen || status !== 'Streaming live video') && <Text accessibilityLiveRegion="polite" style={fullscreen ? { position: 'absolute', top: 115, left: 22, right: 22, zIndex: 2, color: 'white', backgroundColor: '#080D1699', padding: 10 } : ui.subtitle}>{active ? status : 'Camera paused'}</Text>}
+  return <View style={fullscreen ? { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 } : ui.card}>{(!fullscreen || status !== 'Streaming live video') && <Text accessibilityLiveRegion="polite" style={fullscreen ? { position: 'absolute', top: 115, left: 22, right: 22, zIndex: 2, color: ui.subtitle.color, backgroundColor: ui.card.backgroundColor, padding: 10, borderRadius: 12 } : ui.subtitle}>{active ? status : 'Camera paused'}</Text>}
     {active && <video ref={video} autoPlay muted playsInline style={{ width: '100%', height: fullscreen ? '100%' : 240, objectFit: 'contain', borderRadius: fullscreen ? 0 : 16 }} />}
   </View>;
 }

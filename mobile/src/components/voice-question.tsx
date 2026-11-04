@@ -71,5 +71,5 @@ export function VoiceQuestion({ sessionId, language, scope, onAnswer, onError, d
   }
   // Bound recordings below the server duration limit, including forgotten recordings.
   useEffect(() => { if (state.isRecording && state.durationMillis >= 55000 && !stopping.current) void toggle(); });
-  return <View style={{ gap: 8 }}><Action title={busy ? 'Processing voice…' : state.isRecording ? 'Stop recording and ask Sora' : 'Ask with your voice'} disabled={busy || disabled} onPress={() => void toggle()} />{state.isRecording && <Text style={ui.copy}>Recording · {Math.round(state.durationMillis / 1000)}s</Text>}</View>;
+  return <View style={{ gap: 8 }}><Action variant="primary" title={busy ? 'Processing voice…' : state.isRecording ? 'Stop recording and ask Sora' : 'Ask with your voice'} disabled={busy || disabled} onPress={() => void toggle()} />{state.isRecording && <Text style={ui.copy}>Recording · {Math.round(state.durationMillis / 1000)}s</Text>}</View>;
 }
