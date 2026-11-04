@@ -10,7 +10,7 @@ All HTTP data endpoints start with `/api/v1` and require `Authorization: Bearer 
 - `POST /sessions/{id}/frames`: multipart `image`, optional `force` and timezone-aware `captured_at`. Returns `status=stored` plus frame, or `status=rejected` with `too_dark`, `too_blurry`, `duplicate`, or `uninformative`. Force is intended for controlled tests, not the live camera.
 - `GET /sessions/{id}/frames`: newest-first timeline, optional `since`, `until`, `limit` (1–200), `offset`.
 - `GET /sessions/{id}/frames/search?q=...`: semantic plus lexical memory search; optional time range and limit.
-- `GET /sessions/{id}/frames/{frame_id}`: metadata. `/image` returns processed JPEG; `?original=true` returns sanitized pre-enhancement JPEG. Both require authentication.
+- `GET /sessions/{id}/frames/{frame_id}`: metadata. `/image` returns processed JPEG; `?original=true` returns sanitized pre-enhancement JPEG. Both variants have detected faces blurred before storage and require authentication.
 - `DELETE /sessions/{id}/frames/{frame_id}`: metadata deletion and object deletion with retry on storage outage.
 
 Do not form public S3 URLs. Images are served through the authenticated API. Input EXIF metadata is removed and originals are resized to the configured limit. Expired records are immediately excluded from reads, even before cleanup runs.

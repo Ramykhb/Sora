@@ -11,6 +11,7 @@ from PIL.Image import open as open_image
 import pytesseract
 from app.core.config import settings
 from app.core.errors import BackendError
+from app.services.frames.privacy import PRIVACY_VERSION, blur_regions, face_regions
 
 
 @dataclass
@@ -80,6 +81,15 @@ def prepare_image(content: bytes) -> PreparedImage:
         blur = cv2.GaussianBlur(enhanced, (0, 0), 1.2)
         enhanced = cv2.addWeighted(enhanced, 1.35, blur, -0.35, 0)
         steps.append("unsharp_mask")
+    # Detect on the decoded image, then redact AFTER enhancement so sharpening
+    # cannot restore facial detail. Both saved variants and downstream AI/OCR
+    # receive the redacted pixels; the raw source is never persisted.
+    regions = face_regions(image)
+    image = blur_regions(image, regions)
+    enhanced = blur_regions(enhanced, regions)
+    steps.append(PRIVACY_VERSION)
+    if regions:
+        steps.append("face_blur")
     return PreparedImage(
         jpeg(image), jpeg(enhanced), enhanced, width, height, sharpness, brightness, phash, steps
     )

@@ -60,7 +60,7 @@ python scripts/process_image.py "/absolute/path/to/test.jpg" --output /tmp/enhan
 python scripts/process_image.py "/absolute/path/to/next.jpg" --session-id SESSION_UUID
 ```
 
-The trusted local command creates an unowned, consenting test session if no session ID is supplied. It is visible only to administrators through the API until explicitly claimed with `scripts.manage_users claim-session`. It prints the full ingestion result, including session/frame ID, OCR text, object boxes, caption and timing. The pre-enhancement image is normalized to JPEG, resized and stripped of EXIF; both it and the enhanced image are stored. PostgreSQL holds metadata and an embedding. Low quality, duplicate and uninformative frames are rejected; `--force` overrides selection for controlled tests. `--language eng` can restrict OCR; default is eng+fra+ara. `--init-db` applies migrations on a fresh database.
+The trusted local command creates an unowned, consenting test session if no session ID is supplied. It is visible only to administrators through the API until explicitly claimed with `scripts.manage_users claim-session`. It prints the full ingestion result, including session/frame ID, OCR text, object boxes, caption and timing. Faces detected by the bundled YuNet model are strongly blurred in both saved variants before storage or AI/OCR analysis. A face-detector error rejects the save, including forced snapshots. This is detection, not identity recognition; small, obscured or difficult faces can still be missed. The pre-enhancement image is normalized to JPEG, resized and stripped of EXIF; both it and the enhanced image are stored. PostgreSQL holds metadata and an embedding. Low quality, duplicate and uninformative frames are rejected; `--force` overrides selection for controlled tests. `--language eng` can restrict OCR; default is eng+fra+ara. `--init-db` applies migrations on a fresh database.
 
 To exercise the same selection pipeline with a local video: `python -m scripts.process_video /path/to/video.mp4`. For actual live camera ingestion use the WebRTC or JPEG WebSocket contracts in [docs/api.md](docs/api.md).
 
@@ -112,3 +112,13 @@ It reports OCR/object recall, retrieval recall@k, answer-term recall, timing and
 - [Ollama chat](https://docs.ollama.com/api/chat), [embeddings](https://docs.ollama.com/api/embed), [Qwen2.5-VL](https://ollama.com/library/qwen2.5vl), [Qwen3 Embedding](https://ollama.com/library/qwen3-embedding).
 - [YOLO predictions](https://docs.ultralytics.com/modes/predict/), [faster-whisper](https://github.com/SYSTRAN/faster-whisper), [aiortc](https://aiortc.readthedocs.io/en/latest/api.html).
 - [RustFS containers](https://docs.rustfs.com/en/installation/container).
+
+### Blur faces in existing saved frames
+
+New uploads, sampled stream frames and forced current-view snapshots all apply face privacy before writing either object. Live WebRTC video is unchanged. To process previously stored original and enhanced images in place, run:
+
+```sh
+docker compose -f backend/docker-compose.yml exec api python -m scripts.blur_saved_faces
+```
+
+The command reports checked/blurred frames and skips frames already processed by the current privacy policy. It can resume after interruption. The bundled MIT-licensed YuNet detector scans all four image orientations, with padded blur regions. Detection is automated and cannot guarantee that every face is found.
