@@ -1,8 +1,0 @@
-# Build the API image first; reuse its CPU PyTorch and multimedia dependencies.
-ARG API_IMAGE=backend-api
-FROM ${API_IMAGE}
-USER root
-# Do not let an optional model loader replace CPU PyTorch with CUDA packages.
-RUN uv pip install --system --no-cache --no-deps \
-    spandrel==0.4.2 einops==0.8.1 timm==1.0.22 safetensors==0.7.0
-USER backend

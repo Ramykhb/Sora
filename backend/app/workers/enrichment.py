@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 async def update_frame(frame_id, **values):
-    # Serialize with the image/OCR worker. A delayed caption must not replace
-    # search text with OCR that was superseded during model inference.
+    # A delayed caption must preserve OCR and warnings updated while model
+    # inference was running.
     async with SessionFactory() as db:
         frame = await db.scalar(select(Frame).where(
             Frame.id == frame_id, Frame.expires_at > now(),

@@ -40,10 +40,8 @@ def transcription(data):
     return text, mean, quality
 
 
-def ocr_image(image, rescale=True):
+def ocr_image(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    if not rescale:
-        return gray
     # Larger glyphs help screen/sign text. Cap work even for large uploads.
     scale = min(2.0, 2560 / max(gray.shape))
     if scale != 1:
@@ -63,10 +61,10 @@ def without_rules(gray):
     return cv2.bitwise_not(cv2.subtract(ink, cv2.bitwise_or(horizontal, vertical)))
 
 
-def recognize_text(image, languages=None, *, rescale=True, timeout_seconds=None):
+def recognize_text(image, languages=None):
     started = perf_counter()
-    gray = ocr_image(image, rescale=rescale)
-    budget = settings.ocr_timeout_seconds if timeout_seconds is None else timeout_seconds
+    gray = ocr_image(image)
+    budget = settings.ocr_timeout_seconds
     best = ("", 0.0, 0.0)
     try:
         # Sparse layout is suited to signs/screens; automatic page layout also

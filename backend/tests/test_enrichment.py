@@ -95,7 +95,7 @@ def test_deletion_during_enrichment_cannot_resurrect_an_image(client, monkeypatc
     assert api.get(f"/api/v1/sessions/{sid}/frames").json() == []
 
 
-def test_delayed_caption_does_not_replace_search_with_pre_upscale_ocr(client, monkeypatch):
+def test_delayed_caption_preserves_updated_ocr_in_search(client, monkeypatch):
     api, factory = client
     result = save_fast(api, create(api))
     async def describe(_):
