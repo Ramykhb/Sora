@@ -8,46 +8,47 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
+/** Shared dashboard palette. Both appearances keep the same purple identity. */
 export const palettes = {
   light: {
-    background: '#FBF2E8', pageGlow: '#FFFCF8', surface: '#FFFFFF', surfaceBottom: '#FFF9F2',
-    elevated: '#FFF0DE', accentSurface: '#FFF0DD', accentSurfaceBottom: '#FFF8ED',
-    text: '#35150A', muted: '#705143', border: '#F0DECE', separator: '#F2E5D8',
-    primary: '#C94A05', primaryBright: '#F68A08', accent: '#E97907', danger: '#AD2734',
-    onPrimary: '#FFFFFF', heroText: '#35150A', success: '#397C35',
-    trackOff: '#DCCDBF', nav: '#FFFDF9', heroArrow: '#FFF2DD', heroArrowInk: '#993000',
-    heroSheen: '#FFE0A77A', heroEdge: '#FFCE85',
-    cameraOverlay: '#FFFAF0E8', cameraControl: '#FFFAF0EC', cameraInk: '#35150A', cameraFrame: '#FFFFFF',
-    welcomeGlow: ['#FFE3B4', '#FFF8F000'] as const, welcomeArc: '#F5B45E',
-    cardShadow: '0 7px 20px rgba(111, 59, 20, 0.10), 0 1px 3px rgba(111, 59, 20, 0.05)',
-    quietShadow: '0 3px 10px rgba(111, 59, 20, 0.07)',
-    primaryShadow: '0 8px 20px rgba(189, 65, 0, 0.23)',
-    navShadow: '0 -5px 20px rgba(111, 59, 20, 0.06)',
-    buttonGradient: ['#CB4B05', '#AE3400'] as const,
-    gradient: ['#FFB63D', '#FF9408', '#E15903'] as const,
-    streamGradient: ['#FFF9F1', '#FFE8C9', '#F6B665'] as const,
+    background: '#F5F3FA', pageGlow: '#F0EBFC', surface: '#FFFFFF', surfaceBottom: '#FFFFFF',
+    elevated: '#EDE7F8', accentSurface: '#EFE8FF', accentSurfaceBottom: '#EAE1FC',
+    text: '#191326', muted: '#655C76', border: '#DED6EB', separator: '#E7E1EF',
+    primary: '#6840B7', primaryBright: '#8054D4', accent: '#A63796', danger: '#B32F49',
+    onPrimary: '#FFFFFF', heroText: '#191326', success: '#187653',
+    trackOff: '#C9C1D5', nav: '#FCFAFF', heroArrow: '#6840B7', heroArrowInk: '#FFFFFF',
+    heroSheen: '#B79AFF20', heroEdge: '#C9B7EB',
+    cameraOverlay: '#FFFFFFF5', cameraControl: '#FFFFFFF0', cameraInk: '#191326', cameraFrame: '#B79AFF',
+    welcomeGlow: ['#DCCCF8', '#F5F3FA00'] as const, welcomeArc: '#C2A7F2',
+    cardShadow: '0 6px 20px rgba(38, 22, 65, 0.04)',
+    quietShadow: '0 2px 8px rgba(38, 22, 65, 0.03)',
+    primaryShadow: '0 6px 20px rgba(104, 64, 183, 0.15)',
+    navShadow: '0 -3px 14px rgba(38, 22, 65, 0.04)',
+    buttonGradient: ['#7950C5', '#6840B7'] as const,
+    gradient: ['#EDE5FC', '#E5D9FA', '#F2EBFD'] as const,
+    streamGradient: ['#F5F3FA', '#EDE6FA', '#F5F3FA'] as const,
   },
   dark: {
-    background: '#0D0703', pageGlow: '#241006', surface: '#241309', surfaceBottom: '#2B190D',
-    elevated: '#3A210F', accentSurface: '#3A210F', accentSurfaceBottom: '#28150A',
-    text: '#FFF5E0', muted: '#D7C1A7', border: '#58371F', separator: '#4D2D19',
-    primary: '#FF9500', primaryBright: '#FFB339', accent: '#FFD066', danger: '#FFACA0',
-    onPrimary: '#35150A', heroText: '#FFF5E0', success: '#B9D773',
-    trackOff: '#64472F', nav: '#1A0D06', heroArrow: '#FFD16A', heroArrowInk: '#35150A',
-    heroSheen: '#FFBD6040', heroEdge: '#C66B22',
-    cameraOverlay: '#1B0C05E8', cameraControl: '#3A210FDD', cameraInk: '#FFF5E0', cameraFrame: '#FFE4AF',
-    welcomeGlow: ['#7E340D', '#0D070300'] as const, welcomeArc: '#D76A13',
-    cardShadow: '0 8px 22px rgba(0, 0, 0, 0.32), 0 1px 3px rgba(0, 0, 0, 0.19)',
-    quietShadow: '0 3px 12px rgba(0, 0, 0, 0.22)',
-    primaryShadow: '0 8px 22px rgba(255, 120, 0, 0.24)',
-    navShadow: '0 -5px 20px rgba(0, 0, 0, 0.26)',
-    buttonGradient: ['#FFB339', '#FF9500'] as const,
-    gradient: ['#50240D', '#70300B', '#A74808'] as const,
-    streamGradient: ['#1B0B04', '#4D220B', '#210D04'] as const,
+    background: '#090B10', pageGlow: '#11101C', surface: '#131720', surfaceBottom: '#131720',
+    elevated: '#1A202C', accentSurface: '#241C37', accentSurfaceBottom: '#1D182C',
+    text: '#F3F6FC', muted: '#A1ACBF', border: '#29313E', separator: '#242B38',
+    primary: '#B79AFF', primaryBright: '#CFBAFF', accent: '#EC8BEA', danger: '#FF7F91',
+    onPrimary: '#090B10', heroText: '#F3F6FC', success: '#65ECB1',
+    trackOff: '#384151', nav: '#0D1017', heroArrow: '#B79AFF', heroArrowInk: '#090B10',
+    heroSheen: '#B79AFF15', heroEdge: '#46355F',
+    cameraOverlay: '#0D1017F5', cameraControl: '#131720EE', cameraInk: '#F3F6FC', cameraFrame: '#B79AFF',
+    welcomeGlow: ['#2B2142', '#090B1000'] as const, welcomeArc: '#46355F',
+    cardShadow: '0 6px 22px rgba(0, 0, 0, 0.16)',
+    quietShadow: '0 2px 8px rgba(0, 0, 0, 0.10)',
+    primaryShadow: '0 6px 24px rgba(183, 154, 255, 0.14)',
+    navShadow: '0 -3px 16px rgba(0, 0, 0, 0.20)',
+    buttonGradient: ['#C5ACFF', '#B79AFF'] as const,
+    gradient: ['#241C37', '#302346', '#1A1726'] as const,
+    streamGradient: ['#090B10', '#171224', '#090B10'] as const,
   },
 };
 export type Preferences = { theme: 'system' | 'light' | 'dark'; speak: boolean; guidance: boolean; vibration: boolean; largerText: boolean; highContrast: boolean; onboarded: boolean; voiceCommands: boolean; handsFreeQuestions: boolean };
-const defaults: Preferences = { theme: 'system', speak: true, guidance: true, vibration: true, largerText: false, highContrast: false, onboarded: false, voiceCommands: true, handsFreeQuestions: true };
+const defaults: Preferences = { theme: 'dark', speak: true, guidance: true, vibration: true, largerText: false, highContrast: false, onboarded: false, voiceCommands: true, handsFreeQuestions: true };
 const key = 'sora.preferences.v1';
 const speechDefaultsVersion = 1;
 const Context = createContext<{ preferences: Preferences; update: (value: Partial<Preferences>) => void; colors: typeof palettes.light | typeof palettes.dark; dark: boolean; storageError: string } | null>(null);
@@ -77,7 +78,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   })(); return () => { mounted = false; }; }, []);
   const dark = (preferences.theme === 'system' ? system : preferences.theme) === 'dark';
   const base = palettes[dark ? 'dark' : 'light'];
-  const colors = preferences.highContrast ? { ...base, muted: base.text, border: dark ? '#E4A64C' : '#8B3A13' } : base;
+  const colors = preferences.highContrast ? { ...base, muted: base.text, border: dark ? '#CFBAFF' : '#6840B7' } : base;
   useEffect(() => { if (ready && Platform.OS !== 'web') Appearance.setColorScheme(preferences.theme === 'system' ? 'auto' : preferences.theme); }, [preferences.theme, ready]);
   useEffect(() => { void SystemUI.setBackgroundColorAsync(colors.background).catch(() => {}); }, [colors.background]);
   useEffect(() => { if (ready && (fonts || fontError)) void SplashScreen.hideAsync().catch(() => {}); }, [ready, fonts, fontError]);

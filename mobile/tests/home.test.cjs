@@ -12,7 +12,7 @@ function home({ onboarded = true, signedIn = true, screenReader = false, guidanc
   vm.runInNewContext(source + '\nexports.startHomeForTest = StartStreamHome;', { exports, Date, require(name) {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
     if (name === 'react') return { useRef: current => ({ current }), useCallback: fn => fn, useState: initial => [initial, () => {}] };
-    if (name === 'react-native') return { Pressable: 'Pressable', View: 'View', Image: 'Image', AccessibilityInfo: { async isScreenReaderEnabled() { return screenReader; } } };
+    if (name === 'react-native') return { Pressable: 'Pressable', View: 'View', ScrollView: 'ScrollView', Image: 'Image', AccessibilityInfo: { async isScreenReaderEnabled() { return screenReader; } } };
     if (name === '../../assets/images/sora-ribbon.png') return { uri: 'sora-ribbon' };
     if (name === 'react-native-safe-area-context') return { SafeAreaView: 'SafeAreaView' };
     if (name === 'expo-router') return { useFocusEffect: fn => effects.push(fn), router: { navigate: route => navigation.push(route), push: route => navigation.push(route) } };
@@ -23,6 +23,7 @@ function home({ onboarded = true, signedIn = true, screenReader = false, guidanc
     if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() { stopped++; } } };
     if (name === '@/components/auth-screen') return { AuthScreen: 'AuthScreen' };
     if (name === '@/components/welcome') return { Welcome: 'Welcome' };
+    if (name === '@/components/brand') return { SoraHero: 'SoraHero', SoraLogo: 'SoraLogo' };
     if (name === '@/components/sora-ui') return Object.fromEntries(['BottomNav', 'Icon', 'Label', 'Tap'].map(type => [type, type]));
     throw new Error(name);
   } });
@@ -34,7 +35,7 @@ function home({ onboarded = true, signedIn = true, screenReader = false, guidanc
 
 test('the entire home content is one accessible start action and repeated taps create only one navigation', () => {
   const app = home();
-  const button = app.tree.props.children[0];
+  const button = app.tree.props.children[0].props.children;
   assert.equal(button.type, 'Pressable');
   assert.equal(button.props.accessibilityRole, 'button');
   assert.equal(button.props.accessibilityLabel, 'Start live stream');

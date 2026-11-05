@@ -1,14 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import FrameCard from '../components/FrameCard.jsx';
 import { Heading, SearchInput } from '../components/Shared.jsx';
 import { useDashboard } from '../providers/Dashboard.jsx';
-export default function FrameLibrary({ onFrame }) {
+export default function FrameLibrary({ onFrame, initialQuery = '' }) {
   const { api, selectedId, frames, frameMore, loadMore, refreshData, setError } = useDashboard();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const [since, setSince] = useState('');
   const [until, setUntil] = useState('');
   const [view, setView] = useState(null);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!initialQuery || !selectedId) return;
+    const controller = new AbortController();
+    setBusy(true);
+    const params = new URLSearchParams({ q: initialQuery, limit: '10' });
+    api.request(`/sessions/${selectedId}/frames/search?${params}`, 'GET', undefined, controller.signal)
+      .then(response => { if (!controller.signal.aborted) { setView({ kind: 'search', frames: response.frames, more: false }); if (response.warnings?.length) setError(response.warnings.join('\n')); } })
+      .catch(error => { if (!controller.signal.aborted) setError(error.message); })
+      .finally(() => { if (!controller.signal.aborted) setBusy(false); });
+    return () => controller.abort();
+  }, [api, selectedId, initialQuery, setError]);
   function bounds() {
     const params = new URLSearchParams();
     if (since) params.set('since', new Date(since).toISOString());

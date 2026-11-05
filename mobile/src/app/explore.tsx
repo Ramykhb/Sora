@@ -1,8 +1,10 @@
+import { ScreenIntro } from '@/components/brand';
+import { BottomNav, Card, Icon, Label, Page, Tap } from '@/components/sora-ui';
 import { useCallback, useState } from 'react';
-import { Alert, Platform, ScrollView, Text, View } from 'react-native';
+import { Alert, Platform, Text, View } from 'react-native';
 import { Image } from 'expo-image';
-import { router, useFocusEffect } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
+import { usePreferences } from '@/providers/preferences';
 import { useAuth } from '@/providers/auth';
 import type { Answer, CaptureSession, Frame } from '@/lib/api';
 import { AuthScreen } from '@/components/auth-screen';
@@ -15,6 +17,7 @@ export default function MomentsScreen() {
 }
 function Moments() {
   const ui = useUI();
+  const { colors } = usePreferences();
   const { api } = useAuth();
   const [sessions, setSessions] = useState<CaptureSession[]>([]);
   const [selected, setSelected] = useState<CaptureSession | null>(null);
@@ -66,18 +69,21 @@ function Moments() {
     if (Platform.OS === 'web') { if (window.confirm(title)) void run(work); }
     else Alert.alert(title, 'This permanently deletes the selected retained data.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => void run(work) }]);
   }
-  return <SafeAreaView style={ui.screen}><ScrollView showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
-    <Action title="Back to Sora" onPress={() => router.replace('/')} /><Text style={ui.title}>Moments</Text>
+  return <Page title="Visual memory" footer={<BottomNav active="History" />}>
+    <ScreenIntro eyebrow="Your timeline" title="Moments worth keeping." subtitle="Revisit captured scenes and conversations." />
     {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
-    {!selected ? <><Text style={ui.copy}>Choose a retained session.</Text>{sessions.length === 0 && <Text style={ui.copy}>No retained sessions yet.</Text>}{sessions.map(session => <Action key={session.id} title={`${new Date(session.created_at).toLocaleString()} · ${session.status}`} disabled={busy} onPress={() => void run(() => load(session))} />)}</> : <>
+    {!selected ? <><Label bold size={14}>Saved sessions <Label muted size={12}> · {sessions.length}</Label></Label>{sessions.length === 0 && <Card style={{ alignItems: 'center', paddingVertical: 34 }}><Icon name="images-outline" size={32} /><Label bold size={17}>Your story starts here.</Label><Label muted size={13} style={{ textAlign: 'center' }}>Capture a scene to build your visual memory.</Label></Card>}{sessions.map(session => <Tap key={session.id} label={`Open session from ${new Date(session.created_at).toLocaleString()}, ${session.status}`} disabled={busy} onPress={() => void run(() => load(session))}><Card style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}><View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: colors.accentSurface, alignItems: 'center', justifyContent: 'center' }}><Icon name="images-outline" size={22} /></View><View style={{ flex: 1, gap: 4 }}><Label bold size={14}>{new Date(session.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</Label><Label muted size={11}>{new Date(session.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} · {session.status}</Label></View><Icon name="chevron-forward" size={18} color={colors.muted} /></Card></Tap>)}</> : <>
       <Text style={ui.subtitle}>{new Date(selected.created_at).toLocaleString()}</Text>
       <Action title="Choose another session" disabled={busy} onPress={() => { setSelected(null); setFrames([]); setHistory([]); }} />
+      <Card><Label bold size={14}>Find a moment</Label>
       <Field placeholder="Search visual memory" value={query} onChangeText={setQuery} />
       <Field placeholder="Since (optional, e.g. 2026-10-29T09:00)" value={since} onChangeText={setSince} autoCapitalize="none" />
       <Field placeholder="Until (optional)" value={until} onChangeText={setUntil} autoCapitalize="none" />
       <Action title="Search memory" disabled={busy || !query.trim()} onPress={() => void run(() => load(selected, true))} />
       <Action title="Show timeline" disabled={busy} onPress={() => void run(() => load(selected))} />
       <Action title={original ? 'Show enhanced images' : 'Show original images'} onPress={() => setOriginal(value => !value)} />
+      </Card>
+      <Label bold size={16}>Frame timeline <Label muted size={12}> · {frames.length}</Label></Label>
       {frames.length === 0 && <Text style={ui.copy}>No matching retained images.</Text>}
       {frames.map(frame => <View style={ui.card} key={frame.id}>
         <Image source={{ uri: api.url(`/sessions/${selected.id}/frames/${frame.id}/image?original=${original}`), headers }} cachePolicy="none" style={{ width: '100%', height: 210, borderRadius: 14 }} contentFit="contain" accessibilityLabel={frame.caption || 'Retained camera frame'} onError={() => setError('Image unavailable. Refresh the timeline to renew access.')} />
@@ -85,11 +91,11 @@ function Moments() {
         {!!frame.ocr_text && <Text style={ui.copy}>Text: {frame.ocr_text}</Text>}
         <Text style={ui.copy}>{frame.detected_objects.map(o => `${o.label} (${Math.round(o.confidence * 100)}%)`).join(', ')}</Text>
         {frame.processing_warnings.map(w => <Text key={w} style={ui.error}>{w}</Text>)}
-        <Action title="Delete image" disabled={busy} onPress={() => confirmDelete('Delete this image?', async () => { await api.request(`/sessions/${selected.id}/frames/${frame.id}`, 'DELETE'); setFrames(previous => previous.filter(f => f.id !== frame.id)); })} />
+        <Action variant="danger" title="Delete image" disabled={busy} onPress={() => confirmDelete('Delete this image?', async () => { await api.request(`/sessions/${selected.id}/frames/${frame.id}`, 'DELETE'); setFrames(previous => previous.filter(f => f.id !== frame.id)); })} />
       </View>)}
       {more && <Action title="Load more images" disabled={busy} onPress={() => void run(() => load(selected, false, true))} />}
-      <Text style={ui.subtitle}>Conversation history</Text>{history.map(answer => <AnswerCard key={answer.id} answer={answer} onError={setError} />)}
-      <Action title="Delete this session and all its data" disabled={busy} onPress={() => confirmDelete('Delete this session?', async () => { await api.request(`/sessions/${selected.id}`, 'DELETE'); setSessions(previous => previous.filter(s => s.id !== selected.id)); setSelected(null); setFrames([]); setHistory([]); })} />
+      <Label bold size={16}>Q&A history <Label muted size={12}> · {history.length}</Label></Label>{history.length === 0 && <Label muted size={13}>Questions and answers from this session will appear here.</Label>}{history.map(answer => <AnswerCard key={answer.id} answer={answer} onError={setError} />)}
+      <Action variant="danger" title="Delete this session and all its data" disabled={busy} onPress={() => confirmDelete('Delete this session?', async () => { await api.request(`/sessions/${selected.id}`, 'DELETE'); setSessions(previous => previous.filter(s => s.id !== selected.id)); setSelected(null); setFrames([]); setHistory([]); })} />
     </>}
-  </ScrollView></SafeAreaView>;
+  </Page>;
 }

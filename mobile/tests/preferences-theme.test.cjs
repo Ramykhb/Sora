@@ -53,11 +53,11 @@ test('saved appearance restores before the app is shown and persists later chang
   await new Promise(resolve => setImmediate(resolve));
   const restored = app.render().props.value;
   assert.equal(restored.preferences.theme, 'dark');
-  assert.equal(restored.colors.background, '#0D0703');
+  assert.equal(restored.colors.background, '#090B10');
   app.flushEffects();
   restored.update({ theme: 'light' });
   const changed = app.render().props.value;
-  assert.equal(changed.colors.background, '#FBF2E8');
+  assert.equal(changed.colors.background, '#F5F3FA');
   app.flushEffects();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(app.writes.at(-1).theme, 'light');
@@ -65,13 +65,13 @@ test('saved appearance restores before the app is shown and persists later chang
 });
 
 test('System appearance follows operating-system changes', async () => {
-  const app = renderPreferences(null, 'dark');
+  const app = renderPreferences(JSON.stringify({ theme: 'system' }), 'dark');
   assert.equal(app.render(), null);
   app.flushEffects();
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(app.render().props.value.colors.background, '#0D0703');
+  assert.equal(app.render().props.value.colors.background, '#090B10');
   app.flushEffects();
   assert.equal(app.nativeAppearance.at(-1), 'auto');
   app.setSystem('light');
-  assert.equal(app.render().props.value.colors.background, '#FBF2E8');
+  assert.equal(app.render().props.value.colors.background, '#F5F3FA');
 });

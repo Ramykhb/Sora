@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuth } from '@/providers/auth';
@@ -7,6 +7,7 @@ import { usePreferences } from '@/providers/preferences';
 import type { Tokens } from '@/lib/api';
 import { Action, Field, useUI } from './controls';
 import { Card, Icon, Label, Tap } from './sora-ui';
+import { SoraHero, SoraLogo } from './brand';
 type AuthMode = 'login' | 'register' | 'recover' | 'reset' | 'verify';
 const modeTitles: Record<AuthMode, string> = { login: 'Sign in', register: 'Create account', recover: 'Forgot password', reset: 'Use reset token', verify: 'Verify email' };
 const progressTitles: Record<AuthMode, string> = { login: 'Signing you in…', register: 'Creating your account…', recover: 'Sending your reset email…', reset: 'Updating your password…', verify: 'Verifying your email…' };
@@ -63,9 +64,9 @@ export function AuthScreen() {
     } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to sign in.'); }
     finally { setBusy(false); }
   }
-  if (!ready) return <SafeAreaView style={ui.screen}><View style={{ flex: 1, justifyContent: 'center', padding: 28 }}><Card><Image source={require('../../assets/images/sora-ribbon.png')} style={{ width: 72, height: 76, alignSelf: 'center' }} resizeMode="contain" accessibilityLabel="SORA ribbon logo" /><AuthProgress title="Signing you in…" /></Card></View></SafeAreaView>;
+  if (!ready) return <SafeAreaView style={ui.screen}><View style={{ flex: 1, justifyContent: 'center', padding: 28 }}><Card><View style={{ alignItems: 'center' }}><SoraLogo size={56} wordmark /></View><AuthProgress title="Signing you in…" /></Card></View></SafeAreaView>;
   return <SafeAreaView style={ui.screen}><ScrollView showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={ui.content}>
-    <View style={{ alignItems: 'center', gap: 8, paddingTop: 22, paddingBottom: 18 }}><Tap label="Preferences" onPress={() => router.push('/settings')} style={{ position: 'absolute', top: 0, right: 0, alignItems: 'center', justifyContent: 'center' }}><Icon name="settings-outline" color={colors.muted} size={22} /></Tap><Image source={require('../../assets/images/sora-ribbon.png')} style={{ width: 90, height: 95 }} resizeMode="contain" accessibilityLabel="SORA ribbon logo" /><Text style={[ui.title, { letterSpacing: 9 }]}>SORA</Text><Text style={ui.copy}>See beyond.</Text></View>
+    <View style={{ alignItems: 'center', gap: 8, paddingTop: 22, paddingBottom: 18 }}><Tap label="Preferences" onPress={() => router.push('/settings')} style={{ position: 'absolute', top: 0, right: 0, alignItems: 'center', justifyContent: 'center' }}><Icon name="settings-outline" color={colors.muted} size={22} /></Tap><SoraLogo size={38} wordmark /><SoraHero size={170} /><Label bold size={25} style={{ letterSpacing: -0.7 }}>Welcome to a clearer world.</Label><Label muted size={13}>Your everyday AI companion.</Label></View>
     <Card style={{ gap: 16 }}>
     <Label accessibilityRole="header" bold size={20}>{mode === 'register' ? 'Create your account' : mode === 'login' ? 'Sign in to SORA' : mode === 'recover' ? 'Reset your password' : mode === 'reset' ? 'Choose a new password' : 'Verify your email'}</Label>
     {!!restoreError && <><Text style={ui.error}>{restoreError}</Text><Action title="Retry saved sign-in" onPress={retry} /></>}

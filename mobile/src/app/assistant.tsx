@@ -1,7 +1,8 @@
+import { ScreenIntro, SoraLogo } from '@/components/brand';
+import { BottomNav, Card, Icon, Label, Page } from '@/components/sora-ui';
 import { usePreferences } from '@/providers/preferences';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, ScrollView, Switch, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { AppState, Switch, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { speech } from '@/lib/speech';
 import { useHandsFreeQuestions, useVoiceCommands, useVoiceStreamControls } from '@/providers/voice-commands';
@@ -167,16 +168,14 @@ function Assistant() {
     if (session) setSession(await api.request<CaptureSession>(`/sessions/${session.id}`, 'PATCH', { language: nextLanguage, alerts_enabled: nextAlerts }));
     setLanguage(nextLanguage); setAlerts(nextAlerts);
   }
-  return <SafeAreaView style={ui.screen}><ScrollView showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={ui.content}>
-    <View style={ui.row}><Action title="Home" onPress={() => router.replace('/')} /><Text style={[ui.title, { flex: 1 }]}>Live workspace</Text><Action title="Moments" onPress={() => router.push('/explore')} /><Action title="Settings" onPress={() => router.push('./settings')} /></View>
-    <Text style={ui.subtitle}>Hello, {tokens?.user.display_name}</Text>
-    <Text style={ui.copy}>{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
+  return <Page title="Ask Sora" footer={<BottomNav active="Assist" />}>
+    <ScreenIntro eyebrow="Voice & vision" title={`Hello, ${tokens?.user.display_name || 'there'}.`} subtitle="Ask a question. Get a little more clarity." />
     {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
     {!!notice && <Text accessibilityLiveRegion="polite" style={ui.copy}>{notice}</Text>}
-    <View style={ui.row}>{(['en', 'fr', 'ar'] as const).map(value => <Action key={value} title={`${language === value ? '✓ ' : ''}${{ en: 'English', fr: 'Français', ar: 'العربية' }[value]}`} disabled={busy || session?.status === 'closed'} onPress={() => void run(() => preferences(value, alerts))} />)}</View>
-    <View style={ui.row}><Switch accessibilityLabel="Spoken answers" value={speak} trackColor={{ false: colors.trackOff, true: colors.primary }} onValueChange={value => { setSpeak(value); if (!value) void speech.stop(); }} /><Text style={ui.copy}>Speak answers</Text><Switch accessibilityLabel="Obstacle alerts" disabled={busy || session?.status === 'closed'} value={alerts} trackColor={{ false: colors.trackOff, true: colors.primary }} onValueChange={value => { if (!value) void speech.stop(); void run(() => preferences(language, value)); }} /><Text style={ui.copy}>Obstacle alerts</Text></View>
+    <Card><View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}><Icon name="options-outline" size={20} /><Label bold size={14}>Assistance preferences</Label></View><View style={ui.row}>{(['en', 'fr', 'ar'] as const).map(value => <Action key={value} title={`${language === value ? '✓ ' : ''}${{ en: 'English', fr: 'Français', ar: 'العربية' }[value]}`} disabled={busy || session?.status === 'closed'} onPress={() => void run(() => preferences(value, alerts))} />)}</View>
+    <View style={{ gap: 10 }}><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}><Label size={13} style={{ flex: 1 }}>Speak answers</Label><Switch accessibilityLabel="Spoken answers" value={speak} trackColor={{ false: colors.trackOff, true: colors.primary }} onValueChange={value => { setSpeak(value); if (!value) void speech.stop(); }} /></View><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}><Label size={13} style={{ flex: 1 }}>Obstacle alerts</Label><Switch accessibilityLabel="Obstacle alerts" disabled={busy || session?.status === 'closed'} value={alerts} trackColor={{ false: colors.trackOff, true: colors.primary }} onValueChange={value => { if (!value) void speech.stop(); void run(() => preferences(language, value)); }} /></View></View></Card>
     {!session ? <View style={ui.card}>
-      <Text style={ui.subtitle}>Start live assistance</Text><Text style={ui.copy}>Camera frames are analyzed and selected images and conversations are retained until the session expires. Voice uploads are processed without being retained.</Text>
+      <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}><SoraLogo size={36} /><View style={{ flex: 1, gap: 3 }}><Label bold size={16}>Start live assistance</Label><Label muted size={11}>Camera, voice & visual memory</Label></View></View><Text style={ui.copy}>Camera frames are analyzed and selected images and conversations are retained until the session expires. Voice uploads are processed without being retained.</Text>
       <View style={ui.row}><Switch accessibilityLabel="Consent to camera processing and retention" value={consent} trackColor={{ false: colors.trackOff, true: colors.primary }} onValueChange={setConsent} /><Text style={[ui.copy, { flex: 1 }]}>I consent to camera processing and visual memory storage.</Text></View>
       <Action variant="primary" title={busy ? 'Starting…' : 'Start a new session'} disabled={!consent || busy} onPress={() => void run(async () => {
         const created = await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language, alerts_enabled: alerts });
@@ -190,16 +189,18 @@ function Assistant() {
       {active && <View style={ui.card}><Text style={ui.subtitle}>Live objects</Text><Text style={ui.copy}>{observation ? observation.detected_objects.length ? observation.detected_objects.map(object => `${object.label} (${Math.round(object.confidence * 100)}%)`).join(', ') : 'No supported objects detected. This does not mean the route is clear.' : 'Waiting for fresh detections…'}</Text>{observation && <Text style={ui.copy}>Server detection latency: {Math.round(observation.latency_ms)} ms</Text>}</View>}
       {frame && <View style={ui.card}><Text style={ui.subtitle}>Latest saved scene</Text><Text style={ui.copy}>{frame.caption || (['pending', 'processing'].includes(frame.enrichment_status || '') ? 'Frame saved. AI description is being prepared.' : 'Saved observations available below.')}</Text><Text style={ui.copy}>{frame.detected_objects.map(object => object.label).join(', ')}</Text>{!!frame.ocr_text && <Text style={ui.copy}>Text: {frame.ocr_text}</Text>}<Text style={ui.copy}>{new Date(frame.captured_at).toLocaleTimeString()}</Text>{frame.processing_warnings.map(w => <Text key={w} style={ui.error}>{w}</Text>)}</View>}
       <View style={ui.row}>{(['recent', 'memory', 'auto'] as const).map(value => <Action key={value} title={`${scope === value ? '✓ ' : ''}${value === 'recent' ? 'Current view' : value === 'memory' ? 'Memory' : 'Auto'}`} onPress={() => setScope(value)} />)}</View>
-      <VoiceWaveform commandsOnly={!active || !appPreferences.handsFreeQuestions} />
+      <Card><View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}><Icon name="mic-outline" color={colors.accent} size={20} /><Label bold size={15}>Ask your companion</Label></View><VoiceWaveform commandsOnly={!active || !appPreferences.handsFreeQuestions} />
       {appPreferences.voiceCommands && <Text accessibilityLiveRegion="polite" style={ui.copy}>{voice.status}</Text>}
       <Field placeholder="Ask about your surroundings or memory" value={question} onChangeText={setQuestion} multiline maxLength={2000} />
       <Action title={busy ? 'Thinking…' : 'Ask Sora'} disabled={busy || !question.trim()} onPress={() => void run(ask)} />
       {foreground && focused && <VoiceQuestion key={session.id} sessionId={session.id} language={language} scope={scope} disabled={busy} onAnswer={answer => receiveAnswer(answer, true)} onError={setError} />}
       <Action title="Stop speaking" onPress={() => void speech.stop()} />
+      </Card>
+      <Label bold size={16}>Conversation</Label>
       {answers.length === 0 && <Text style={ui.copy}>Your conversation will appear here.</Text>}
       {answers.map(answer => <AnswerCard key={answer.id} answer={answer} onError={setError} />)}
       {session.status === 'active' && <Action title="End capture and keep memory" disabled={busy} onPress={() => void run(async () => { setActive(false); setSession(await api.request<CaptureSession>(`/sessions/${session.id}/close`, 'POST')); listSessions(); })} />}
       <Action title="Choose another session" disabled={busy} onPress={() => { select(null); listSessions(); }} />
     </>}
-  </ScrollView></SafeAreaView>;
+  </Page>;
 }

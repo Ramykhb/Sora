@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { AccessibilityInfo, Image, Pressable, View } from 'react-native';
+import { AccessibilityInfo, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,6 +9,7 @@ import { useVoiceCommands } from '@/providers/voice-commands';
 import { speech } from '@/lib/speech';
 import { AuthScreen } from '@/components/auth-screen';
 import { Welcome } from '@/components/welcome';
+import { SoraHero, SoraLogo } from '@/components/brand';
 import { BottomNav, Icon, Label, Tap } from '@/components/sora-ui';
 
 export default function Home() {
@@ -19,7 +20,7 @@ export default function Home() {
 }
 
 function StartStreamHome() {
-  const { colors, preferences, dark } = usePreferences();
+  const { colors, preferences } = usePreferences();
   const [smallScreen, setSmallScreen] = useState(false);
   const compact = smallScreen || preferences.largerText;
   const voice = useVoiceCommands();
@@ -45,32 +46,31 @@ function StartStreamHome() {
   }
 
   return <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-    <Pressable
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }} onLayout={event => setSmallScreen(event.nativeEvent.layout.height < 620)}><Pressable
       accessible
       accessibilityRole="button"
       accessibilityLabel="Start live stream"
       accessibilityHint="Starts your camera for live assistance. Activating agrees to camera processing and storing selected images and conversations until the session expires."
       onPress={startStream}
-      onLayout={event => setSmallScreen(event.nativeEvent.layout.height < 620)}
       style={({ pressed }) => ({ flex: 1, backgroundColor: colors.background, opacity: pressed ? 0.9 : 1 })}
     >
       <LinearGradient pointerEvents="none" colors={colors.streamGradient} locations={[0, 0.56, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />
-      <View pointerEvents="none" style={{ position: 'absolute', top: -140, left: -100, right: -110, height: 280, borderRadius: 250, borderBottomWidth: 2, borderColor: colors.welcomeArc, opacity: dark ? 0.8 : 0.5, transform: [{ rotate: '-18deg' }] }} />
-      <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flex: 1, alignItems: 'center', justifyContent: 'space-between', padding: compact ? 16 : 28, gap: compact ? 9 : 18 }}>
-        <Label bold size={17} style={{ color: colors.heroText, letterSpacing: 7 }}>SORA</Label>
-        <View style={{ alignItems: 'center', gap: compact ? 10 : 17 }}>
-          <Image source={require('../../assets/images/sora-ribbon.png')} style={{ width: compact ? 86 : 114, height: compact ? 84 : 112 }} resizeMode="contain" />
-          <View style={{ width: compact ? 74 : 94, height: compact ? 74 : 94, borderRadius: 47, borderWidth: 2, borderColor: colors.heroEdge, backgroundColor: colors.heroArrow, alignItems: 'center', justifyContent: 'center', boxShadow: colors.primaryShadow }}><Icon name="camera-outline" color={colors.heroArrowInk} size={compact ? 34 : 44} /></View>
-          <Label bold size={compact ? 24 : 29} style={{ color: colors.heroText, textAlign: 'center' }}>Tap anywhere{'\n'}to start streaming</Label>
-          <Label size={14} style={{ color: colors.heroText, textAlign: 'center' }}>The whole area is your start button.</Label>
-          <Label size={12} style={{ color: colors.heroText, textAlign: 'center' }}>Using a screen reader? Focus Start live stream, then double-tap to begin.</Label>
+      <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flex: 1, width: '100%', maxWidth: 600, alignSelf: 'center', justifyContent: 'space-between', padding: compact ? 20 : 28, gap: 12 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}><SoraLogo size={36} wordmark /><View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', gap: 6, alignItems: 'center' }}><Icon name="sparkles-outline" size={13} /><Label muted size={10}>YOUR AI COMPANION</Label></View></View>
+        <View style={{ alignItems: 'center', gap: compact ? 8 : 14 }}>
+          <SoraHero size={compact ? 110 : 248} />
+          <Label bold size={10} style={{ color: colors.primary, letterSpacing: 2 }}>SEE BEYOND.</Label>
+          <Label bold size={compact ? 26 : 34} style={{ textAlign: 'center', letterSpacing: -1 }}>Your world,{'\n'}spoken clearly.</Label>
+          <Label muted size={compact ? 13 : 14} style={{ textAlign: 'center', maxWidth: 290 }}>Point your camera. Hear what’s around you. Ask anything.</Label>
+          <View style={{ flexDirection: 'row', gap: 8, maxWidth: '100%', backgroundColor: colors.primary, borderRadius: 14, paddingHorizontal: 18, paddingVertical: 17, alignItems: 'center', marginTop: 6 }}><Icon name="camera-outline" color={colors.onPrimary} size={22} /><Label bold size={15} style={{ color: colors.onPrimary, flexShrink: 1, textAlign: 'center' }}>Tap anywhere to start</Label><Icon name="arrow-forward" color={colors.onPrimary} size={18} /></View>
+          <Label muted size={11} style={{ textAlign: 'center' }}>Using a screen reader? Focus Start live stream, then double-tap.</Label>
         </View>
         <View style={{ gap: 10, alignItems: 'center' }}>
-          {preferences.voiceCommands && <Label size={12} style={{ color: colors.heroText, textAlign: 'center' }}>{voice.status}</Label>}
-          <Label size={11} style={{ color: colors.heroText, textAlign: 'center' }}>Starting allows camera processing. Selected images and conversations are stored until your session expires.</Label>
+          {preferences.voiceCommands && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Icon name="mic-outline" color={colors.accent} size={16} /><Label size={12} style={{ color: colors.muted, flexShrink: 1 }}>{voice.status}</Label></View>}
+          <Label muted size={10} style={{ textAlign: 'center' }}>Starting allows camera processing. Selected images and conversations are stored until your session expires.</Label>
         </View>
       </View>
-    </Pressable>
+    </Pressable></ScrollView>
     <View style={{ backgroundColor: colors.nav }}>
       <Tap label="More tools, read text and recent activity" onPress={() => router.push('./tools')} style={{ alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, minHeight: 56, borderTopWidth: 1, borderColor: colors.border }}><Icon name="grid-outline" size={20} /><Label bold size={14}>More tools</Label></Tap>
       <BottomNav />

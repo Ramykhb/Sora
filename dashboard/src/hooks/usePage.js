@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 
 export const pageTitles = {
-  overview: 'Overview', live: 'Live session', frames: 'Frame library',
-  questions: 'Conversations', settings: 'Preferences',
+  overview: 'Dashboard', live: 'Live Stream', frames: 'Frame Timeline',
+  questions: 'Q&A History', settings: 'Settings',
 };
 
 function readPage() {

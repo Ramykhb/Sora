@@ -13,14 +13,15 @@
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
-        "NSLocalNetworkUsageDescription": "Allow Sora to stream video to your local backend and dashboard."
+        "NSLocalNetworkUsageDescription": "Allow Sora to stream video to your local backend and dashboard.",
+        "CFBundleDisplayName": "Sora"
       },
       "bitcode": false,
       "bundleIdentifier": "com.ramykhachab.mobile"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0D0703",
+        "backgroundColor": "#090B10",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
@@ -56,12 +57,12 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#FBF2E8",
-          "image": "./assets/images/sora-ribbon.png",
-          "imageWidth": 130,
+          "backgroundColor": "#090B10",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 110,
           "dark": {
-            "backgroundColor": "#0D0703",
-            "image": "./assets/images/sora-ribbon.png"
+            "backgroundColor": "#090B10",
+            "image": "./assets/images/splash-icon.png"
           }
         }
       ],
@@ -115,6 +116,7 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "backgroundColor": "#090B10"
   }
 }

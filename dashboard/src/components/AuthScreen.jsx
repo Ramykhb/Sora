@@ -1,3 +1,4 @@
+import Brand from './Brand.jsx';
 import { useState } from 'react';
 import { useAuth } from '../providers/Auth.jsx';
 export default function AuthScreen() {
@@ -29,7 +30,7 @@ export default function AuthScreen() {
   }
   if (!ready) return <div className="auth-shell"><div className="panel auth-card" role="status">Restoring sign-in…</div></div>;
   return <div className="auth-shell"><div className="panel auth-card">
-    <a className="brand" href="#overview"><span className="brand-mark">✳</span>sora.</a><h1>{{ login: 'Welcome back.', register: 'Create an account.', recover: 'Reset your password.', reset: 'Choose a new password.', verify: 'Verify your email.', resend: 'Request verification.' }[mode]}</h1>
+    <Brand /><h1>{{ login: 'Welcome back.', register: 'Create an account.', recover: 'Reset your password.', reset: 'Choose a new password.', verify: 'Verify your email.', resend: 'Request verification.' }[mode]}</h1>
     <p>Sign in with the same account you use on mobile to see its camera stream and visual memory.</p>
     {error && <div className="notice error" role="alert">{error}<button className="button" onClick={retry}>Retry saved sign-in</button></div>}
     <form onSubmit={submit} className="form-stack">

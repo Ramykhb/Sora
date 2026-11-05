@@ -192,3 +192,9 @@ should only run when explicitly requested.
 ## Muting Sora by voice
 
 Say **Hey Sora, mute** to stop current speech and mute subsequent answers, guidance and alerts. Speech recognition and questions stay active. Say **Hey Sora, unmute** to restore voice and hear a brief confirmation. These commands update the same saved voice preference as the screen's speaker button. The mute setting also stops server-voice playback and prevents it from starting while muted.
+
+## Shared dashboard appearance
+
+Mobile uses the dashboard’s charcoal surfaces, purple actions, green live status and pink voice accents. New installs start in dark mode; saved Light and System choices, high contrast, larger text, voice settings and haptics still apply. The main home area remains a single accessible Start live stream button and scrolls on smaller screens.
+
+Editable logo, hero, app icon and Android themed-icon sources live in `../brand`. The mobile and dashboard share the same Buddy robot logo. Launch artwork is configured in `app.json`; regenerate native resources and rebuild when ready to show the new home-screen icon and splash. Existing installed apps continue to use their bundled launch artwork until rebuilt.

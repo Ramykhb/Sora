@@ -1,8 +1,8 @@
+import { ScreenIntro } from '@/components/brand';
 import { PreferenceControls } from '@/components/preference-controls';
-import { Header, Icon, Label, Tap } from '@/components/sora-ui';
+import { BottomNav, Icon, Label, Page, Tap } from '@/components/sora-ui';
 import { useCallback, useState } from 'react';
-import { Alert, Platform, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Alert, Platform, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/providers/auth';
 import type { User } from '@/lib/api';
@@ -40,7 +40,8 @@ function Settings() {
     if (Platform.OS === 'web') { if (window.confirm('Permanently delete your account and all retained data?')) void run(work); }
     else Alert.alert('Delete account?', 'This permanently removes your account and retained data.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => void run(work) }]);
   }
-  return <SafeAreaView style={ui.screen}><Header title="Preferences" /><ScrollView showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
+  return <Page title="Settings" footer={<BottomNav active="Settings" />}>
+    <ScreenIntro eyebrow="Make it yours" title="Your Sora, your way." subtitle="Tune the experience to what works for you." />
     <PreferenceControls /><Tap label={account ? 'Hide account settings' : 'Account, security & retained data'} onPress={() => tokens ? setAccount(value => !value) : router.push('/assistant')} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 }}><Label muted size={13}>Account, security & retained data</Label><Icon name={account ? 'chevron-down' : 'chevron-forward'} size={20} /></Tap>{account && tokens && <><Text style={ui.copy}>{tokens?.user.email} · {tokens?.user.email_verified ? 'Verified' : 'Unverified'}</Text>
     {!!message && <Text accessibilityLiveRegion="polite" style={ui.copy}>{message}</Text>}
     <Field placeholder="Display name" value={name} onChangeText={setName} maxLength={100} />
@@ -53,6 +54,6 @@ function Settings() {
     <Text style={ui.subtitle}>Signed-in devices</Text>{sessions.map(session => <View key={session.id} style={ui.card}><Text style={ui.copy}>{session.is_current ? 'This device' : 'Another device'} · {new Date(session.created_at).toLocaleString()}</Text><Action title="Revoke sign-in" disabled={busy} onPress={() => void run(async () => { await api.request(`/auth/sessions/${session.id}`, 'DELETE'); if (session.is_current) { await api.setTokens(null); router.replace('/'); } else setSessions(previous => previous.filter(value => value.id !== session.id)); })} /></View>)}
     {metrics && <View style={ui.card}><Text style={ui.subtitle}>Your retained data</Text>{Object.entries(metrics).filter(([, value]) => typeof value === 'number').map(([key, value]) => <Text key={key} style={ui.copy}>{key.replaceAll('_', ' ')}: {String(value)}</Text>)}</View>}
     <Action title="Sign out" disabled={busy} onPress={() => void run(() => logout())} /><Action title="Sign out all devices" disabled={busy} onPress={() => void run(() => logout(true))} />
-    <Text style={ui.copy}>To delete your account, enter your current password above.</Text><Action title="Delete account and retained data" disabled={busy || !password} onPress={deleteAccount} />
-  </>}</ScrollView></SafeAreaView>;
+    <Text style={ui.copy}>To delete your account, enter your current password above.</Text><Action variant="danger" title="Delete account and retained data" disabled={busy || !password} onPress={deleteAccount} />
+  </>}</Page>;
 }

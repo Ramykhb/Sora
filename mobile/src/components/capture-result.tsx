@@ -9,6 +9,7 @@ import { speech } from '@/lib/speech';
 import { connectLive } from '@/lib/live';
 import type { Answer, CaptureSession, Frame, Language } from '@/lib/api';
 import { AuthScreen } from './auth-screen';
+import { ScreenIntro } from './brand';
 import { Card, Icon, Label, Page, Tap } from './sora-ui';
 const descriptionQuestion = 'Describe the captured scene in clear, concise language.';
 export function CaptureResult({ text = false }: { text?: boolean }) {
@@ -105,7 +106,8 @@ function Result({ text }: { text: boolean }) {
   }
   return <Page title={text ? 'Read Text' : 'Scene Description'}>
     {!sessionId || !frameId ? <Card><Label>No captured image selected.</Label><Tap label="Open camera" onPress={retake}><Label>Open camera →</Label></Tap></Card> : <>
-      <View style={{ height: 226, borderRadius: 22, overflow: 'hidden', backgroundColor: colors.elevated, borderWidth: 1, borderColor: colors.border, boxShadow: colors.cardShadow, marginTop: 2 }}>
+      <ScreenIntro eyebrow={text ? 'Text to speech' : 'Scene insight'} title={text ? 'Words, made clear.' : 'A closer look.'} subtitle={frame ? new Date(frame.captured_at).toLocaleString() : 'Your captured moment'} />
+      <View style={{ height: 226, borderRadius: 18, overflow: 'hidden', backgroundColor: colors.elevated, borderWidth: 1, borderColor: colors.border, boxShadow: colors.cardShadow, marginTop: 2 }}>
         {frame && headers ? <Image source={{ uri: api.url(`/sessions/${sessionId}/frames/${frameId}/image`), headers }} style={{ flex: 1 }} contentFit="cover" cachePolicy="none" accessibilityLabel={frame.caption || 'Captured image'} onError={() => setError('Image unavailable. Refresh to renew access.')} /> : error ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}><Icon name="image-outline" /><Label muted>Image unavailable</Label></View> : <ActivityIndicator style={{ flex: 1 }} color={colors.primary} accessibilityLabel="Loading captured image" />}
       </View>
       <Card style={{ gap: 12 }}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}><Icon name={text ? 'scan-outline' : 'sparkles'} size={22} /><Label bold size={13}>{!frame ? error ? 'Result unavailable' : 'Loading image…' : processing ? 'Processing image…' : text ? frame.ocr_text ? 'Text Detected' : 'No Text Detected' : 'Scene Detected'}</Label></View>
