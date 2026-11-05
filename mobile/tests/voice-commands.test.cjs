@@ -134,7 +134,7 @@ test('old native builds and disabled voice commands leave the app usable', async
 });
 
 
-const cameraSource = ts.transpileModule(fs.readFileSync(require.resolve('../src/app/camera.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+const cameraSource = ts.transpileModule(fs.readFileSync(require.resolve('../src/app/(tabs)/camera.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 async function voiceStartCamera(granted, { active = false, paused = false, question, command, closeError } = {}) {
   const effects = [], requests = [], spoken = [], updates = [];
   const session = { id: 'voice-session', status: 'active', language: 'en' };
@@ -151,6 +151,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
         useCallback: fn => fn, useEffect: fn => effects.push(fn),
       };
       if (name === 'react-native') return { AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) }, StyleSheet: { create: value => value }, Platform: { OS: 'ios' } };
+      if (name === '@/providers/tab-bar') return { useFullscreenTabBar() {} };
       if (name === 'expo-camera') return { useCameraPermissions: () => [null, async () => ({ granted })] };
       if (name === 'expo-router') return { useFocusEffect() {}, useLocalSearchParams: () => ({ mode: 'live', voiceStart: '123' }) };
       if (name === '@/providers/voice-commands') return { useHandsFreeQuestions(handler) { voiceQuestion = handler; }, useVoiceStreamControls(handler) { voiceControl = handler; }, useVoiceCommands: () => ({ status: '' }) };

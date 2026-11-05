@@ -1,3 +1,4 @@
+import { useFullscreenTabBar } from '@/providers/tab-bar';
 import { ScreenIntro, SoraHero } from '@/components/brand';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform, StyleSheet, Switch, View } from 'react-native';
@@ -35,6 +36,7 @@ function Capture() {
   const [connected, setConnected] = useState(false);
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [focused, setFocused] = useState(true); const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  useFullscreenTabBar(!!session);
   useFocusEffect(useCallback(() => { setFocused(true); return () => { setFocused(false); void speech.stop(); }; }, []));
   useEffect(() => { const sub = AppState.addEventListener('change', value => { setForeground(value === 'active'); }); return () => sub.remove(); }, []);
   useEffect(() => { if (!session) return; const timer = setTimeout(() => { setSession(null); setError('This session expired. Start a new session.'); }, Math.max(0, Date.parse(session.expires_at) - Date.now())); return () => clearTimeout(timer); }, [session]);

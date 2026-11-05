@@ -1,5 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type TextProps, type ViewStyle } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type TextProps, type ViewStyle, type StyleProp } from 'react-native';
+import { SafeAreaView as NativeScreenSafeAreaView } from 'react-native-screens/experimental';
+import { useNativeTabBar } from '@/providers/tab-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
@@ -44,12 +46,19 @@ export function Header({ title }: { title: string }) {
   const { colors } = usePreferences();
   return <View style={styles.header}><Tap label="Go back" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} style={{ alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, boxShadow: colors.quietShadow }}><Icon name="chevron-back" color={colors.text} size={23} /></Tap><Label bold size={18} style={{ flex: 1, textAlign: 'center' }}>{title}</Label><View style={{ width: 48 }} /></View>;
 }
+/** Native screen insets include the system tab bar, including its floating glass form. */
+export function ScreenSafeArea({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  const native = useNativeTabBar();
+  return native ? <NativeScreenSafeAreaView collapsable={false} edges={{ top: true, right: true, bottom: true, left: true }} style={style}>{children}</NativeScreenSafeAreaView> : <SafeAreaView style={style}>{children}</SafeAreaView>;
+}
 export function Page({ children, title, footer }: { children: ReactNode; title?: string; footer?: ReactNode }) {
   const { colors } = usePreferences();
-  return <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}><LinearGradient pointerEvents="none" colors={[colors.pageGlow, colors.background]} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 340 }} />{title && <Header title={title} />}<ScrollView showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>{children}</ScrollView>{footer}</SafeAreaView>;
+  return <ScreenSafeArea style={{ flex: 1, backgroundColor: colors.background }}><LinearGradient pointerEvents="none" colors={[colors.pageGlow, colors.background]} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 340 }} />{title && <Header title={title} />}<ScrollView showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>{children}</ScrollView>{footer}</ScreenSafeArea>;
 }
 export function BottomNav({ active = 'Home' }: { active?: string }) {
   const { colors } = usePreferences();
+  const native = useNativeTabBar();
+  if (native) return null;
   const tabs = [{ label: 'Home', icon: 'home-outline', route: '/' }, { label: 'Assist', icon: 'camera-outline', route: '/camera' }, { label: 'History', icon: 'reader-outline', route: '/explore' }, { label: 'Settings', icon: 'settings-outline', route: '/settings' }] as const;
   return <View style={[styles.nav, { backgroundColor: colors.nav, borderColor: colors.border, boxShadow: colors.navShadow }]}>{tabs.map(tab => <Tap key={tab.label} selected={active === tab.label} label={tab.label} onPress={() => router.push(tab.route)} style={styles.tab}><View style={{ width: 52, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: active === tab.label ? colors.accentSurface : 'transparent' }}><Icon name={active === tab.label && tab.label === 'Home' ? 'home' : tab.icon} size={23} color={active === tab.label ? colors.primary : colors.muted} /></View><Label size={10} bold={active === tab.label} style={{ color: active === tab.label ? colors.primary : colors.muted }}>{tab.label}</Label></Tap>)}</View>;
 }

@@ -198,3 +198,9 @@ Say **Hey Sora, mute** to stop current speech and mute subsequent answers, guida
 Mobile uses the dashboard’s charcoal surfaces, purple actions, green live status and pink voice accents. New installs start in dark mode; saved Light and System choices, high contrast, larger text, voice settings and haptics still apply. The main home area remains a single accessible Start live stream button and scrolls on smaller screens.
 
 Editable logo, hero, app icon and Android themed-icon sources live in `../brand`. The mobile and dashboard share the same Buddy robot logo. Launch artwork is configured in `app.json`; regenerate native resources and rebuild when ready to show the new home-screen icon and splash. Existing installed apps continue to use their bundled launch artwork until rebuilt.
+
+## Native iOS navigation
+
+iOS uses Expo Router native tabs for Home, Assist, History and Settings. UIKit supplies Liquid Glass on iOS 26+ and the standard system bar on earlier iOS versions. Tabs stay expanded for predictable accessibility and hide during onboarding, sign-in and full-screen camera capture. Web and Android retain the existing accessible bottom navigation. Public URLs (`/camera`, `/tools`, `/assistant`, `/explore`, `/settings`) and voice-command routes are unchanged.
+
+Sign-in uses one Buddy hero and a compact form that fits common phone sizes without scrolling. Scrolling remains available when the keyboard, larger accessibility text or expanded account/connection options need more space.

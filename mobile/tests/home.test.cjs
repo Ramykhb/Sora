@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const ts = require('typescript');
 const vm = require('node:vm');
-const source = ts.transpileModule(fs.readFileSync(require.resolve('../src/app/index.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+const source = ts.transpileModule(fs.readFileSync(require.resolve('../src/app/(tabs)/(home)/index.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 function home({ onboarded = true, signedIn = true, screenReader = false, guidance = true } = {}) {
   const effects = [], navigation = [], spoken = [];
   let stopped = 0;
@@ -24,7 +24,7 @@ function home({ onboarded = true, signedIn = true, screenReader = false, guidanc
     if (name === '@/components/auth-screen') return { AuthScreen: 'AuthScreen' };
     if (name === '@/components/welcome') return { Welcome: 'Welcome' };
     if (name === '@/components/brand') return { SoraHero: 'SoraHero', SoraLogo: 'SoraLogo' };
-    if (name === '@/components/sora-ui') return Object.fromEntries(['BottomNav', 'Icon', 'Label', 'Tap'].map(type => [type, type]));
+    if (name === '@/components/sora-ui') return Object.fromEntries(['BottomNav', 'Icon', 'Label', 'ScreenSafeArea', 'Tap'].map(type => [type, type]));
     throw new Error(name);
   } });
   const entry = exports.default();

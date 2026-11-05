@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/providers/auth';
@@ -10,7 +9,7 @@ import { speech } from '@/lib/speech';
 import { AuthScreen } from '@/components/auth-screen';
 import { Welcome } from '@/components/welcome';
 import { SoraHero, SoraLogo } from '@/components/brand';
-import { BottomNav, Icon, Label, Tap } from '@/components/sora-ui';
+import { BottomNav, Icon, Label, ScreenSafeArea, Tap } from '@/components/sora-ui';
 
 export default function Home() {
   const { preferences } = usePreferences();
@@ -45,7 +44,7 @@ function StartStreamHome() {
     router.navigate({ pathname: '/camera', params: { mode: 'live', voiceStart: String(Date.now()) } });
   }
 
-  return <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+  return <ScreenSafeArea style={{ flex: 1, backgroundColor: colors.background }}>
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }} onLayout={event => setSmallScreen(event.nativeEvent.layout.height < 620)}><Pressable
       accessible
       accessibilityRole="button"
@@ -75,5 +74,5 @@ function StartStreamHome() {
       <Tap label="More tools, read text and recent activity" onPress={() => router.push('./tools')} style={{ alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, minHeight: 56, borderTopWidth: 1, borderColor: colors.border }}><Icon name="grid-outline" size={20} /><Label bold size={14}>More tools</Label></Tap>
       <BottomNav />
     </View>
-  </SafeAreaView>;
+  </ScreenSafeArea>;
 }
