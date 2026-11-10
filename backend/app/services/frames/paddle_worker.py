@@ -5,6 +5,7 @@ from contextlib import redirect_stdout
 import json
 from pathlib import Path
 import sys
+from time import monotonic
 import unicodedata
 
 import cv2
@@ -78,24 +79,48 @@ class PaddleEngine:
         }
         self.minimum_confidence, self.max_regions = minimum_confidence, max_regions
 
-    def recognize(self, image, languages):
+    def warmup(self):
+        # Initialize native inference paths at camera resolution before READY,
+        # instead of charging first-inference setup to the first saved frame.
+        camera = np.full((1280, 720, 3), 255, np.uint8)
+        next(iter(self.detector.predict(camera)))
+        line = np.full((48, 320, 3), 255, np.uint8)
+        cv2.putText(line, "WARMUP 123", (5, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+        for recognizer in self.recognizers.values():
+            next(iter(recognizer.predict(line)))
+
+    def recognize(self, image, languages, budget_seconds=None):
+        deadline = monotonic() + budget_seconds if budget_seconds is not None else float("inf")
         selected = recognition_languages(languages)
         detection = next(iter(self.detector.predict(image)))
-        polygons = list(detection["dt_polys"])[:self.max_regions]
+        detected = list(detection["dt_polys"])
+        # Read the most legible regions before tiny glyphs/icons consume the
+        # frame budget. Reconstruct spatial reading order after recognition.
+        polygons = sorted(detected, key=lambda polygon: cv2.contourArea(np.float32(polygon)),
+                          reverse=True)[:self.max_regions]
+        partial = len(detected) > len(polygons)
         if not polygons:
-            return "", 0.0
+            return "", 0.0, False
         crops = [crop_text(image, polygon) for polygon in polygons]
         best = [None] * len(crops)
-        for language in selected:
-            for index, result in enumerate(self.recognizers[language].predict(crops, batch_size=8)):
-                text = "".join(char for char in result["rec_text"].strip()
-                               if unicodedata.category(char) != "Cf")
-                score = float(result["rec_score"])
-                if sum(char.isalnum() for char in text) < 2 or score < self.minimum_confidence:
-                    continue
-                if best[index] is None or score > best[index][2]:
-                    best[index] = (np.asarray(polygons[index]), text, score)
-        return combine_regions([region for region in best if region is not None])
+        estimated_batch_seconds = 0.1
+        for offset in range(0, len(crops), 2):
+            for language in selected:
+                if deadline - monotonic() < estimated_batch_seconds:
+                    text, confidence = combine_regions([region for region in best if region is not None])
+                    return text, confidence, True
+                started = monotonic()
+                for index, result in enumerate(self.recognizers[language].predict(crops[offset:offset + 2], batch_size=2), offset):
+                    text = "".join(char for char in result["rec_text"].strip()
+                                   if unicodedata.category(char) != "Cf")
+                    score = float(result["rec_score"])
+                    if sum(char.isalnum() for char in text) < 2 or score < self.minimum_confidence:
+                        continue
+                    if best[index] is None or score > best[index][2]:
+                        best[index] = (np.asarray(polygons[index]), text, score)
+                estimated_batch_seconds = max(estimated_batch_seconds, (monotonic() - started) * 1.5)
+        text, confidence = combine_regions([region for region in best if region is not None])
+        return text, confidence, partial
 
 
 def serve(engine):
@@ -109,8 +134,8 @@ def serve(engine):
             if image is None:
                 raise ValueError("Invalid OCR image")
             with redirect_stdout(sys.stderr):
-                text, confidence = engine.recognize(image, message["languages"])
-            response = {"id": message["id"], "text": text, "confidence": confidence}
+                text, confidence, partial = engine.recognize(image, message["languages"], message.get("timeout_seconds"))
+            response = {"id": message["id"], "text": text, "confidence": confidence, "partial": partial}
         except Exception:
             response = {"id": message.get("id"), "error": "ocr_failed"}
         print(json.dumps(response, ensure_ascii=False), flush=True)
@@ -125,4 +150,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     with redirect_stdout(sys.stderr):
         engine = PaddleEngine(args.model_directory, args.threads, args.min_confidence, args.max_regions)
+        engine.warmup()
     serve(engine)

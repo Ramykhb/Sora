@@ -49,7 +49,7 @@ def test_paddle_discards_background_and_low_confidence_without_mutating_pixels()
     assert engine.recognize(image, "eng")[0] == "EXIT"
     assert np.array_equal(image, saved)
     engine.detector.polygons = []
-    assert engine.recognize(image, "eng") == ("", 0)
+    assert engine.recognize(image, "eng") == ("", 0, False)
 
 
 def test_configured_engine_routes_to_paddle(monkeypatch):
@@ -101,7 +101,7 @@ def test_worker_is_reused_and_closed_without_reloading_models(monkeypatch):
 
 def test_timeout_stops_stuck_inference_and_next_request_recovers(monkeypatch):
     processes = fake_workers(monkeypatch, [WORKER.replace("SLEEP", "time.sleep(10)"),
-                                          WORKER.replace("SLEEP", "pass")])
+                                          "import time; time.sleep(0.35)\n" + WORKER.replace("SLEEP", "pass")])
     monkeypatch.setattr(settings, "ocr_timeout_seconds", 0.2)
     client = paddle_client.PaddleOCRClient()
     try:
@@ -115,3 +115,86 @@ def test_timeout_stops_stuck_inference_and_next_request_recovers(monkeypatch):
         assert len(processes) == 2
     finally:
         client.close()
+
+
+def test_cold_model_startup_is_separate_from_frame_deadline(monkeypatch):
+    processes = fake_workers(monkeypatch, ["import time; time.sleep(0.35)\n" + WORKER.replace("SLEEP", "pass")])
+    monkeypatch.setattr(settings, "ocr_timeout_seconds", 0.2)
+    client = paddle_client.PaddleOCRClient()
+    try:
+        assert client.recognize(np.zeros((32, 32, 3), np.uint8), "eng") == ("EXIT 123", 99)
+        assert client.recognize(np.zeros((32, 32, 3), np.uint8), "eng") == ("EXIT 123", 99)
+        assert len(processes) == 1
+    finally:
+        client.close()
+
+
+def test_budget_exhaustion_without_text_does_not_discard_warm_models(monkeypatch):
+    script = WORKER.replace("SLEEP", "pass").replace(
+        "'text': 'EXIT 123',", "'text': '' if request['languages'] == 'ara' else 'EXIT 123', 'partial': request['languages'] == 'ara',")
+    processes = fake_workers(monkeypatch, [script])
+    client = paddle_client.PaddleOCRClient()
+    try:
+        client.warmup()
+        with pytest.raises(BackendError) as error:
+            client.recognize(np.zeros((32, 32, 3), np.uint8), "ara")
+        assert error.value.code == "ocr_timeout" and client.ready
+        assert client.recognize(np.zeros((32, 32, 3), np.uint8), "eng") == ("EXIT 123", 99)
+        assert len(processes) == 1
+    finally:
+        client.close()
+
+
+def test_warmup_runs_detector_and_all_recognizers():
+    shapes = []
+    class Predictor:
+        def predict(self, image):
+            shapes.append(image.shape)
+            return iter([{}])
+    engine = PaddleEngine.__new__(PaddleEngine)
+    engine.detector = Predictor()
+    engine.recognizers = {language: Predictor() for language in ["english", "latin", "arabic"]}
+    engine.warmup()
+    assert shapes == [(1280, 720, 3), *[(48, 320, 3)] * 3]
+
+
+def test_time_budget_preserves_completed_regions_and_marks_partial(monkeypatch):
+    from app.services.frames import paddle_worker
+    clock = [0.0]
+    monkeypatch.setattr(paddle_worker, "monotonic", lambda: clock[0])
+    class Detector:
+        def predict(self, image):
+            return iter([{"dt_polys": [box(10), box(90), box(160)]}])
+    class Recognizer:
+        def predict(self, images, batch_size):
+            assert len(images) <= 2 and batch_size == 2
+            clock[0] += 0.4
+            return iter({"rec_text": text, "rec_score": 0.99} for text in ["EXIT", "123"][:len(images)])
+    engine = PaddleEngine.__new__(PaddleEngine)
+    engine.detector, engine.recognizers = Detector(), {"english": Recognizer()}
+    engine.minimum_confidence, engine.max_regions = 0.6, 64
+    text, confidence, partial = engine.recognize(np.zeros((100, 250, 3), np.uint8), "eng", 0.6)
+    assert text == "EXIT 123" and confidence > 98 and partial
+    assert clock[0] < 0.6
+
+
+def test_partial_result_metadata_survives_existing_tuple_interface(monkeypatch):
+    from app.services.frames.ocr_result import OCRResult
+    result = OCRResult("EXIT", 99, ["ocr_partial"])
+    assert tuple(result) == ("EXIT", 99)
+    assert result.warnings == ("ocr_partial",)
+
+
+def test_partial_ocr_is_preserved_in_stored_live_frame(client, monkeypatch):
+    from functools import partial
+    from uuid import UUID
+    from app.services.frames import ingestion
+    from app.services.frames.ocr_result import OCRResult
+    from test_api import create, image_bytes
+    api, _ = client
+    sid = create(api)
+    monkeypatch.setattr(ingestion, "read_text", lambda *args: OCRResult("EXIT", 99, ["ocr_partial"]))
+    result = api.portal.call(partial(ingestion.ingest_bytes, image_bytes(), UUID(sid),
+                                    force=True, defer_enrichment=True, detected_objects=[]))
+    frame = api.get(f"/api/v1/sessions/{sid}/frames/{result.frame.id}").json()
+    assert frame["ocr_text"] == "EXIT" and "ocr_partial" in frame["processing_warnings"]

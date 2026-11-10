@@ -14,6 +14,7 @@ import cv2
 
 from app.core.config import BACKEND_ROOT, settings
 from app.core.errors import BackendError
+from app.services.frames.ocr_result import OCRResult
 
 
 class PaddleOCRClient:
@@ -98,16 +99,22 @@ class PaddleOCRClient:
                                    "ocr_unavailable") from exc
 
     def recognize(self, image, languages):
-        deadline = monotonic() + settings.ocr_timeout_seconds
+        queued_at = monotonic()
         if not self.lock.acquire(timeout=settings.ocr_timeout_seconds):
             raise BackendError("OCR is busy; try again", 503, "ocr_busy")
         try:
-            self._start(deadline)
+            queue_seconds = monotonic() - queued_at
+            # A replacement worker needs the same startup allowance as initial
+            # API warmup. Charging model reload to a 4s inference deadline kills
+            # every replacement before it can answer, creating a timeout loop.
+            self._start(monotonic() + 45)
+            deadline = monotonic() + max(0, settings.ocr_timeout_seconds - queue_seconds)
             ok, encoded = cv2.imencode(".png", image)
             if not ok:
                 raise ValueError("Cannot encode OCR image")
             request_id = uuid4().hex
             message = {"id": request_id, "languages": languages,
+                       "timeout_seconds": max(0.01, deadline - monotonic() - 0.3),
                        "image": base64.b64encode(encoded).decode("ascii")}
             # Only sanitized pixels from prepare_image reach this local worker.
             self._send(message, deadline)
@@ -116,7 +123,10 @@ class PaddleOCRClient:
                 raise RuntimeError("Invalid PaddleOCR response")
             if "error" in response:
                 raise BackendError("PaddleOCR failed to recognize the image", 503, "ocr_unavailable")
-            return response["text"], float(response["confidence"])
+            if response.get("partial") and not response["text"]:
+                raise BackendError("OCR reached its time limit before text could be read", 503, "ocr_timeout")
+            return OCRResult(response["text"], float(response["confidence"]),
+                             ["ocr_partial"] if response.get("partial") else [])
         except BackendError:
             raise
         except TimeoutError as exc:

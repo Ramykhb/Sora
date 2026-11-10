@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
@@ -30,6 +30,7 @@ class Analysis:
     ocr_text: str
     ocr_confidence: float
     objects: list[dict]
+    warnings: list[str] = field(default_factory=list)
 
 
 def jpeg(image):
@@ -176,5 +177,6 @@ def detect_live(content: bytes) -> tuple[int, int, list[dict]]:
 
 def analyze_image(prepared: PreparedImage, languages: str | None = None) -> Analysis:
     objects = detect_objects(prepared.image)
-    text, confidence = read_text(prepared, languages)
-    return Analysis(text, confidence, objects)
+    result = read_text(prepared, languages)
+    text, confidence = result
+    return Analysis(text, confidence, objects, list(getattr(result, "warnings", ())))

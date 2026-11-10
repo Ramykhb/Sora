@@ -81,11 +81,14 @@ async def ingest_bytes(
         else:
             # Reuse the fast detector's result for this exact source frame.
             try:
-                ocr, confidence = await asyncio.to_thread(read_text, prepared, ocr_language)
+                ocr_result = await asyncio.to_thread(read_text, prepared, ocr_language)
+                ocr, confidence = ocr_result
+                warnings.extend(getattr(ocr_result, "warnings", ()))
             except BackendError as exc:
                 ocr, confidence = "", 0
                 warnings.append(exc.code)
             analysis = Analysis(ocr, confidence, detected_objects)
+        warnings.extend(analysis.warnings)
         caption = ""
         scene_flags = []
         if not defer_enrichment and not objects_only:
