@@ -62,3 +62,13 @@ Connect another WebSocket to `/api/v1/sessions/{id}/events` and authenticate wit
 Most dependency failures use `{"error":{"code":"...","message":"..."}}` with 503. Invalid input is 422, byte/pixel/duration limits are 413, authentication is 401, missing/expired resources are 404, closed/conflicting sessions are 409 and capacity exhaustion is 429. Validation errors use a `detail` list with location, message and type; input values are omitted to avoid exposing secrets. Caption or embedding failures produce a stored frame with explicit warnings and OCR/object/lexical fallback; failed OCR or YOLO inference returns an error instead of an empty invented result. When the answer model is unavailable, the backend stores an uncertain response with a warning.
 
 The dashboard requests `own_only=true` on `/sessions`, `/dashboard` and `/dashboard/statistics` so even administrator accounts see only their own mobile sessions in this workspace. Omitting it preserves administrator-wide visibility. Maintenance and user-management controls remain explicitly administrator-only.
+
+### Nearby place questions
+
+The question JSON accepts optional `location: {"latitude": 33.89, "longitude": 35.50}` and `source: "text" | "audio"` (default `text`). For example:
+
+```json
+{"question":"What is the closest McDonald's?","language":"en","location":{"latitude":33.89,"longitude":35.50}}
+```
+
+The ordinary answer/history/event contract is reused. Place answers have no camera evidence IDs. Missing location, provider failures and empty results return an uncertain answer with a corresponding processing warning. The multipart `/questions/audio` route also accepts paired `latitude` and `longitude` form fields. Clients can transcribe through `/speech/transcriptions` first, obtain GPS for proximity questions, and submit the text with `source: "audio"`.

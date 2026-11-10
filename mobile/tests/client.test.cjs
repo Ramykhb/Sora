@@ -280,3 +280,23 @@ test('video diagnostics distinguish camera, encoder and transport without report
   assert.equal(diagnostics.reports[1].qualityLimitationReason, 'cpu');
   assert.ok(!JSON.stringify(diagnostics).includes('private'));
 });
+
+test('questions attach device GPS and gracefully omit unavailable coordinates', async () => {
+  const coords = { latitude: 33.89, longitude: 35.5 };
+  let calls = 0;
+  const api = new ApiClient('http://localhost:8000', async () => {}, async question => {
+    calls++;
+    assert.equal(question, 'closest restaurant');
+    return calls === 1 ? coords : undefined;
+  });
+  await api.setTokens(pair());
+  const sent = [];
+  global.fetch = async (_url, init) => { sent.push(JSON.parse(init.body)); return json({ answer: 'result' }); };
+  await api.request('/sessions/session-id/questions', 'POST', { question: 'closest restaurant' });
+  assert.deepEqual(sent[0].location, coords);
+  await api.request('/sessions/session-id/questions', 'POST', { question: 'closest restaurant' });
+  assert.equal('location' in sent[1], false);
+  await api.request('/sessions/session-id/questions', 'POST', { question: 'explicit origin', location: coords });
+  await api.request('/sessions', 'POST', { consent: true });
+  assert.equal(calls, 2);
+});

@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     gemini_deadline_seconds: float = Field(default=5, ge=1, le=10)
     gemini_http_timeout_seconds: float = Field(default=4, ge=0.1, le=8)
     gemini_image_max_side: int = Field(default=1024, ge=320, le=2048)
+    google_place_api_key: SecretStr = SecretStr("")
+    groq_api_key: SecretStr = SecretStr("")
+    groq_model: str = "openai/gpt-oss-20b"
+    places_radius_meters: float = Field(default=5000, ge=100, le=50000)
+    places_timeout_seconds: float = Field(default=8, ge=1, le=20)
+    groq_timeout_seconds: float = Field(default=4, ge=1, le=10)
     embedding_model: str = "qwen3-embedding:0.6b"
     embedding_dimensions: Literal[1024] = 1024
 

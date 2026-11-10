@@ -7,7 +7,7 @@ from app.api.dependencies import read_upload
 from app.db.models import Feedback, QuestionAnswer
 from app.db.models.frame import now
 from app.db.session import SessionFactory
-from app.schemas import AnswerOut, FeedbackRequest, Language, QuestionRequest
+from app.schemas import AnswerOut, FeedbackRequest, Language, QuestionLocation, QuestionRequest
 from app.services.ai.assistant import answer_question
 from app.services.ai.speech import synthesize, transcribe
 from app.services.sessions import get_session
@@ -17,7 +17,7 @@ router = APIRouter()
 
 @router.post("", response_model=AnswerOut)
 async def ask(session_id: UUID, request: QuestionRequest):
-    return await answer_question(session_id, request)
+    return await answer_question(session_id, request, source=request.source)
 
 
 @router.post("/audio", response_model=AnswerOut)
@@ -26,11 +26,16 @@ async def ask_audio(
     audio: UploadFile = File(...),
     language: Language | None = Form(None),
     scope: Literal["auto", "recent", "memory"] = Form("auto"),
+    latitude: float | None = Form(None, ge=-90, le=90),
+    longitude: float | None = Form(None, ge=-180, le=180),
 ):
+    if (latitude is None) != (longitude is None):
+        raise HTTPException(422, "Both latitude and longitude are required")
+    location = QuestionLocation(latitude=latitude, longitude=longitude) if latitude is not None else None
     await get_session(session_id)
     content = await read_upload(audio)
     text, detected_language = await asyncio.to_thread(transcribe, content, language)
-    request = QuestionRequest(question=text, language=language or detected_language, scope=scope)
+    request = QuestionRequest(question=text, language=language or detected_language, scope=scope, location=location)
     return await answer_question(session_id, request, source="audio")
 
 

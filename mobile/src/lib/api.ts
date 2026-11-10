@@ -43,7 +43,8 @@ export class ApiClient {
   tokens: Tokens | null = null;
   private expiresAt = 0;
   private refreshing: Promise<string> | null = null;
-  constructor(public baseUrl: string, private onTokens: (tokens: Tokens | null) => Promise<void>) {}
+  constructor(public baseUrl: string, private onTokens: (tokens: Tokens | null) => Promise<void>,
+    public questionLocation?: (question: string) => Promise<{ latitude: number; longitude: number } | undefined>) {}
   setBaseUrl(origin: string) {
     if (this.tokens) throw new Error('Sign out before changing the server address.');
     this.baseUrl = origin;
@@ -100,6 +101,9 @@ export class ApiClient {
     return response;
   }
   async request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+    if (method === 'POST' && /\/sessions\/[^/]+\/questions$/.test(path) && body && typeof body === 'object' && 'question' in body && !('location' in body) && this.questionLocation) {
+      body = { ...body, location: await this.questionLocation(String(body.question)) };
+    }
     const response = await this.response(path, { method, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
     return response.status === 204 ? undefined as T : response.json();
   }

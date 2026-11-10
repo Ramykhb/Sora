@@ -1,3 +1,4 @@
+import { questionLocation } from './question-location.js';
 export class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -78,6 +79,9 @@ export class ApiClient {
     return response;
   }
   async request(path, method = 'GET', body, signal) {
+    if (method === 'POST' && /\/sessions\/[^/]+\/questions$/.test(path) && body?.question && !body.location) {
+      body = { ...body, location: await questionLocation(body.question) };
+    }
     const response = await this.response(path, { method, signal, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
     return response.status === 204 ? null : response.json();
   }

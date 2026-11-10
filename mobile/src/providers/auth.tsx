@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import { ApiClient, type Tokens } from '@/lib/api';
+import { questionLocation } from '@/lib/question-location';
 import { serverOrigin } from '@/lib/server-url';
 
 const key = 'sora.refresh.v1';
@@ -24,7 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else if (value) await SecureStore.setItemAsync(key, value.refresh_token);
     else await SecureStore.deleteItemAsync(key);
     setTokens(value);
-  }));
+  }, questionLocation));
   useEffect(() => {
     let cancelled = false;
     if (!bootstrap.current) bootstrap.current = (async () => {

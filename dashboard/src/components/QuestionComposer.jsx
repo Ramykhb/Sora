@@ -64,10 +64,8 @@ export default function QuestionComposer() {
           const audio = new Blob(chunks, { type: capture.mimeType });
           const form = new FormData(); form.append('audio', audio, capture.mimeType.includes('mp4') ? 'question.m4a' : 'question.webm');
           form.append('language', language); form.append('scope', scope);
-          if (scope === 'memory' && (since || until)) {
-            const transcript = await api.upload('/speech/transcriptions', form);
-            await receive(await api.request(`/sessions/${selectedId}/questions`, 'POST', { question: transcript.text, language, scope, ...bounds() }));
-          } else await receive(await api.upload(`/sessions/${selectedId}/questions/audio`, form));
+          const transcript = await api.upload('/speech/transcriptions', form);
+          await receive(await api.request(`/sessions/${selectedId}/questions`, 'POST', { question: transcript.text, language, scope, source: 'audio', ...bounds() }));
         } catch (error) { if (mounted.current) setError(error.message); }
         finally { if (mounted.current) setBusy(false); }
       };

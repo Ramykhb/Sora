@@ -111,6 +111,12 @@
           "microphonePermission": "Allow SORA to listen for questions and Hey Sora app commands while the app is open.",
           "speechRecognitionPermission": "Allow SORA to recognize questions and Hey Sora commands so you can use the app hands-free."
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Sora to find nearby places and their distance when you ask."
+        }
       ]
     ],
     "experiments": {

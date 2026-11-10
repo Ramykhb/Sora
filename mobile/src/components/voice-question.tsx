@@ -55,7 +55,10 @@ export function VoiceQuestion({ sessionId, language, scope, onAnswer, onError, d
           form.append('audio', blob, blob.type.includes('mp4') ? 'question.m4a' : 'question.webm');
         } else form.append('audio', { uri: recorder.uri, name: 'question.m4a', type: 'audio/mp4' } as unknown as Blob);
         form.append('language', language); form.append('scope', scope);
-        const answer = await api.upload<Answer>(`/sessions/${sessionId}/questions/audio`, form);
+        const transcript = await api.upload<{ text: string }>('/speech/transcriptions', form);
+        const answer = await api.request<Answer>(`/sessions/${sessionId}/questions`, 'POST', {
+          question: transcript.text, language, scope, source: 'audio',
+        });
         if (mounted.current) onAnswer(answer);
       }
     } catch (e) {

@@ -14,7 +14,7 @@ from app.db.models.frame import now
 from app.db.session import SessionFactory
 from app.schemas import AnswerOut
 from app.services.ai.models import ModelAnswer, models
-from app.services.ai import gemini
+from app.services.ai import gemini, places
 from app.services.ai.cloud_view import answer_cloud_view
 from app.services.ai.retrieval import resolve_scope, retrieve_frames
 from app.services.ai.live_answer import answer_overview, is_overview
@@ -211,14 +211,19 @@ async def answer_question(session_id, request, source="text"):
     requested_scope = "recent" if ROUTE_QUESTION.search(request.question) else request.scope
     scope = resolve_scope(request.question, requested_scope)
     walking = bool(ROUTE_QUESTION.search(request.question))
-    use_cloud = scope == "recent" and gemini.configured() and not IDENTITY_QUESTION.search(request.question) and (walking or not is_overview(request.question))
-    budget = settings.gemini_deadline_seconds if use_cloud else settings.current_answer_timeout_seconds
+    place_question = (request.scope != "memory" and not (request.since or request.until)
+                      and places.is_place_question(request.question)
+                      and not IDENTITY_QUESTION.search(request.question))
+    use_cloud = not place_question and scope == "recent" and gemini.configured() and not IDENTITY_QUESTION.search(request.question) and (walking or not is_overview(request.question))
+    budget = (settings.places_timeout_seconds + settings.groq_timeout_seconds + 1) if place_question else (settings.gemini_deadline_seconds if use_cloud else settings.current_answer_timeout_seconds)
     try:
         # Includes snapshot processing and waiting for the model gate, not just
         # HTTP inference. Current-view questions must not wait for minutes only
         # to lose their evidence at the end.
-        async with asyncio.timeout(budget if scope == "recent" else None):
-            if use_cloud:
+        async with asyncio.timeout(budget if place_question or scope == "recent" else None):
+            if place_question:
+                answer, uncertain, evidence, warnings = await places.answer_nearby(request, language)
+            elif use_cloud:
                 try:
                     # Reserve time for the local fallback within the same deadline.
                     async with asyncio.timeout(max(0.1, budget - min(0.5, budget / 2))):
@@ -246,6 +251,9 @@ async def answer_question(session_id, request, source="text"):
             "ar": "يستغرق التحليل البصري المفصل وقتاً طويلاً؛ اسأل عن الأجسام التي تكتشفها الكاميرا.",
         }[language]
         uncertain, evidence, warnings = True, [], ["current_view_timeout"]
+        if place_question:
+            answer = places.MESSAGES["places_unavailable"][("en", "fr", "ar").index(language)]
+            warnings = ["places_timeout"]
     await get_session(session_id)
     # Revalidate after inference: expensive CPU inference must not turn an old frame
     # into an assertion about the current scene or expose already-expired evidence.

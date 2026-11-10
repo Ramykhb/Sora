@@ -59,9 +59,16 @@ class IngestResult(BaseModel):
     frame: FrameOut | None = None
 
 
+class QuestionLocation(BaseModel):
+    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+
+
 class QuestionRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     language: Language | None = None
+    source: Literal["text", "audio"] = "text"
+    location: QuestionLocation | None = None
     scope: Literal["auto", "recent", "memory"] = "auto"
     since: datetime | None = None
     until: datetime | None = None
