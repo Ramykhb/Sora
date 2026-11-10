@@ -8,6 +8,8 @@ os.environ["API_KEY"] = "test-only-key"
 os.environ["APP_ENV"] = "test"
 os.environ["GOOGLE_PLACE_API_KEY"] = ""
 os.environ["GROQ_API_KEY"] = ""
+os.environ["BREVO_API_KEY"] = ""
+os.environ["BREVO_SENDER_EMAIL"] = ""
 os.environ["OCR_ENGINE"] = "tesseract"  # Paddle behavior/worker protocol have dedicated tests.
 
 import asyncio

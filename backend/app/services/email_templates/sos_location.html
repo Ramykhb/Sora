@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Sora SOS — Location shared</title>
+  <style>
+    @media only screen and (max-width: 480px) {
+      .outer { padding: 16px 8px !important; }
+      .content { padding: 28px 22px !important; }
+      .headline { font-size: 28px !important; line-height: 35px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:#F5F3FA;color:#191326;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;">
+  <div style="display:none;font-size:1px;line-height:1px;color:#F5F3FA;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">$name shared their location with you. Open the map and check in with them.</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#F5F3FA;">
+    <tr><td class="outer" align="center" style="padding:40px 16px;">
+      <!--[if mso]><table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0"><tr><td><![endif]-->
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;">
+        <tr><td style="padding:0 8px 22px;">
+          <p style="margin:0;color:#6840B7;font-size:23px;font-weight:bold;letter-spacing:5px;">SORA</p>
+          <p style="margin:7px 0 0;color:#655C76;font-size:11px;letter-spacing:1.5px;">YOUR WORLD, IN PERSPECTIVE</p>
+        </td></tr>
+        <tr><td style="height:6px;background-color:#6840B7;border-radius:16px 16px 0 0;font-size:1px;line-height:6px;">&nbsp;</td></tr>
+        <tr><td class="content" style="padding:36px;background-color:#FFFFFF;border:1px solid #DED6EB;border-top:0;border-radius:0 0 16px 16px;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td style="padding:7px 11px;border-radius:6px;background-color:#FFF0F3;color:#9E2443;font-size:11px;font-weight:bold;letter-spacing:1px;">SOS &nbsp; / &nbsp; LOCATION SHARED</td></tr></table>
+          <h1 class="headline" style="margin:22px 0 12px;color:#191326;font-size:32px;line-height:40px;font-weight:bold;letter-spacing:-0.7px;">Someone is reaching out.</h1>
+          <p style="margin:0;color:#655C76;font-size:16px;line-height:26px;overflow-wrap:anywhere;"><strong style="color:#191326;">$name</strong> shared their current location with you through Sora SOS. You’re their saved emergency contact.</p>
+          <p style="margin:16px 0 26px;color:#191326;font-size:15px;line-height:24px;">Please contact them to check in. Use the map below to see the location they shared.</p>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center" bgcolor="#6840B7" style="border-radius:9px;mso-padding-alt:17px 24px;">
+            <a href="$maps_link" style="display:block;padding:17px 24px;border:1px solid #6840B7;border-radius:9px;color:#FFFFFF;font-size:16px;line-height:22px;font-weight:bold;text-decoration:none;text-align:center;">Open location in Google Maps &rarr;</a>
+          </td></tr></table>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:28px;background-color:#F8F6FC;border:1px solid #E7E1EF;border-radius:10px;">
+            <tr><td style="padding:20px 20px 12px;color:#655C76;font-size:11px;font-weight:bold;letter-spacing:1px;">SHARED LOCATION</td></tr>
+            <tr><td style="padding:0 20px 18px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
+                <td width="50%" valign="top" style="padding-right:8px;"><p style="margin:0 0 6px;color:#655C76;font-size:12px;">Latitude</p><p style="margin:0;color:#191326;font-family:'Courier New',monospace;font-size:16px;font-weight:bold;">$latitude</p></td>
+                <td width="50%" valign="top"><p style="margin:0 0 6px;color:#655C76;font-size:12px;">Longitude</p><p style="margin:0;color:#191326;font-family:'Courier New',monospace;font-size:16px;font-weight:bold;">$longitude</p></td>
+              </tr></table>
+            </td></tr>
+            <tr><td style="padding:16px 20px;border-top:1px solid #E7E1EF;"><p style="margin:0 0 5px;color:#655C76;font-size:12px;">Captured at</p><p style="margin:0;color:#191326;font-size:14px;line-height:21px;">$timestamp</p>$accuracy_html</td></tr>
+          </table>
+          <p style="margin:18px 0 0;color:#655C76;font-size:12px;line-height:20px;">This is a GPS snapshot from the time shown above. The sender may have moved since sharing it.</p>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:28px;border-top:1px solid #E7E1EF;"><tr><td style="padding-top:20px;">
+            <p style="margin:0 0 6px;color:#655C76;font-size:12px;line-height:20px;">If the button doesn’t open, copy this link into your browser:</p>
+            <a href="$maps_link" style="color:#6840B7;font-size:12px;line-height:20px;word-break:break-all;overflow-wrap:anywhere;text-decoration:underline;">$maps_link</a>
+          </td></tr></table>
+        </td></tr>
+        <tr><td align="center" style="padding:24px 18px 0;">
+          <p style="margin:0;color:#655C76;font-size:12px;line-height:20px;">Sent with <strong style="color:#6840B7;">SORA</strong> &nbsp;&middot;&nbsp; Emergency location sharing</p>
+          <p style="margin:7px 0 0;color:#655C76;font-size:11px;line-height:18px;">This email shares a location. It does not notify emergency services.</p>
+        </td></tr>
+      </table>
+      <!--[if mso]></td></tr></table><![endif]-->
+    </td></tr>
+  </table>
+</body>
+</html>

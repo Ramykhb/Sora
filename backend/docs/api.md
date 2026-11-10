@@ -72,3 +72,11 @@ The question JSON accepts optional `location: {"latitude": 33.89, "longitude": 3
 ```
 
 The ordinary answer/history/event contract is reused. Place answers have no camera evidence IDs. Missing location, provider failures and empty results return an uncertain answer with a corresponding processing warning. The multipart `/questions/audio` route also accepts paired `latitude` and `longitude` form fields. Clients can transcribe through `/speech/transcriptions` first, obtain GPS for proximity questions, and submit the text with `source: "audio"`.
+
+### Emergency SOS
+
+All endpoints require a bearer token and act on the signed-in account:
+
+- `GET /emergency/contact` returns `{ "email": "" }` or the saved contact.
+- `PUT /emergency/contact` accepts `{ "email": "friend@example.com" }`; an empty email removes the contact.
+- `POST /emergency/location` accepts `latitude`, `longitude`, `captured_at` (timezone-aware ISO timestamp, no older than two minutes), optional `accuracy_meters`, and optional UUID `request_id`. The recipient comes from the saved contact, never from this request. Success returns `{ "status": "submitted", "message": "Your location email was submitted to your SOS contact." }`. `request_id` is passed to Brevo as an idempotency key scoped to the account. The client does not automatically retry email submission. A timeout reports unconfirmed delivery.

@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     auth_refresh_days: int = Field(default=30, ge=1, le=90)
     auth_registration_enabled: bool = True
     auth_require_verified_email: bool = False
+    brevo_api_key: SecretStr = SecretStr("")
+    brevo_sender_email: str = ""
+    brevo_sender_name: str = "Sora SOS"
+    brevo_timeout_seconds: float = Field(default=10, ge=1, le=30)
     smtp_host: str = ""
     smtp_port: int = Field(default=587, ge=1, le=65535)
     smtp_username: str = ""

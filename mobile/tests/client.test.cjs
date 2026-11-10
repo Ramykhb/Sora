@@ -5,7 +5,7 @@ const ts = require('typescript');
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
 const { ApiClient, ApiError } = require('../src/lib/api.ts');
 const { connectLive, jpegBytes } = require('../src/lib/live.ts');
-const { configureVideoSender, VIDEO_MAX_BITRATE, publishVideo, waitForIce, videoDiagnostics } = require('../src/lib/webrtc.ts');
+const { configureVideoSender, VIDEO_MAX_BITRATE, publishVideo, waitForIce, videoDiagnostics, maintainVideo } = require('../src/lib/webrtc.ts');
 const { serverOrigin } = require('../src/lib/server-url.ts');
 const originalFetch = global.fetch;
 const originalSocket = global.WebSocket;
@@ -299,4 +299,73 @@ test('questions attach device GPS and gracefully omit unavailable coordinates', 
   await api.request('/sessions/session-id/questions', 'POST', { question: 'explicit origin', location: coords });
   await api.request('/sessions', 'POST', { consent: true });
   assert.equal(calls, 2);
+});
+
+test('a lost iOS response body retries a read without repeating a session-creating POST', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const api = new ApiClient('https://example.test', async () => {});
+  await api.setTokens(pair());
+  let calls = 0;
+  global.fetch = async () => {
+    calls++;
+    if (calls === 1) return { ok: true, status: 200, json: async () => { throw new Error('The network connection was lost.'); } };
+    return json({ ice_servers: [] });
+  };
+  const pending = api.request('/sessions/session/stream/config');
+  await new Promise(setImmediate);
+  t.mock.timers.tick(250);
+  assert.deepEqual(await pending, { ice_servers: [] });
+  assert.equal(calls, 2);
+  calls = 0;
+  global.fetch = async () => { calls++; throw new TypeError('Network request failed'); };
+  await assert.rejects(api.request('/sessions', 'POST', { consent: true }));
+  assert.equal(calls, 1);
+});
+
+test('a lost heartbeat keeps video alive and recovers on the next attempt', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let calls = 0;
+  const errors = [];
+  const api = { tokens: null, request: async () => {
+    if (++calls === 1) throw new Error('The network connection was lost.');
+  } };
+  const release = maintainVideo(api, 'session', 'connection', error => errors.push(error));
+  t.mock.timers.tick(20000);
+  await new Promise(setImmediate);
+  assert.equal(calls, 1);
+  assert.equal(errors.length, 0);
+  t.mock.timers.tick(1000);
+  await new Promise(setImmediate);
+  assert.equal(calls, 2);
+  assert.equal(errors.length, 0);
+  t.mock.timers.tick(20000);
+  await new Promise(setImmediate);
+  assert.equal(calls, 3);
+  release();
+  t.mock.timers.tick(60000);
+  await new Promise(setImmediate);
+  assert.equal(calls, 3);
+});
+
+test('persistent heartbeat failures are bounded and closed connections stop immediately', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let calls = 0;
+  const errors = [];
+  const api = { tokens: null, request: async () => { calls++; throw new ApiError(503, 'Unavailable'); } };
+  const release = maintainVideo(api, 'session', 'connection', error => errors.push(error));
+  for (const delay of [20000, 1000, 2000]) {
+    t.mock.timers.tick(delay);
+    await new Promise(setImmediate);
+  }
+  assert.equal(calls, 3);
+  assert.equal(errors.length, 1);
+  release();
+  calls = 0;
+  api.request = async () => { calls++; throw new ApiError(409, 'Camera is no longer connected'); };
+  const close = maintainVideo(api, 'session', 'connection', error => errors.push(error));
+  t.mock.timers.tick(20000);
+  await new Promise(setImmediate);
+  assert.equal(calls, 1);
+  assert.equal(errors.length, 2);
+  close();
 });

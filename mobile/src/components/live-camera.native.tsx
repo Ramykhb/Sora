@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NativeModules, Text, View } from 'react-native';
 import type * as NativeRTC from 'react-native-webrtc';
+import { isTransientNetworkError } from '@/lib/api';
 import { useAuth } from '@/providers/auth';
 import { configureVideoSender, maintainVideo, publishVideo, videoDiagnostics, VIDEO_CAPTURE, type StreamConfig } from '@/lib/webrtc';
 import { useUI } from './controls';
@@ -30,7 +31,7 @@ export function LiveCamera({ sessionId, active, fullscreen = false, facing = 'ba
     const controller = new AbortController();
     const fail = (error: unknown) => {
       if (disposed || retry) return;
-      setStatus(error instanceof Error ? error.message : 'Video disconnected. Reconnecting…');
+      setStatus(isTransientNetworkError(error) ? 'Connection interrupted. Reconnecting…' : error instanceof Error ? error.message : 'Video disconnected. Reconnecting…');
       retry = setTimeout(() => setAttempt(value => value + 1), 3000);
       controller.abort(); clearTimeout(watchdog);
       media?.getTracks().forEach(track => track.stop());
@@ -41,9 +42,9 @@ export function LiveCamera({ sessionId, active, fullscreen = false, facing = 'ba
       setStatus('Connecting WebRTC video…');
       try {
         const config = await api.request<StreamConfig>(`/sessions/${sessionId}/stream/config`);
-        if (disposed) return;
+        if (disposed || controller.signal.aborted) return;
         media = await rtc!.mediaDevices.getUserMedia({ audio: false, video: { facingMode: facing === 'back' ? 'environment' : 'user', ...VIDEO_CAPTURE } });
-        if (disposed) { media.getTracks().forEach(track => track.stop()); return; }
+        if (disposed || controller.signal.aborted) { media.getTracks().forEach(track => track.stop()); return; }
         setStream(media);
         peer = new rtc!.RTCPeerConnection({ iceServers: config.ice_servers, iceTransportPolicy: config.ice_transport_policy });
         media.getTracks().forEach(track => peer!.addTrack(track, media!));

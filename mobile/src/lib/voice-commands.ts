@@ -1,7 +1,13 @@
-// Only complete, wake-prefixed commands may control the app.
+// Stream/listening controls require Hey Sora; explicit SOS phrases can act directly.
 export type StreamCommand = 'pause-stream' | 'resume-stream' | 'stop-stream';
-export type VoiceCommand = 'start-stream' | StreamCommand | 'stop-listening' | 'start-listening' | 'mute' | 'unmute';
+export type VoiceCommand = 'start-stream' | StreamCommand | 'stop-listening' | 'start-listening' | 'mute' | 'unmute' | 'send-sos-location';
+export function isSOSLocationCommand(transcript: string) {
+  const words = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (/^(?:hey sora )?(?:(?:send|share) (?:an? |my )?)?(?:sos|s o s)(?: (?:to )?(?:(?:my|the) )?(?:emergency )?contact)?(?: please)?$/.test(words)) return true;
+  return /^(?:hey sora )?(?:send|share) (?:my |the )?location (?:to|with) (?:my |the )?(?:sos|s o s|emergency) contact(?: please)?$/.test(words);
+}
 export function voiceCommand(transcript: string): VoiceCommand | null {
+  if (isSOSLocationCommand(transcript)) return 'send-sos-location';
   const words = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   if (/^hey sora stop listening(?: please)?$/.test(words)) return 'stop-listening';
   if (/^hey sora (?:start|resume) listening(?: please)?$/.test(words)) return 'start-listening';
@@ -15,6 +21,7 @@ export type VoiceInput = { kind: 'command'; action: VoiceCommand | null } | { ki
 export function voiceInput(transcript: string): VoiceInput | null {
   const text = transcript.trim();
   if (!text) return null;
+  if (isSOSLocationCommand(text)) return { kind: 'command', action: 'send-sos-location' };
   // Reserve the whole prefix, including commands that haven't been implemented yet.
   if (/^hey[\s,!.:;—-]+sora\b/i.test(text)) return { kind: 'command', action: voiceCommand(text) };
   return { kind: 'question', question: text };

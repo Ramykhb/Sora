@@ -32,6 +32,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
   const effects = [], cleanups = [], listeners = new Map(), navigation = [], starts = [], spoken = [], statuses = [], timers = new Map();
   const preferences = { speak: true, onboarded: true, voiceCommands: enabled, handsFreeQuestions: questionsEnabled };
   const preferenceUpdates = [];
+  const sosCalls = [];
   const gate = new VoiceAudioGate();
   const meter = new VoiceLevelMeter();
   const appState = { currentState: 'active', addEventListener: () => ({ remove() {} }) };
@@ -61,6 +62,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
       if (name === 'expo-router') return { router: { navigate: route => navigation.push(route) } };
       if (name === './auth') return { useAuth: () => ({ ready: true, tokens: {} }) };
       if (name === './preferences') return { usePreferences: () => ({ preferences, update(value) { preferenceUpdates.push(value); Object.assign(preferences, value); } }) };
+      if (name === '@/lib/emergency') return { shareSOSLocation: async () => { sosCalls.push(true); return 'Your location email was submitted to your SOS contact.'; } };
       if (name === '@/lib/voice-level') return { voiceLevel: meter };
       if (name === '@/lib/voice-commands') return { voiceAudioGate: gate, voiceInput };
       if (name === '@/lib/speech') return { speech: { async setMuted(value) { muted = value; if (value) speechStops++; }, async answer(text) { if (!muted) spoken.push(text); }, async stop() { speechStops++; } } };
@@ -71,7 +73,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
   const view = exports.VoiceCommandsProvider({ children: null });
   effects.forEach(fn => { const cleanup = fn(); if (cleanup) cleanups.push(cleanup); });
   return {
-    navigation, starts, spoken, statuses, gate, appState, view, imports, preferenceUpdates, preferences, meter,
+    navigation, starts, spoken, statuses, sosCalls, gate, appState, view, imports, preferenceUpdates, preferences, meter,
     get stops() { return stops; },
     get speechStops() { return speechStops; },
     get aborts() { return aborts; },
@@ -586,5 +588,26 @@ test('muting persists the voice preference while recognition and questions stay 
   assert.equal(app.spoken.at(-1), 'Voice unmuted.');
   await say('Describe the scene');
   assert.equal(app.spoken.at(-1), 'A chair.');
+  app.cleanup();
+});
+
+test('SOS sharing accepts only an explicit location-to-contact instruction', () => {
+  for (const text of ['Send my location to my SOS contact', 'Hey Sora, share my location with my emergency contact', 'send location to s o s contact please', 'SOS', 'send SOS', 'send SOS contact', 'Hey Sora SOS', 'S.O.S.', 'send an SOS to my contact please']) {
+    assert.deepEqual(voiceInput(text), { kind: 'command', action: 'send-sos-location' });
+  }
+  for (const text of ['do not send my location to my SOS contact', 'what happens if I send my location to my SOS contact', 'send my location', 'what is SOS', 'do not send SOS', 'SOS tomorrow']) {
+    assert.equal(voiceInput(text)?.kind, 'question');
+  }
+});
+
+test('SOS voice command works without a camera session and suppresses duplicate recognition', async () => {
+  const app = mount({ questionsEnabled: false });
+  await flush(); app.tick();
+  const event = { results: [{ transcript: 'send my location to my sos contact' }], isFinal: true };
+  app.emit('result', event); app.emit('result', event);
+  await flush();
+  assert.equal(app.sosCalls.length, 1);
+  assert.ok(app.spoken.includes('Your location email was submitted to your SOS contact.'));
+  assert.equal(app.navigation.length, 0);
   app.cleanup();
 });

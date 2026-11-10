@@ -26,4 +26,4 @@ target-version = "py312"
 select = ["E4", "E7", "E9", "F"]
 
 [tool.setuptools.package-data]
-app = ["services/frames/assets/*"]
+app = ["services/frames/assets/*", "services/email_templates/*.html"]

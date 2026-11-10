@@ -23,6 +23,7 @@ function renderCamera(nativeModules) {
         useEffect: () => {},
       };
       if (name === 'react-native') return { NativeModules: nativeModules, Text: 'Text', View: 'View' };
+      if (name === '@/lib/api') return {};
       if (name === '@/providers/auth') return { useAuth: () => ({ api: {} }) };
       if (name === '@/lib/webrtc') return {};
       if (name === './controls') return { useUI: () => ({}) };

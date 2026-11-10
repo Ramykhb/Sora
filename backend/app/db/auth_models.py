@@ -12,6 +12,7 @@ class User(Base):
     __tablename__ = "users"
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
+    emergency_contact_email: Mapped[str] = mapped_column(String(254), default="", server_default="")
     display_name: Mapped[str] = mapped_column(String(100))
     password_hash: Mapped[str] = mapped_column(String(512))
     role: Mapped[str] = mapped_column(String(20), default="user")

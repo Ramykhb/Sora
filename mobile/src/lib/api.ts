@@ -11,6 +11,12 @@ export type LiveEvent = { type: string; id?: string; expires_at?: string; captur
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
+export function isTransientNetworkError(error: unknown) {
+  if (error instanceof ApiError) return error.status === 0;
+  return error instanceof TypeError || (error instanceof Error &&
+    /network (?:connection|request)|connection (?:was )?lost|failed to fetch|load failed/i.test(error.message));
+}
+
 export async function errorFrom(response: Response) {
   const body = await response.json().catch(() => ({}));
   const message = body.error?.message ?? (typeof body.detail === 'string' ? body.detail : body.detail?.map((d: { msg: string }) => d.msg).join('\n')) ?? `Request failed (${response.status})`;
@@ -104,9 +110,18 @@ export class ApiClient {
     if (method === 'POST' && /\/sessions\/[^/]+\/questions$/.test(path) && body && typeof body === 'object' && 'question' in body && !('location' in body) && this.questionLocation) {
       body = { ...body, location: await this.questionLocation(String(body.question)) };
     }
-    const response = await this.response(path, { method, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
-    return response.status === 204 ? undefined as T : response.json();
+    // Only replay reads. A failed POST may already have created a session or offer.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const response = await this.response(path, { method, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
+        return response.status === 204 ? undefined as T : await response.json();
+      } catch (error) {
+        if (method !== 'GET' || attempt >= 2 || !isTransientNetworkError(error)) throw error;
+        await new Promise(resolve => setTimeout(resolve, 250 * 2 ** attempt));
+      }
+    }
   }
+
   async upload<T>(path: string, form: FormData): Promise<T> {
     return (await this.response(path, { method: 'POST', body: form })).json();
   }

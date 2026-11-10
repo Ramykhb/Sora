@@ -1,4 +1,4 @@
-import { ApiClient } from './api';
+import { ApiClient, ApiError, isTransientNetworkError } from './api';
 
 export type StreamConfig = { ice_servers: RTCIceServer[]; ice_transport_policy: 'all' | 'relay' };
 type SignalingPeer = {
@@ -109,14 +109,26 @@ export async function publishVideo(api: ApiClient, sessionId: string, peer: Sign
 
 export function maintainVideo(api: ApiClient, sessionId: string, connectionId: string, onError: (error: unknown) => void, diagnostics?: () => Promise<unknown>) {
   let stopped = false;
+  let failures = 0;
   let timer: ReturnType<typeof setTimeout>;
   async function refresh() {
     try {
       const video_metrics = await diagnostics?.().catch(() => null);
       if (stopped) return;
       await api.request(`/sessions/${sessionId}/stream/connections/${connectionId}/refresh`, 'POST', video_metrics ? { video_metrics } : undefined);
+      failures = 0;
       if (!stopped) timer = setTimeout(() => void refresh(), 20000);
-    } catch (error) { if (!stopped) onError(error); }
+    } catch (error) {
+      if (stopped) return;
+      const transient = isTransientNetworkError(error) ||
+        (error instanceof ApiError && (error.status === 408 || error.status >= 500));
+      // A lost HTTP heartbeat does not mean the WebRTC video has disconnected.
+      // Keep media running during a short retry window; authorization/closed
+      // connection errors still stop immediately.
+      if (transient && ++failures < 3) {
+        timer = setTimeout(() => void refresh(), 1000 * 2 ** (failures - 1));
+      } else onError(error);
+    }
   }
   timer = setTimeout(() => void refresh(), diagnostics ? 5000 : 20000);
   return () => {

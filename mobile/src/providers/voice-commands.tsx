@@ -4,6 +4,7 @@ import { requireOptionalNativeModule } from 'expo';
 import { router, useFocusEffect } from 'expo-router';
 import type { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import { voiceAudioGate, voiceInput, type StreamCommand } from '@/lib/voice-commands';
+import { shareSOSLocation } from '@/lib/emergency';
 import { voiceLevel } from '@/lib/voice-level';
 import { speech } from '@/lib/speech';
 import type { Answer } from '@/lib/api';
@@ -16,7 +17,7 @@ type StreamHandler = (command: StreamCommand) => Promise<string>;
 type StreamTarget = { control: StreamHandler; isPaused: () => boolean };
 const Context = createContext<{ status: string; retry: () => void; setQuestionListening: (enabled: boolean) => void; registerStream: (control: StreamHandler, isPaused?: () => boolean) => () => void; refreshStreamState: () => void; registerQuestions: (ask: QuestionHandler, contextKey?: string) => () => void }>({ status: '', retry: () => {}, setQuestionListening: () => {}, registerStream: () => () => {}, refreshStreamState: () => {}, registerQuestions: () => () => {} });
 export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
-  const { tokens, ready } = useAuth();
+  const { api, tokens, ready } = useAuth();
   const { preferences, update } = usePreferences();
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [paused, setPaused] = useState(voiceAudioGate.paused);
@@ -26,6 +27,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
   const lastInput = useRef({ text: '', time: 0 });
   const questionTarget = useRef<QuestionTarget | null>(null);
   const asking = useRef(false);
+  const sendingSOS = useRef(false);
   const questionGeneration = useRef(0);
   const questionsEnabled = useRef(preferences.handsFreeQuestions);
   const streamPaused = useRef(false);
@@ -191,7 +193,17 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
         // Reset cumulative transcripts before listening for the next utterance.
         recognizer.abort();
         if (input.kind === 'command') {
-          if (input.action === 'mute' || input.action === 'unmute') {
+          if (input.action === 'send-sos-location') {
+            if (sendingSOS.current) return;
+            sendingSOS.current = true;
+            setStatus('Getting your location for SOS…');
+            void shareSOSLocation(api).then(message => {
+              setStatus(message); return speech.answer(message, 'en');
+            }).catch(error => {
+              const message = error instanceof Error ? error.message : 'Unable to send your SOS location.';
+              setStatus(message); return speech.answer(message, 'en');
+            }).finally(() => { sendingSOS.current = false; });
+          } else if (input.action === 'mute' || input.action === 'unmute') {
             const muted = input.action === 'mute';
             // Apply immediately, including an answer already waiting to speak.
             void speech.setMuted(muted).catch(() => {});
@@ -238,7 +250,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
       } catch { if (!disposed) fail('Unable to enable voice listening. Retry in Preferences.'); }
     })();
     return () => { disposed = true; clearTimeout(levelTimer); voiceLevel.setListening(false); voiceAudioGate.setRecognitionState('off'); clearTimeout(timer); clearTimeout(utteranceTimer); subscriptions.forEach(sub => sub.remove()); recognizer.abort(); };
-  }, [ready, tokens, preferences.onboarded, preferences.voiceCommands, recognizer, foreground, paused, attempt, cancelQuestions, refreshStreamState, setQuestionListening, update]);
+  }, [api, ready, tokens, preferences.onboarded, preferences.voiceCommands, recognizer, foreground, paused, attempt, cancelQuestions, refreshStreamState, setQuestionListening, update]);
   const displayStatus = !ready || !tokens || !preferences.onboarded || !preferences.voiceCommands ? 'Voice commands are off.' : !recognizer ? Platform.OS === 'web' ? 'Voice commands are available in the mobile app.' : 'Install a new development build to enable Hey Sora voice commands.' : !foreground ? 'Voice listening pauses while SORA is in the background.' : paused ? 'Voice listening paused for audio.' : commandsOnlyForStream ? 'Stream paused. Only Hey Sora commands are active.' : !preferences.handsFreeQuestions ? 'Only Hey Sora commands are active. Say “Hey Sora, start listening” for questions.' : thinking ? 'Thinking about your question…' : status;
   return <Context.Provider value={{ status: displayStatus, registerQuestions, registerStream, refreshStreamState, setQuestionListening, retry: () => { blocked.current = false; setAttempt(value => value + 1); } }}>{children}</Context.Provider>;
 }

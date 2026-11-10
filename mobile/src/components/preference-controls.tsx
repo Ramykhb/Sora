@@ -2,6 +2,7 @@ import { View } from 'react-native';
 import { useState } from 'react';
 import { usePreferences, type Preferences } from '@/providers/preferences';
 import { useVoiceCommands } from '@/providers/voice-commands';
+import { EmergencySettings } from './emergency-settings';
 import { speech } from '@/lib/speech';
 import { Card, Icon, Label, Tap, Toggle, type IconName } from './sora-ui';
 const rows: { key: keyof Pick<Preferences, 'speak' | 'guidance' | 'vibration' | 'largerText' | 'highContrast'>; title: string; detail: string; icon: IconName }[] = [
@@ -16,6 +17,7 @@ export function PreferenceControls() {
   const voice = useVoiceCommands();
   const [voiceExpanded, setVoiceExpanded] = useState(false);
   return <View style={{ gap: 10 }}>
+    <EmergencySettings />
     {rows.map(row => <Card key={row.key} tone={row.key === 'highContrast' ? 'accent' : 'default'} style={{ padding: 14, minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 14 }}><Icon name={row.icon} color={colors.primary} size={25} /><View style={{ flex: 1, gap: 3 }}><Label bold size={14}>{row.title}</Label><Label muted size={11}>{row.detail}</Label></View><Toggle label={row.title} value={preferences[row.key]} onChange={value => { update({ [row.key]: value }); if (row.key === 'speak' && !value) void speech.stop(); }} /></Card>)}
     <Label muted bold size={11} style={{ marginTop: 18, letterSpacing: 1.4 }}>APPEARANCE</Label>
     <View style={{ flexDirection: 'row', borderRadius: 18, backgroundColor: colors.elevated, padding: 5, borderWidth: 1, borderColor: colors.border }}>{(['system', 'light', 'dark'] as const).map(theme => <Tap key={theme} label={`${theme} appearance`} selected={preferences.theme === theme} onPress={() => update({ theme })} style={{ flex: 1, backgroundColor: preferences.theme === theme ? colors.primary : 'transparent', borderRadius: 13, alignItems: 'center', justifyContent: 'center', ...(preferences.theme === theme ? { boxShadow: colors.quietShadow } : {}) }}><Label size={12} bold style={{ color: preferences.theme === theme ? colors.onPrimary : colors.muted }}>{theme[0].toUpperCase() + theme.slice(1)}</Label></Tap>)}</View>
