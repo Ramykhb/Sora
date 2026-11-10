@@ -94,8 +94,8 @@ class Settings(BaseSettings):
     turn_internal_host: str = "turn"
     turn_shared_secret: SecretStr = SecretStr("")
     stream_preview_max_side: int = Field(default=1280, ge=320, le=1920)
-    stream_preview_max_fps: int = Field(default=20, ge=5, le=30)
-    stream_video_max_bitrate: int = Field(default=3_000_000, ge=500_000, le=20_000_000)
+    stream_preview_max_fps: int = Field(default=60, ge=5, le=60)
+    stream_video_max_bitrate: int = Field(default=6_000_000, ge=500_000, le=20_000_000)
     max_stream_viewers: int = Field(default=8, ge=1, le=32)
     max_live_sessions: int = Field(default=4, ge=1, le=32)
     model_config = SettingsConfigDict(env_file=BACKEND_ROOT / ".env", extra="ignore")

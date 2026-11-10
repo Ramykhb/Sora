@@ -28,6 +28,7 @@ def test_preview_preserves_timestamps_and_source_resolution(width, height, expec
 
 
 def test_preview_drops_frames_without_accumulating_a_queue(monkeypatch):
+    monkeypatch.setattr(preview.settings, "stream_preview_max_fps", 20)
     # A 30fps source should yield ~20fps, rather than rounding down to 15fps.
     clock = [0.0]
     monkeypatch.setattr(preview, "monotonic", lambda: clock[0])
@@ -45,4 +46,28 @@ def test_preview_drops_frames_without_accumulating_a_queue(monkeypatch):
         for _ in range(21):
             await track.recv()
         assert 29 <= source.calls <= 32
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("fps", [30, 60])
+def test_preview_keeps_capture_fps_despite_decode_arrival_jitter(monkeypatch, fps):
+    monkeypatch.setattr(preview.settings, "stream_preview_max_fps", fps)
+    clock = [0.0]
+    monkeypatch.setattr(preview, "monotonic", lambda: clock[0])
+    class Source:
+        calls = 0
+        async def recv(self):
+            self.calls += 1
+            clock[0] = self.calls / fps + (0.012 if self.calls % 2 else -0.012)
+            frame = VideoFrame(64, 64, "yuv420p")
+            frame.pts, frame.time_base = self.calls * (90000 // fps), Fraction(1, 90000)
+            return frame
+        def stop(self):
+            pass
+    async def exercise():
+        source = Source()
+        track = preview.PreviewTrack(source)
+        for _ in range(120):
+            await track.recv()
+        assert source.calls == 120
     asyncio.run(exercise())

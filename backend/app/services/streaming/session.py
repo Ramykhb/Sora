@@ -1,4 +1,5 @@
 import asyncio
+from collections import deque
 from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
@@ -9,6 +10,7 @@ from app.core.config import settings
 from app.core.errors import BackendError
 from app.db.models.frame import now
 from app.services.events import events
+from app.services.streaming.quality import prefer_h264
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,9 @@ class LiveState:
     last_received: float = field(default_factory=monotonic)
     last_sampled: float = float("-inf")
     sequence: int = 0
+    received_times: deque = field(default_factory=lambda: deque(maxlen=180))
+    video_width: int | None = None
+    video_height: int | None = None
     sampled: int = 0
     stored: int = 0
     rejected: int = 0
@@ -54,11 +59,20 @@ class LiveState:
     relay: object | None = None
     video_track: object | None = None
     viewers: dict[str, ViewerState] = field(default_factory=dict)
+    last_diagnostics: float = float("-inf")
 
 
 class Streams:
     def __init__(self):
         self.states: dict[UUID, LiveState] = {}
+
+    @staticmethod
+    def record_frame(state, received):
+        state.last_received = received
+        state.sequence += 1
+        state.received_times.append(received)
+        while state.received_times and state.received_times[0] < received - 3:
+            state.received_times.popleft()
 
     def start(self, session_id, source):
         if session_id in self.states:
@@ -86,9 +100,9 @@ class Streams:
             raise BackendError(
                 "Stream frames must be JPEG within upload limit", 422, "invalid_frame"
             )
-        state.latest, state.last_received = content, monotonic()
+        state.latest = content
+        self.record_frame(state, monotonic())
         state.latest_at = now()
-        state.sequence += 1
         state.updated.set()
         if monotonic() - state.last_detection_sampled < settings.detection_interval_seconds:
             return
@@ -256,10 +270,17 @@ class Streams:
         state = self.states.get(session_id)
         if state is None:
             return {"streaming": False}
+        times = state.received_times
+        fps = ((len(times) - 1) / (times[-1] - times[0])
+               if len(times) > 1 and times[-1] > times[0]
+               and monotonic() - times[-1] < 1 else 0)
         return {
             "streaming": True,
             "source": state.source,
             "frames_received": state.sequence,
+            "received_fps": round(fps, 1),
+            "video_width": state.video_width,
+            "video_height": state.video_height,
             "frames_sampled": state.sampled,
             "viewers": len(state.viewers),
             "sample_interval_seconds": settings.sample_interval_seconds,
@@ -277,6 +298,31 @@ class Streams:
             ) else None,
         }
 
+    async def log_performance(self, session_id):
+        state = self.states.get(session_id)
+        if state is None or monotonic() - state.last_diagnostics < 10:
+            return
+        state.last_diagnostics = monotonic()
+        status = self.status(session_id)
+        reports = {}
+        for name, peer in [("publisher", state.peer), *[
+            (f"viewer:{key}", viewer.peer) for key, viewer in state.viewers.items()
+        ]]:
+            if peer is None:
+                continue
+            stats = await peer.getStats()
+            reports[name] = [{key: value for key, value in vars(item).items()
+                              if key in {"type", "packetsReceived", "packetsLost", "jitter",
+                                         "packetsSent", "bytesSent", "roundTripTime", "fractionLost"}}
+                             for item in stats.values()
+                             if item.type in {"inbound-rtp", "outbound-rtp", "remote-inbound-rtp"}]
+        logging.getLogger("uvicorn.error").info(
+            "Video performance session=%s input_fps=%s size=%sx%s forwarded=%s transport=%s",
+            session_id, status.get("received_fps"), state.video_width, state.video_height,
+            {key: getattr(viewer.track, "frames_forwarded", 0) for key, viewer in state.viewers.items()},
+            reports,
+        )
+
     async def stop(self, session_id, expected=None):
         if expected is not None and self.states.get(session_id) is not expected:
             return
@@ -292,6 +338,8 @@ class Streams:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        if state.relay:
+            await state.relay.close()
         for viewer_id in list(state.viewers):
             await close_viewer(state, viewer_id)
         if state.peer:
@@ -342,14 +390,13 @@ async def close_viewer(state, viewer_id):
 
 async def accept_offer(session_id, sdp, kind, auth_token=None):
     from aiortc import RTCPeerConnection, RTCSessionDescription
-    from aiortc.contrib.media import MediaRelay
+    from app.services.streaming.relay import VideoRelay
     from aiortc.mediastreams import MediaStreamError
     from app.services.streaming.ice import rtc_configuration
     import cv2
 
     state = streams.start(session_id, "webrtc")
     state.auth_token = auth_token
-    state.relay = MediaRelay()
     peer = RTCPeerConnection(configuration=rtc_configuration())
     state.peer = peer
 
@@ -358,8 +405,8 @@ async def accept_offer(session_id, sdp, kind, auth_token=None):
             while streams.states.get(session_id) is state:
                 frame = await track.recv()
                 received = monotonic()
-                state.last_received = received
-                state.sequence += 1
+                streams.record_frame(state, received)
+                state.video_width, state.video_height = frame.width, frame.height
                 if received - state.last_detection_sampled < settings.detection_interval_seconds:
                     continue
                 state.last_detection_sampled = received
@@ -392,7 +439,8 @@ async def accept_offer(session_id, sdp, kind, auth_token=None):
     def on_track(track):
         if track.kind == "video" and state.video_track is None:
             state.video_track = track
-            sample_track = state.relay.subscribe(track, buffered=False)
+            state.relay = VideoRelay(track)
+            sample_track = state.relay.subscribe(buffer_size=1)
             state.readers.append(asyncio.create_task(sample_video(sample_track)))
         else:
             track.stop()
@@ -403,6 +451,8 @@ async def accept_offer(session_id, sdp, kind, auth_token=None):
             await streams.stop(session_id, expected=state)
 
     try:
+        peer.addTransceiver("video", direction="recvonly")
+        prefer_h264(peer)
         await peer.setRemoteDescription(RTCSessionDescription(sdp=sdp, type=kind))
         if state.video_track is None:
             raise BackendError("Offer must include a sending video track", 422, "invalid_offer")
@@ -427,7 +477,7 @@ async def accept_viewer_offer(session_id, sdp, kind, auth_token):
     peer = RTCPeerConnection(configuration=rtc_configuration())
     from app.services.streaming.preview import PreviewTrack
 
-    track = PreviewTrack(state.relay.subscribe(state.video_track, buffered=False))
+    track = PreviewTrack(state.relay.subscribe(buffer_size=3))
     viewer_id = str(uuid4())
     state.viewers[viewer_id] = ViewerState(peer=peer, track=track, auth_token=auth_token)
 
@@ -437,8 +487,10 @@ async def accept_viewer_offer(session_id, sdp, kind, auth_token):
             await close_viewer(state, viewer_id)
 
     try:
+        peer.addTransceiver("video", direction="recvonly")
+        prefer_h264(peer)
         await peer.setRemoteDescription(RTCSessionDescription(sdp=sdp, type=kind))
-        if not any(t.kind == "video" and t.direction in {"sendrecv", "recvonly"}
+        if not any(t.kind == "video" and t.mid is not None and t.direction in {"sendrecv", "recvonly"}
                    for t in peer.getTransceivers()):
             raise BackendError("Viewer offer must receive video", 422, "invalid_offer")
         peer.addTrack(track)

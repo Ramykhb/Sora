@@ -12,19 +12,22 @@ from aiortc import RTCPeerConnection, RTCConfiguration, RTCSessionDescription, V
 from av import VideoFrame
 
 
-def test_webrtc_relays_continuous_video_and_samples_once_per_second(client, monkeypatch):
+@pytest.mark.parametrize("width,height", [(1280, 720), (1920, 1080)])
+def test_webrtc_relays_continuous_video_and_samples_once_per_second(client, monkeypatch, width, height):
     api, _ = client
     sid = UUID(create(api))
     monkeypatch.setattr(settings, "sample_interval_seconds", 1.0)
     monkeypatch.setattr(settings, "turn_public_host", "")
     monkeypatch.setattr(settings, "ice_servers", [])
     token = api.headers["Authorization"].split(" ", 1)[1]
+    import cv2
+    from pathlib import Path
+    image = cv2.resize(cv2.imread(str(Path(__file__).parent / "fixtures/astronaut.jpg")), (width, height))
 
     class Camera(VideoStreamTrack):
         async def recv(self):
             pts, time_base = await self.next_timestamp()
-            pixels = np.indices((1080, 1920)).sum(axis=0) % 2 * 200 + 30
-            frame = VideoFrame.from_ndarray(np.repeat(pixels[:, :, None], 3, axis=2).astype(np.uint8), format="rgb24")
+            frame = VideoFrame.from_ndarray(np.roll(image, (pts // 3000) * 4, axis=1), format="bgr24")
             frame.pts, frame.time_base = pts, time_base
             return frame
 
@@ -41,27 +44,35 @@ def test_webrtc_relays_continuous_video_and_samples_once_per_second(client, monk
             publisher.addTrack(Camera())
             await publisher.setLocalDescription(await publisher.createOffer())
             answer = await accept_offer(sid, publisher.localDescription.sdp, "offer", token)
+            from aiortc.sdp import SessionDescription
+            media = next(m for m in SessionDescription.parse(answer["sdp"]).media if m.kind == "video")
+            assert media.rtp.codecs[0].mimeType.lower() == "video/h264"
             await publisher.setRemoteDescription(RTCSessionDescription(sdp=answer["sdp"], type="answer"))
             viewer.addTransceiver("video", direction="recvonly")
             await viewer.setLocalDescription(await viewer.createOffer())
             response = await accept_viewer_offer(sid, viewer.localDescription.sdp, "offer", token)
+            media = next(m for m in SessionDescription.parse(response["sdp"]).media if m.kind == "video")
+            assert media.rtp.codecs[0].mimeType.lower() == "video/h264"
             await viewer.setRemoteDescription(RTCSessionDescription(sdp=response["sdp"], type="answer"))
             track = await asyncio.wait_for(received_track, 5)
             first = await asyncio.wait_for(track.recv(), 5)
             assert first.width == 1280 and first.height == 720
+            for _ in range(30):
+                await asyncio.wait_for(track.recv(), 3)
             initial = streams.states[sid].sampled
-            import cv2
             latest = cv2.imdecode(np.frombuffer(streams.states[sid].latest, np.uint8), 1)
-            assert latest.shape[:2] == (1080, 1920), "OCR sampling must retain source detail"
-            count, start = 1, monotonic()
-            while monotonic() - start < 2.2:
+            assert latest.shape[:2] == (height, width), "OCR sampling must retain source detail"
+            count, start = 0, monotonic()
+            while monotonic() - start < 5:
                 await asyncio.wait_for(track.recv(), 3)
                 count += 1
             state = streams.states[sid]
             measured_fps = count / (monotonic() - start)
-            print(f"1080p source → 720p preview: {measured_fps:.1f} fps")
-            assert measured_fps >= 12, "Viewer must receive continuous video, not one image per sample"
-            assert 2 <= state.sampled - initial <= 3
+            print(f"{width}×{height} source → 720p preview: {measured_fps:.1f} fps, input {streams.status(sid)['received_fps']}")
+            assert measured_fps >= (27 if width == 1280 else 12), "720p capture must sustain approximately 30 fps"
+            assert 4 <= state.sampled - initial <= 6
+            if width == 1280:
+                assert streams.status(sid)["received_fps"] >= 27
             assert state.sequence > state.sampled * 10
             await close_viewer(state, response["connection_id"])
             assert streams.states[sid] is state, "Closing a dashboard viewer must not stop the phone"
@@ -123,7 +134,7 @@ def test_hd_encoder_budget_still_respects_congestion(monkeypatch, codec_name, en
     configure_video_encoders()
     codec = getattr(codecs, codec_name)
     encoder = getattr(codec, encoder_name)()
-    assert encoder.target_bitrate == 1_500_000
+    assert encoder.target_bitrate == 3_000_000
     encoder.target_bitrate = 5_000_000
     assert encoder.target_bitrate == 5_000_000, "HD must not hit aiortc's old codec ceiling"
     encoder.target_bitrate = 20_000_000

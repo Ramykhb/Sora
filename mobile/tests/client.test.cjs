@@ -5,7 +5,7 @@ const ts = require('typescript');
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
 const { ApiClient, ApiError } = require('../src/lib/api.ts');
 const { connectLive, jpegBytes } = require('../src/lib/live.ts');
-const { configureVideoSender, VIDEO_MAX_BITRATE, publishVideo, waitForIce } = require('../src/lib/webrtc.ts');
+const { configureVideoSender, VIDEO_MAX_BITRATE, publishVideo, waitForIce, videoDiagnostics } = require('../src/lib/webrtc.ts');
 const { serverOrigin } = require('../src/lib/server-url.ts');
 const originalFetch = global.fetch;
 const originalSocket = global.WebSocket;
@@ -258,8 +258,25 @@ test('video quality preserves negotiated encoding objects and transaction metada
   assert.equal(applied, parameters);
   assert.equal(applied.encodings[0], encoding);
   assert.equal(applied.transactionId, 'negotiated');
-  assert.equal(applied.degradationPreference, 'balanced');
+  assert.equal(applied.degradationPreference, undefined);
   assert.equal(encoding.toJSON().maxBitrate, VIDEO_MAX_BITRATE);
-  assert.equal(encoding.maxFramerate, 20);
+  assert.equal(encoding.maxFramerate, 60);
   assert.equal(encoding.scaleResolutionDownBy, 1);
+});
+
+test('video diagnostics distinguish camera, encoder and transport without reporting network addresses', async () => {
+  const stats = new Map([
+    ['source', { type: 'media-source', kind: 'video', framesPerSecond: 30, width: 1280, height: 720, deviceId: 'private-camera' }],
+    ['sender', { type: 'outbound-rtp', kind: 'video', framesPerSecond: 2, qualityLimitationReason: 'cpu', framesEncoded: 10 }],
+    ['pair', { type: 'candidate-pair', state: 'succeeded', currentRoundTripTime: 0.002, availableOutgoingBitrate: 4000000, localCandidateId: 'private-address' }],
+    ['unused', { type: 'candidate-pair', state: 'waiting' }],
+    ['candidate', { type: 'local-candidate', address: '192.168.1.4' }],
+  ]);
+  const diagnostics = await videoDiagnostics({ getStats: async () => stats });
+  assert.equal(diagnostics.profile, '720p60-v3');
+  assert.deepEqual(diagnostics.capture, { width: 1280, height: 720, frameRate: 60 });
+  assert.equal(diagnostics.reports.length, 3);
+  assert.equal(diagnostics.reports[0].framesPerSecond, 30);
+  assert.equal(diagnostics.reports[1].qualityLimitationReason, 'cpu');
+  assert.ok(!JSON.stringify(diagnostics).includes('private'));
 });

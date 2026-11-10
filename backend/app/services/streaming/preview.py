@@ -12,12 +12,20 @@ class PreviewTrack(VideoStreamTrack):
         super().__init__()
         self.source = source
         self.next_frame_at = None
+        self.last_frame_at = None
+        self.frames_forwarded = 0
 
     async def recv(self):
         while True:
             frame = await self.source.recv()
-            received = monotonic()
-            if self.next_frame_at is None or received >= self.next_frame_at:
+            # Network/decode arrival jitter is not the camera's frame rate.
+            # At a 30fps limit, using wall time discards valid 30fps frames that
+            # arrive a few milliseconds early, followed by gaps on late frames.
+            received = frame.time if frame.time is not None else monotonic()
+            if self.last_frame_at is not None and received < self.last_frame_at:
+                self.next_frame_at = None
+            self.last_frame_at = received
+            if self.next_frame_at is None or received + 1e-6 >= self.next_frame_at:
                 break
         interval = 1 / settings.stream_preview_max_fps
         if self.next_frame_at is None or self.next_frame_at < received - interval:
@@ -30,6 +38,7 @@ class PreviewTrack(VideoStreamTrack):
             width = max(2, int(frame.width * scale) // 2 * 2)
             height = max(2, int(frame.height * scale) // 2 * 2)
             frame = await asyncio.to_thread(frame.reformat, width=width, height=height)
+        self.frames_forwarded += 1
         return frame
 
     def stop(self):

@@ -13,8 +13,25 @@ type SignalingPeer = {
 
 // Shared capture/encoding budget for native and browser publishers. Keep this in
 // JavaScript so an existing WebRTC development client can load it through Metro.
-export const VIDEO_CAPTURE = { width: 1920, height: 1080, frameRate: 20 };
-export const VIDEO_MAX_BITRATE = 4_000_000;
+export const VIDEO_CAPTURE = { width: 1280, height: 720, frameRate: 60 };
+export const VIDEO_MAX_BITRATE = 6_000_000;
+
+export async function videoDiagnostics(peer: { getStats(): Promise<{ forEach(callback: (value: unknown) => void): void }> }) {
+  const stats = await peer.getStats();
+  const fields = ['type', 'kind', 'mediaType', 'framesPerSecond', 'frameWidth', 'frameHeight',
+    'framesEncoded', 'framesSent', 'frames', 'width', 'height', 'qualityLimitationReason',
+    'totalEncodeTime', 'bytesSent', 'packetsSent', 'targetBitrate', 'encoderImplementation',
+    'currentRoundTripTime', 'availableOutgoingBitrate', 'state', 'mimeType'];
+  const reports: Record<string, unknown>[] = [];
+  stats.forEach(value => {
+    const report = value as Record<string, unknown>;
+    if (!['outbound-rtp', 'media-source', 'candidate-pair', 'codec'].includes(String(report.type))) return;
+    if (report.kind === 'audio' || report.mediaType === 'audio') return;
+    if (report.type === 'candidate-pair' && report.state !== 'succeeded') return;
+    reports.push(Object.fromEntries(fields.filter(key => report[key] !== undefined).map(key => [key, report[key]])));
+  });
+  return { profile: '720p60-v3', capture: VIDEO_CAPTURE, reports };
+}
 
 type VideoSendParameters = {
   encodings: { maxBitrate?: number | null; maxFramerate?: number | null; scaleResolutionDownBy?: number | null }[];
@@ -28,7 +45,9 @@ export async function configureVideoSender<T extends VideoSendParameters>(sender
   // Call after negotiation, when encodings exist. Preserve native parameter
   // objects (including their setters/toJSON), transaction ID and encoding count.
   const parameters = sender.getParameters();
-  parameters.degradationPreference = 'balanced';
+  // Leave the negotiated adaptation policy intact. react-native-webrtc 155 on
+  // iOS serializes this enum differently from its JS wrapper; writing it can
+  // break the setParameters round trip and restart an otherwise healthy stream.
   for (const encoding of parameters.encodings) {
     encoding.maxBitrate = VIDEO_MAX_BITRATE;
     encoding.maxFramerate = VIDEO_CAPTURE.frameRate;
@@ -88,16 +107,18 @@ export async function publishVideo(api: ApiClient, sessionId: string, peer: Sign
   return answer.connection_id;
 }
 
-export function maintainVideo(api: ApiClient, sessionId: string, connectionId: string, onError: (error: unknown) => void) {
+export function maintainVideo(api: ApiClient, sessionId: string, connectionId: string, onError: (error: unknown) => void, diagnostics?: () => Promise<unknown>) {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout>;
   async function refresh() {
     try {
-      await api.request(`/sessions/${sessionId}/stream/connections/${connectionId}/refresh`, 'POST');
+      const video_metrics = await diagnostics?.().catch(() => null);
+      if (stopped) return;
+      await api.request(`/sessions/${sessionId}/stream/connections/${connectionId}/refresh`, 'POST', video_metrics ? { video_metrics } : undefined);
       if (!stopped) timer = setTimeout(() => void refresh(), 20000);
     } catch (error) { if (!stopped) onError(error); }
   }
-  timer = setTimeout(() => void refresh(), 20000);
+  timer = setTimeout(() => void refresh(), diagnostics ? 5000 : 20000);
   return () => {
     stopped = true; clearTimeout(timer);
     if (api.tokens) void api.request(`/sessions/${sessionId}/stream/connections/${connectionId}`, 'DELETE').catch(() => {});

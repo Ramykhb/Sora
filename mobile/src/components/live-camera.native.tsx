@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { NativeModules, Text, View } from 'react-native';
 import type * as NativeRTC from 'react-native-webrtc';
 import { useAuth } from '@/providers/auth';
-import { configureVideoSender, maintainVideo, publishVideo, VIDEO_CAPTURE, type StreamConfig } from '@/lib/webrtc';
+import { configureVideoSender, maintainVideo, publishVideo, videoDiagnostics, VIDEO_CAPTURE, type StreamConfig } from '@/lib/webrtc';
 import { useUI } from './controls';
 
 export function LiveCamera({ sessionId, active, fullscreen = false, facing = 'back', onConnectionChange }: { sessionId: string; active: boolean; fullscreen?: boolean; facing?: 'back' | 'front'; onConnectionChange?: (connected: boolean) => void }) {
@@ -53,7 +53,7 @@ export function LiveCamera({ sessionId, active, fullscreen = false, facing = 'ba
           if (peer && ['failed', 'closed'].includes(peer.connectionState)) fail(new Error('Video connection failed. Reconnecting…'));
         });
         const id = await publishVideo(api, sessionId, peer, controller.signal);
-        release = maintainVideo(api, sessionId, id, fail);
+        release = maintainVideo(api, sessionId, id, fail, () => videoDiagnostics(peer!));
         const sender = peer.getSenders().find(sender => sender.track?.kind === 'video');
         if (sender && !disposed) await configureVideoSender(sender);
         if (disposed) { release(); release = undefined; }

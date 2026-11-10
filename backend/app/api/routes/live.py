@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import suppress
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
@@ -66,6 +67,24 @@ async def refresh_connection(session_id: UUID, connection_id: str, request: Requ
     token = request.headers["authorization"].split(" ", 1)[1]
     if connection_id == state.connection_id:
         state.auth_token = token
+        if await request.body():
+            body = await request.json()
+            metrics = body.get("video_metrics") if isinstance(body, dict) else None
+            if isinstance(metrics, dict):
+                fields = {"type", "kind", "mediaType", "framesPerSecond", "frameWidth", "frameHeight",
+                          "framesEncoded", "framesSent", "frames", "width", "height",
+                          "qualityLimitationReason", "totalEncodeTime", "bytesSent", "packetsSent",
+                          "targetBitrate", "encoderImplementation", "currentRoundTripTime",
+                          "availableOutgoingBitrate", "state", "mimeType"}
+                raw_reports = metrics.get("reports", [])
+                if not isinstance(raw_reports, list):
+                    raw_reports = []
+                reports = [{key: value[:120] if isinstance(value, str) else value
+                            for key, value in report.items() if key in fields
+                            and isinstance(value, (str, int, float, bool))}
+                           for report in raw_reports[:12] if isinstance(report, dict)]
+                logging.getLogger("uvicorn.error").info("Publisher video metrics session=%s profile=%s reports=%s",
+                                                       session_id, str(metrics.get("profile", ""))[:40], reports)
     elif connection_id in state.viewers:
         state.viewers[connection_id].auth_token = token
     else:
@@ -87,6 +106,7 @@ async def close_connection(session_id: UUID, connection_id: str):
 @router.get("/status")
 async def status(session_id: UUID):
     await get_session(session_id)
+    await streams.log_performance(session_id)
     return streams.status(session_id)
 
 

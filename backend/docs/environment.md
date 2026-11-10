@@ -78,11 +78,13 @@ For an isolated Wi-Fi demo, `ngrok tcp 3478` can forward the phone's TURN contro
 
 ### Live video quality
 
-The phone/browser publisher requests 1920×1080 at 20 fps (device support permitting), with a 4 Mbps encoding ceiling and balanced adaptation under load. The phone preview fits the whole camera image. Saved/OCR frames retain source detail up to `MAX_IMAGE_SIDE` independently of dashboard playback.
+The phone/browser publisher requests 1280×720 at 60 fps (device support permitting), with a 6 Mbps encoding ceiling and the negotiated adaptation policy. The phone preview fits the whole camera image. Saved/OCR frames retain source detail up to `MAX_IMAGE_SIDE` independently of dashboard playback.
 
-Dashboard viewers receive an unbuffered preview bounded by `STREAM_PREVIEW_MAX_SIDE=1280` (720p for 16:9 video) and `STREAM_PREVIEW_MAX_FPS=20`. Frames above the preview rate are skipped, not queued. This limits software re-encoding cost while keeping full-resolution camera sampling independent. `STREAM_VIDEO_MAX_BITRATE=3000000` caps dashboard encoding at 3 Mbps; encoders start at up to 1.5 Mbps and respond to congestion feedback. These are ceilings, not guaranteed frame rates or bandwidth.
+Dashboard viewers receive a preview bounded by `STREAM_PREVIEW_MAX_SIDE=1280` (720p for 16:9 video) and `STREAM_PREVIEW_MAX_FPS=60`. A three-frame buffer absorbs short decode bursts and drops the oldest frame when full. Rate limiting uses media timestamps so arrival jitter does not discard valid camera frames. The sampler keeps only the latest frame; each consumer has independent pixel storage for safe concurrent PyAV conversions. H.264 is preferred for mobile hardware encoding, with VP8 fallback. `STREAM_VIDEO_MAX_BITRATE=6000000` caps dashboard encoding at 6 Mbps; encoders start at up to 3 Mbps and respond to congestion feedback. These are ceilings, not guaranteed frame rates or bandwidth.
 
-These changes need no native rebuild. Reload the WebRTC development app and restart the stream to apply capture settings. Restart the API after changing preview/encoder settings; existing video connections will reconnect.
+The dashboard displays actual playback resolution and fps. `/stream/status` also reports `received_fps`, `video_width` and `video_height`, independently of OCR/detection sampling. From the backend environment, run `python -m scripts.benchmark_stream --relay-only --image tests/fixtures/astronaut.jpg` to measure a moving 720p source through the running API and TURN, including the viewer leg. It creates and removes its own temporary account/session, warms up for two seconds of frames, then checks three five-second windows for at least 90% of the target fps (`--fps 60` by default; `--fps 30` for comparison). It requires registration without email verification; it does not measure the physical phone's camera, Wi-Fi or browser rendering.
+
+For a development client, reload from Metro and restart the stream to apply capture settings. A standalone installed app embeds its JavaScript: rebuild and reinstall it (`npm run ios -- --configuration Release --device` from `mobile`) to receive these changes. Starting Metro alone does not update that app. Restart/recreate the API after changing preview/encoder settings; existing video connections will reconnect.
 
 ### Camera text recognition
 
