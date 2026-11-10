@@ -9,7 +9,7 @@ See [the complete environment reference](docs/environment.md) for native/Docker 
 - FastAPI / SQLAlchemy / Alembic; PostgreSQL 16 with pgvector.
 - RustFS S3-compatible storage, with a local-file option for development.
 - OpenCV and Pillow for enhancement, image validation and quality/novelty checks.
-- Tesseract for OCR; YOLO11 nano for object labels, confidence and bounding boxes.
+- Local PaddleOCR PP-OCRv5 for text detection/recognition in English, French and Arabic; YOLO11 nano for object labels, confidence and bounding boxes.
 - Ollama running Qwen2.5-VL 3B for scene descriptions and grounded answers; Qwen3 Embedding 0.6B for multilingual semantic retrieval over captions/OCR/objects.
 - faster-whisper base for multilingual speech recognition; eSpeak NG for WAV output.
 - aiortc WebRTC ingest and live viewer relay, one-second image sampling, optional TURN relay, legacy JPEG ingress/preview and authenticated event WebSockets.
@@ -25,7 +25,7 @@ uv venv --python 3.13
 source .venv/bin/activate
 uv pip install -r requirements-dev.txt
 cp .env.example .env
-brew install tesseract tesseract-lang espeak-ng ffmpeg
+brew install espeak-ng ffmpeg
 # Starts PostgreSQL + pgvector, RustFS, and Ollama. No data volumes are reset.
 docker compose up -d
 alembic upgrade head
@@ -33,7 +33,7 @@ python -m scripts.prepare_models
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --limit-concurrency 32 --ws-max-size 15728640
 ```
 
-If `.venv` already exists, keep it and run the install command. If `.env` exists, merge new settings instead of overwriting secrets. The Python packages are confined to `.venv`; Tesseract/eSpeak/FFmpeg are system binaries. The existing plain Postgres 16 Docker service is upgraded to a pgvector-enabled Postgres 16 image using the same volume. Old scaffold `frames` tables, if present, are preserved; the new schema uses `stored_frames` and `capture_sessions`.
+If `.venv` already exists, keep it and run the install command. If `.env` exists, merge new settings instead of overwriting secrets. The API packages are confined to `.venv`; PaddleOCR uses a separate persistent runtime under `models/paddleocr/.venv`. eSpeak/FFmpeg are system binaries. To use the optional legacy engine, install `tesseract` and `tesseract-lang` with Homebrew and set `OCR_ENGINE=tesseract`. The existing plain Postgres 16 Docker service is upgraded to a pgvector-enabled Postgres 16 image using the same volume. Old scaffold `frames` tables, if present, are preserved; the new schema uses `stored_frames` and `capture_sessions`.
 
 Register at `POST /api/v1/auth/register`, then log in at `POST /api/v1/auth/login`. Send `Authorization: Bearer <access_token>` on data requests. The shared API key no longer grants access. Create a trusted administrator with `python -m scripts.manage_users create-admin admin@example.com` (password prompted). See [authentication setup and endpoint reference](docs/authentication.md) for refresh tokens, recovery, SMTP, ownership, roles and upgrading existing data. Swagger docs: `http://localhost:8000/docs`. RustFS console: `http://localhost:9001`, using your configured S3 credentials.
 
@@ -45,11 +45,12 @@ To avoid object-storage setup during development, set `STORAGE_BACKEND=local`. F
 
 ```sh
 docker compose --profile app up --build -d
-# Prepare YOLO/Whisper and pull the Ollama models before the demo:
+# Prepare YOLO/Whisper/PaddleOCR and pull the Ollama models before the demo:
 docker compose exec api python -m scripts.prepare_models
+docker compose restart api
 ```
 
-The API container applies migrations automatically. Its image includes the OCR language packs and eSpeak. Weights and database/image data use named volumes. On Docker Desktop, WebSocket/HTTP frame ingestion works through the published port; WebRTC needs reachable ICE candidates or a configured TURN relay. For Docker WebRTC, configure and start the optional TURN service as described in [WebRTC networking](docs/environment.md#webrtc-networking). This is a single-process server: run exactly one API worker because live peer connections, bounded queues and event subscriptions are held in memory. Stored sessions, images, history and the deletion outbox survive API restarts. A restart disconnects live clients; they reconnect and renegotiate.
+The API container applies migrations automatically. PaddleOCR models and its isolated CPU runtime are prepared explicitly in the persistent model volume. Its image also includes eSpeak and legacy Tesseract language packs. Weights and database/image data use named volumes. On Docker Desktop, WebSocket/HTTP frame ingestion works through the published port; WebRTC needs reachable ICE candidates or a configured TURN relay. For Docker WebRTC, configure and start the optional TURN service as described in [WebRTC networking](docs/environment.md#webrtc-networking). This is a single-process server: run exactly one API worker because live peer connections, bounded queues and event subscriptions are held in memory. Stored sessions, images, history and the deletion outbox survive API restarts. A restart disconnects live clients; they reconnect and renegotiate.
 
 ## Process one test image
 

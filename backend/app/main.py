@@ -53,6 +53,14 @@ async def lifespan(app):
         await asyncio.to_thread(warmup_detector)
     except Exception:
         logger.exception("Object detector warmup failed")
+    if settings.ocr_engine == "paddleocr":
+        from app.services.frames.paddle_client import paddle_ocr
+
+        try:
+            await asyncio.to_thread(paddle_ocr.warmup)
+            logging.getLogger("uvicorn.error").info("OCR engine ready: PaddleOCR (local CPU)")
+        except BackendError:
+            logger.exception("PaddleOCR warmup failed")
     tasks = [
         asyncio.create_task(retention_loop()), asyncio.create_task(streams.reap_idle()),
         asyncio.create_task(enrichment_loop()),
@@ -64,6 +72,8 @@ async def lifespan(app):
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await streams.close()
+        if settings.ocr_engine == "paddleocr":
+            await asyncio.to_thread(paddle_ocr.close)
         await engine.dispose()
 
 
@@ -158,15 +168,20 @@ async def ready():
             components[name] = "ready" if model in names else "model_missing"
     except Exception:
         components["vision"] = components["embeddings"] = "unavailable"
-    import pytesseract
+    if settings.ocr_engine == "paddleocr":
+        from app.services.frames.paddle_client import paddle_ocr
 
-    try:
-        langs = await asyncio.to_thread(pytesseract.get_languages)
-        components["ocr"] = (
-            "ready" if set(settings.ocr_languages.split("+")) <= set(langs) else "languages_missing"
-        )
-    except Exception:
-        components["ocr"] = "unavailable"
+        components["ocr"] = "ready" if paddle_ocr.ready else "unavailable"
+    else:
+        import pytesseract
+
+        try:
+            langs = await asyncio.to_thread(pytesseract.get_languages)
+            components["ocr"] = (
+                "ready" if set(settings.ocr_languages.split("+")) <= set(langs) else "languages_missing"
+            )
+        except Exception:
+            components["ocr"] = "unavailable"
     components["tts"] = "ready" if shutil.which(settings.espeak_binary) else "binary_missing"
     from pathlib import Path
 

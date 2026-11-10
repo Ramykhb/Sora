@@ -6,6 +6,7 @@ os.environ["STORAGE_BACKEND"] = "local"
 
 os.environ["API_KEY"] = "test-only-key"
 os.environ["APP_ENV"] = "test"
+os.environ["OCR_ENGINE"] = "tesseract"  # Paddle behavior/worker protocol have dedicated tests.
 
 import asyncio
 import sys

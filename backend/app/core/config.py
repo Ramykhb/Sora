@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     ocr_min_word_confidence: float = Field(default=60, ge=0, le=100)
     ocr_timeout_seconds: float = Field(default=4, ge=0.5, le=25)
     ocr_languages: str = "eng+fra+ara"
+    ocr_engine: Literal["paddleocr", "tesseract"] = "paddleocr"
+    paddle_ocr_model_dir: Path = BACKEND_ROOT / "models" / "paddleocr"
+    paddle_ocr_python: str = ""
+    ocr_threads: int = Field(default=2, ge=1, le=8)
+    ocr_max_regions: int = Field(default=64, ge=1, le=256)
     espeak_binary: str = "espeak-ng"
     alert_cooldown_seconds: int = 30
     ice_servers: list[dict] = []

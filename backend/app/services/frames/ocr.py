@@ -61,7 +61,7 @@ def without_rules(gray):
     return cv2.bitwise_not(cv2.subtract(ink, cv2.bitwise_or(horizontal, vertical)))
 
 
-def recognize_text(image, languages=None):
+def recognize_tesseract(image, languages=None):
     started = perf_counter()
     gray = ocr_image(image)
     budget = settings.ocr_timeout_seconds
@@ -97,3 +97,11 @@ def recognize_text(image, languages=None):
         raise BackendError("OCR failed; check Tesseract and installed language data", 503,
                            "ocr_unavailable") from exc
     return best[0], best[1]
+
+
+def recognize_text(image, languages=None):
+    if settings.ocr_engine == "tesseract":
+        return recognize_tesseract(image, languages)
+    from app.services.frames.paddle_client import paddle_ocr
+
+    return paddle_ocr.recognize(image, languages or settings.ocr_languages)

@@ -17,6 +17,12 @@ def main():
     detector()
     print("Downloading/loading multilingual Whisper weights...")
     whisper()
+    if settings.ocr_engine == "paddleocr":
+        from scripts.prepare_ocr import prepare, install_runtime
+
+        print("Preparing PaddleOCR models and isolated CPU runtime...", flush=True)
+        prepare(settings.paddle_ocr_model_dir)
+        install_runtime(settings.paddle_ocr_model_dir)
     if not args.skip_ollama:
         with httpx.Client(timeout=3600) as client:
             for model in (settings.vision_model, settings.embedding_model):

@@ -14,6 +14,7 @@ From this repository, using the computer's current LAN address:
 python3 backend/scripts/configure_local.py --host 192.168.0.102
 docker compose -f backend/docker-compose.yml --profile app --profile webrtc up -d --build
 docker compose -f backend/docker-compose.yml exec api python -m scripts.prepare_models
+docker compose -f backend/docker-compose.yml restart api
 ```
 
 The configuration helper generates local secrets, preserves existing credentials, and updates networking. Replace the example IP with your own. `backend/.env` and `mobile/.env.local` are private local files. If the address changes, run the helper again and recreate API/TURN with `docker compose -f backend/docker-compose.yml --profile app --profile webrtc up -d api turn`.
@@ -44,9 +45,9 @@ Check [backend health](http://localhost:8000/health). The [API explorer](http://
 
 | Requirement | Implementation |
 | --- | --- |
-| Phone camera streams to server and web dashboard | WebRTC publisher, aiortc unbuffered relay and receive-only browser viewer |
+| Phone camera streams to server and web dashboard | WebRTC publisher, aiortc bounded relay and receive-only browser viewer |
 | Sharp, new, informative frames | Sharpness/brightness checks, perceptual-hash deduplication and sampled memory frames |
-| Image processing and OCR | CLAHE, denoising, sharpening, Tesseract English/French/Arabic |
+| Image processing and OCR | CLAHE, denoising, sharpening, local PaddleOCR English/French/Arabic |
 | Objects, text and time in a multimedia database | YOLO boxes/labels, OCR, captions, timestamps, PostgreSQL/pgvector and RustFS image objects |
 | Time and meaning search | Time filters plus semantic and lexical retrieval; objects/OCR remain available when captions are deferred |
 | Voice question and grounded spoken answer | Whisper → evidence retrieval → Qwen VLM → native speech or eSpeak WAV |

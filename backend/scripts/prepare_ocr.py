@@ -3,6 +3,9 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
+import subprocess
+import sys
 import tarfile
 from concurrent.futures import ThreadPoolExecutor
 from urllib.request import Request, urlopen
@@ -55,10 +58,27 @@ def prepare(directory):
     return manifest
 
 
+def install_runtime(directory):
+    runtime = directory / ".venv"
+    python = runtime / "bin" / "python"
+    if not python.is_file():
+        subprocess.run([sys.executable, "-m", "venv", str(runtime)], check=True)
+    requirements = Path(__file__).resolve().parents[1] / "requirements-ocr.txt"
+    if not requirements.is_file():
+        requirements = directory / "requirements-ocr.txt"
+    uv = shutil.which("uv")
+    command = ([uv, "pip", "install", "--python", str(python)] if uv else
+               [str(python), "-m", "pip", "install"])
+    subprocess.run([*command, "-r", str(requirements)], check=True)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", type=Path, default=DEFAULT_DIRECTORY)
+    parser.add_argument("--install-runtime", action="store_true", help="Install the isolated CPU runtime")
     args = parser.parse_args()
     manifest = prepare(args.directory)
+    if args.install_runtime:
+        install_runtime(args.directory)
     total = sum(file["bytes"] for model in manifest.values() for file in model["files"].values())
     print(f"Prepared {len(manifest)} models ({total / 1024**2:.1f} MiB) in {args.directory}")

@@ -90,4 +90,16 @@ For a development client, reload from Metro and restart the stream to apply capt
 
 `MAX_IMAGE_SIDE=1920` preserves full-HD detail in retained frames and sampled JPEGs; detector inference and VLM image sizes remain independently bounded. Existing installations with an explicit smaller value must update it to retain the additional detail from future captures.
 
-OCR uses an enlarged grayscale copy of face-redacted pixels, compares sparse-text and page layouts, and can retry with long borders/rules removed. Stored images are not thresholded for OCR. `OCR_MIN_WORD_CONFIDENCE=60` filters unreliable words (isolated glyphs require higher confidence); `OCR_TIMEOUT_SECONDS=4` bounds all passes together. English, French and Arabic remain enabled through `OCR_LANGUAGES`. Confidence is an engine score, not a measured accuracy percentage. Small, defocused, skewed or glare-obscured text can still be unreadable. Text-reading requests without accepted OCR return a request for a clearer view rather than asking the VLM to reconstruct missing text from a small image.
+`OCR_ENGINE=paddleocr` selects local PP-OCRv5 by default. A mobile detector finds text regions, perspective-corrected crops are recognized by the requested language models, and credible regions are returned in reading order. English-only requests use the English recognizer; English/French combinations share the Latin model; Arabic uses the Arabic recognizer. `OCR_MIN_WORD_CONFIDENCE=60` filters uncertain regions. Confidence is an engine score, not a measured accuracy percentage. Small, defocused or glare-obscured text can still be unreadable.
+
+Prepare the models and isolated runtime before starting the API:
+
+```sh
+python -m scripts.prepare_ocr --install-runtime
+```
+
+The standard `scripts.prepare_models` command also performs this preparation when PaddleOCR is selected. Models and the `.venv` runtime live under `PADDLE_OCR_MODEL_DIR` (default `models/paddleocr`); Docker keeps them in its persistent model volume. `requirements-ocr.txt` pins PaddleOCR 3.7.0 and a platform-compatible PaddlePaddle runtime; Linux ARM64 uses PaddlePaddle 3.2.2. The four models total about 28 MiB. A SHA-256 manifest records their sources and file hashes. No model is downloaded during inference.
+
+The API warms one persistent local worker on startup, using the model directory's `.venv/bin/python` or `PADDLE_OCR_PYTHON` when explicitly configured. The worker keeps models loaded, processes only already face-redacted images, and has no network listener. `OCR_THREADS=2` bounds CPU use and `OCR_MAX_REGIONS=64` bounds text-region work. `OCR_TIMEOUT_SECONDS=4` includes waiting for the worker and inference; a stuck inference is terminated and the next request can recover with a fresh worker. Startup model loading has a separate 45-second budget. `/ready` checks the active PaddleOCR worker rather than Tesseract language packs.
+
+`python -m scripts.check_ocr` checks individual model loading on generated text. For the current Docker installation, run `docker exec -w /app backend-api-1 /app/models/paddleocr/.venv/bin/python -m scripts.check_ocr --directory /app/models/paddleocr`. Results are saved in `verification.json`. Set `OCR_ENGINE=tesseract` only to explicitly select the legacy engine. Restart the API after changing OCR configuration or preparing a fresh runtime. Existing stored OCR text is retained; newly processed frames use the selected engine.
