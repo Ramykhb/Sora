@@ -50,3 +50,12 @@ test('remembered destination followups request fresh accurate GPS', async () => 
   assert.equal(requests.length, 9);
   assert.ok(requests.every(options => options.accuracy === 4));
 });
+
+test('saved destination nicknames request fresh accurate origin GPS', async () => {
+  const { questionLocation, requests } = loadLocation();
+  for (const question of ['route home', 'navigate university', 'go home', 'route to my home', 'route to saved favorite cafe', 'please route Grandma’s house']) {
+    assert.deepEqual(await questionLocation(question), { latitude: 33.89, longitude: 35.5 });
+  }
+  assert.equal(requests.length, 6);
+  assert.ok(requests.every(options => options.accuracy === 4));
+});

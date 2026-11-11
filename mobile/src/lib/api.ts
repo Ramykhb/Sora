@@ -1,6 +1,7 @@
 export type Language = 'en' | 'fr' | 'ar';
 export type Scope = 'auto' | 'recent' | 'memory';
 export type User = { id: string; email: string; display_name: string; email_verified: boolean; role: string };
+export type SavedDestination = { id: string; nickname: string; latitude: number; longitude: number; created_at: string; updated_at: string };
 export type Tokens = { access_token: string; refresh_token: string; expires_in: number; user: User };
 export type CaptureSession = { id: string; status: string; language: Language; alerts_enabled: boolean; created_at: string; expires_at: string };
 export type DetectedObject = { label: string; confidence: number; box?: number[] };

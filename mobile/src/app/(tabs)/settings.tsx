@@ -1,5 +1,6 @@
 import { ScreenIntro } from '@/components/brand';
 import { PreferenceControls } from '@/components/preference-controls';
+import { SavedDestinationsSettings } from '@/components/saved-destinations-settings';
 import { BottomNav, Icon, Label, Page, Tap } from '@/components/sora-ui';
 import { useCallback, useState } from 'react';
 import { Alert, Platform, Text, View } from 'react-native';
@@ -42,7 +43,7 @@ function Settings() {
   }
   return <Page title="Settings" footer={<BottomNav active="Settings" />}>
     <ScreenIntro eyebrow="Make it yours" title="Your Sora, your way." subtitle="Tune the experience to what works for you." />
-    <PreferenceControls /><Tap label={account ? 'Hide account settings' : 'Account, security & retained data'} onPress={() => tokens ? setAccount(value => !value) : router.push('/assistant')} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 }}><Label muted size={13}>Account, security & retained data</Label><Icon name={account ? 'chevron-down' : 'chevron-forward'} size={20} /></Tap>{account && tokens && <><Text style={ui.copy}>{tokens?.user.email} · {tokens?.user.email_verified ? 'Verified' : 'Unverified'}</Text>
+    <SavedDestinationsSettings /><PreferenceControls /><Tap label={account ? 'Hide account settings' : 'Account, security & retained data'} onPress={() => tokens ? setAccount(value => !value) : router.push('/assistant')} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 }}><Label muted size={13}>Account, security & retained data</Label><Icon name={account ? 'chevron-down' : 'chevron-forward'} size={20} /></Tap>{account && tokens && <><Text style={ui.copy}>{tokens?.user.email} · {tokens?.user.email_verified ? 'Verified' : 'Unverified'}</Text>
     {!!message && <Text accessibilityLiveRegion="polite" style={ui.copy}>{message}</Text>}
     <Field placeholder="Display name" value={name} onChangeText={setName} maxLength={100} />
     <Action variant="primary" title="Save profile" disabled={busy || !name.trim()} onPress={() => void run(async () => {

@@ -1,7 +1,7 @@
 export async function currentLocation(highAccuracy = false) {
   const Location = await import('expo-location');
   const permission = await Location.requestForegroundPermissionsAsync();
-  if (!permission.granted) throw new Error('Allow location access in Settings to share your SOS location.');
+  if (!permission.granted) throw new Error('Allow location access in Settings to use your current location.');
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const position = await Promise.race([
@@ -16,6 +16,7 @@ export async function currentLocation(highAccuracy = false) {
 }
 
 export function isTripQuestion(question: string) {
+  if (/^\s*(?:(?:please|can you|could you)\s+)*(?:(?:route|navigate)(?:\s+me)?|(?:take|guide|direct)\s+me|go|let['’]s go|(?:(?:give|show)\s+me\s+)?(?:walking\s+)?directions)\s+\S/i.test(question)) return true;
   if (/^\s*(?:please\s+)?(?:(?:(?:route|directions?)\s+(?:to\s+)?|(?:take|guide|direct)\s+me\s+(?:to\s+)?|navigate\s+(?:me\s+)?(?:to\s+)?|(?:start|begin)\s+(?:a\s+)?(?:trip|route)\s+to\s+|how\s+(?:do|can)\s+i\s+get\s+(?:to\s+)?|(?:let['’]s\s+)?go\s+(?:to\s+)?)(?:there|it|that(?:\s+(?:place|restaurant|one))?|this\s+place|the\s+(?:place|restaurant))|(?:itin[ée]raire\s+vers|emm[èe]ne[- ]moi)\s+(?:l[àa](?:-bas)?|cet\s+endroit)|(?:خذني\s+(?:إلى\s+)?|(?:مسار|اتجاهات)\s+إلى\s+)(?:هناك|ذلك المكان))(?:\s+please)?\s*[.!?؟]*\s*$/i.test(question)) return true;
   return /\b(?:directions?|route|trip)\s+(?:to|towards?|for)\b|\b(?:start|begin|plan)\s+(?:(?:a|my|the)\s+)?(?:walking\s+)?(?:trip|route)\b|\b(?:navigate|guide|take|direct)\s+me\s+to\b|\bnavigate\s+to\b|\bhow\s+(?:do|can)\s+i\s+get\s+to\b|\b(?:itin[ée]raire|trajet|directions?)\s+(?:vers|pour)\b|(?:ابدأ|ابدا).*(?:رحلة|مسار)|(?:اتجاهات|مسار|طريق)\s+إلى|خذني\s+إلى/i.test(question);
 }

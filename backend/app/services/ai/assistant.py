@@ -15,6 +15,7 @@ from app.db.session import SessionFactory
 from app.schemas import AnswerOut
 from app.services.ai.models import ModelAnswer, models
 from app.services.ai import gemini, places
+from app.services import saved_destinations
 from app.services.ai.cloud_view import answer_cloud_view
 from app.services.ai.retrieval import resolve_scope, retrieve_frames
 from app.services.ai.live_answer import answer_overview, is_overview
@@ -204,16 +205,22 @@ async def _answer_evidence(session_id, request, session, language, requested_sco
     return answer, uncertain, evidence, warnings
 
 
-async def answer_question(session_id, request, source="text"):
+async def answer_question(session_id, request, source="text", requester_id=None):
     start = perf_counter()
     session = await get_session(session_id)
     language = request.language or session.language
     requested_scope = "recent" if ROUTE_QUESTION.search(request.question) else request.scope
     scope = resolve_scope(request.question, requested_scope)
     walking = bool(ROUTE_QUESTION.search(request.question))
+    target = places.route_target(request.question) if not places.is_destination_reference(request.question) else None
+    saved = None
+    if target and (requester_id is None or requester_id == session.owner_id):
+        saved = await saved_destinations.find_destination(session.owner_id, target.nickname)
+    saved_request = target is not None and (saved is not None or target.saved_only)
     place_question = (request.scope != "memory" and not (request.since or request.until)
                       and places.is_place_question(request.question)
                       and not IDENTITY_QUESTION.search(request.question))
+    place_question = bool(place_question or saved_request)
     trip_question = place_question and places.is_trip_question(request.question)
     # Only place turns participate in destination memory. Empty context records
     # an unsuccessful new search so "there" never silently reuses an older place.
@@ -237,7 +244,12 @@ async def answer_question(session_id, request, source="text"):
         # HTTP inference. Current-view questions must not wait for minutes only
         # to lose their evidence at the end.
         async with asyncio.timeout(budget if place_question or scope == "recent" else None):
-            if place_question:
+            if saved_request:
+                if saved is None:
+                    answer, uncertain, evidence, warnings = saved_destinations.missing_destination(target.nickname, language)
+                else:
+                    answer, uncertain, evidence, warnings = await saved_destinations.answer_saved(request, saved, language, place_context)
+            elif place_question:
                 answer, uncertain, evidence, warnings = await places.answer_nearby(request, language, place_context=place_context)
             elif use_cloud:
                 try:

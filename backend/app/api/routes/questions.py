@@ -1,9 +1,11 @@
 import asyncio
 from typing import Literal
 from uuid import UUID
-from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from sqlalchemy import select
 from app.api.dependencies import read_upload
+from app.core.auth import current_user
+from app.db.auth_models import User
 from app.db.models import Feedback, QuestionAnswer
 from app.db.models.frame import now
 from app.db.session import SessionFactory
@@ -16,8 +18,8 @@ router = APIRouter()
 
 
 @router.post("", response_model=AnswerOut)
-async def ask(session_id: UUID, request: QuestionRequest):
-    return await answer_question(session_id, request, source=request.source)
+async def ask(session_id: UUID, request: QuestionRequest, user: User = Depends(current_user)):
+    return await answer_question(session_id, request, source=request.source, requester_id=user.id)
 
 
 @router.post("/audio", response_model=AnswerOut)
@@ -28,6 +30,7 @@ async def ask_audio(
     scope: Literal["auto", "recent", "memory"] = Form("auto"),
     latitude: float | None = Form(None, ge=-90, le=90),
     longitude: float | None = Form(None, ge=-180, le=180),
+    user: User = Depends(current_user),
 ):
     if (latitude is None) != (longitude is None):
         raise HTTPException(422, "Both latitude and longitude are required")
@@ -36,7 +39,7 @@ async def ask_audio(
     content = await read_upload(audio)
     text, detected_language = await asyncio.to_thread(transcribe, content, language)
     request = QuestionRequest(question=text, language=language or detected_language, scope=scope, location=location)
-    return await answer_question(session_id, request, source="audio")
+    return await answer_question(session_id, request, source="audio", requester_id=user.id)
 
 
 @router.get("", response_model=list[AnswerOut])

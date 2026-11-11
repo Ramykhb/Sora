@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.errors import BackendError
 from app.schemas import QuestionLocation
 from app.services.ai import directions
+from app.services.ai.navigation_intent import route_target
 
 PLACE_INTENT = re.compile(r"\b(?:closest|closes|nearest|nearby|near me|how far|plus proche|près de moi)\b|أقرب|اقرب|بالقرب|كم يبعد", re.I)
 TRIP_INTENT = re.compile(
@@ -40,7 +41,7 @@ def is_destination_reference(question):
 
 
 def is_trip_question(question):
-    return bool(TRIP_INTENT.search(question)) or is_destination_reference(question)
+    return bool(TRIP_INTENT.search(question)) or is_destination_reference(question) or route_target(question) is not None
 
 
 def is_place_question(question):

@@ -80,3 +80,16 @@ All endpoints require a bearer token and act on the signed-in account:
 - `GET /emergency/contact` returns `{ "email": "" }` or the saved contact.
 - `PUT /emergency/contact` accepts `{ "email": "friend@example.com" }`; an empty email removes the contact.
 - `POST /emergency/location` accepts `latitude`, `longitude`, `captured_at` (timezone-aware ISO timestamp, no older than two minutes), optional `accuracy_meters`, and optional UUID `request_id`. The recipient comes from the saved contact, never from this request. Success returns `{ "status": "submitted", "message": "Your location email was submitted to your SOS contact." }`. `request_id` is passed to Brevo as an idempotency key scoped to the account. The client does not automatically retry email submission. A timeout reports unconfirmed delivery.
+
+### Saved destinations
+
+All endpoints require a bearer token and access only the signed-in account's entries, including for administrator accounts. Entries persist independently of capture-session retention and cascade on account deletion.
+
+- `GET /destinations`: list saved entries, ordered by normalized nickname.
+- `POST /destinations`: create with JSON `{"nickname":"home","latitude":33.89,"longitude":35.5}`. Returns 201.
+- `PUT /destinations/{id}`: replace the nickname and both coordinates with the same JSON shape. Returns the updated entry.
+- `DELETE /destinations/{id}`: delete an owned entry; returns 204. Missing/foreign IDs return 404.
+
+Responses contain `id`, `nickname`, `latitude`, `longitude`, `created_at`, and `updated_at`, with no owner or matching-key field. Nicknames must contain letters/numbers, be 1–80 characters after normalization, and be unique per account ignoring case, whitespace, and punctuation. Reserved follow-up terms such as `there` are rejected. Duplicate nicknames return 409; invalid/non-finite/out-of-range coordinates or unexpected fields return 422. Latitude is bounded to ±90 and longitude to ±180.
+
+Submit `{"question":"route home","location":{"latitude":33.8,"longitude":35.4}}` to the ordinary session question endpoint. Exact saved-nickname routes go directly to Google Routes with the current origin and saved destination coordinates, with no Places/Groq lookup or camera evidence. The ordinary question/history/event response is reused and destination context supports `route to there` afterward. Missing shorthand/explicit-saved nicknames return an uncertain answer with `saved_destination_not_found`; missing current origin returns `location_required`. `route to the nearest McDonald's` retains ordinary Places search when no saved nickname matches. Each saved route request resolves the latest stored entry, so editing coordinates affects the next request. A saved entry from one account cannot be addressed through another owner's session.
