@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     gemini_deadline_seconds: float = Field(default=5, ge=1, le=10)
     gemini_http_timeout_seconds: float = Field(default=4, ge=0.1, le=8)
     gemini_walking_max_age_seconds: float = Field(default=6, ge=1, le=10)
+    object_finder_max_age_seconds: float = Field(default=6, ge=1, le=15)
     gemini_image_max_side: int = Field(default=1024, ge=320, le=2048)
     google_place_api_key: SecretStr = SecretStr("")
     google_routes_api_key: SecretStr = SecretStr("")

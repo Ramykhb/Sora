@@ -186,7 +186,7 @@ def walking_observation(objects, width, language):
     return limits + " " + observed
 
 
-async def answer_overview(session_id, request, language, *, walking=False):
+async def answer_overview(session_id, request, language, *, walking=False, finding=None):
     import asyncio
 
     snapshot = streams.fresh_detected_snapshot(session_id) if not (request.since or request.until) else None
@@ -215,7 +215,15 @@ async def answer_overview(session_id, request, language, *, walking=False):
     timestamp = frame.captured_at
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=timezone.utc)
-    if walking and (now() - timestamp).total_seconds() > settings.detection_max_age_seconds:
+    if (walking or finding) and (now() - timestamp).total_seconds() > settings.detection_max_age_seconds:
         return STALE[language], True, [], warnings
+    if finding:
+        from app.services.ai.object_finder import detection_answer
+
+        answer, uncertain = detection_answer(
+            finding, frame.detected_objects, frame.width, frame.height, language,
+            quality_uncertain="quality_override" in frame.processing_warnings,
+        )
+        return answer, uncertain, [str(frame.id)], warnings
     answer = walking_observation(frame.detected_objects, frame.width, language) if walking else object_overview(frame.detected_objects, language)
     return answer, True, [str(frame.id)], warnings

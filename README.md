@@ -29,6 +29,7 @@ Developed for **Multimedia Database and Image Processing — Fall 2026/2027**.
 | --- | --- |
 | Live camera assistance | Native iOS/Android WebRTC publishing, a receive-only dashboard viewer, independent frame sampling, connection refresh, and reconnect handling. |
 | Scene understanding | Supported object labels and camera-relative positions, local scene descriptions, and optional Gemini analysis of a current snapshot. |
+| Find an object | “Help me find my backpack” checks the current frame for a matching object and reports its position, with uncertainty for missing or ambiguous matches. |
 | Walking assessments | Checks for ground hazards and obstructions directly ahead, including body/head-height obstacles; reports an apparent unobstructed section, a visible blocker, or insufficient evidence. |
 | Text reading | Local PaddleOCR for English, French, and Arabic, with image enhancement and spoken playback. |
 | Visual memory | Selected images, OCR, objects, captions, timestamps, semantic/lexical search, time filters, and evidence-linked answers. |
@@ -52,11 +53,18 @@ English, French, and Arabic are supported throughout the backend. Speech and rec
 | --- | --- |
 | “What is in front of me?” | A quick overview of supported detected objects, with uncertainty about missed objects. |
 | “Describe the scene in detail.” | A grounded visual description; uses Gemini for current-view analysis when enabled. |
+| “Help me find my backpack.” | Looks for a visual match and describes its position within the current camera image. |
 | “Read the text on this sign.” | Reads legible text from camera evidence. |
 | “What did the sign I passed earlier say?” | Searches retained visual memory and cites relevant frame IDs. |
 | “Is it safe to walk?” | Assesses the visible ground and forward passage; does not give a blanket safety assurance. |
 
 A clearly visible closed door or wall across the passage counts as a blocker even if the floor is out of view. An unobstructed assessment requires both the ground and the forward passage to be visible. Poor visibility or ambiguous evidence produces an uncertain answer.
+
+### Finding an object
+
+With the camera streaming, ask **“Help me find my backpack,” “Where is my phone?”**, or **“Can you see my keys?”** Sora checks a fresh frame for the named object and reports a camera-relative location, such as **“near the bottom right of the camera view.”** It can distinguish left/center/right and top/middle/bottom. English, French, and Arabic request/response paths are supported.
+
+When configured, Gemini checks the requested object's appearance and any attributes, such as a red backpack. Otherwise, or on a cloud failure, the local detector can locate supported object classes such as backpacks, phones, and bottles. Unsupported objects/attributes, weak detections, poor image quality, and ambiguous multiple matches produce uncertainty. Not seeing an object in one frame does not mean it is absent nearby, and a matching backpack does not establish ownership. Positions refer to the image rather than the user's body; no distance or movement instructions are inferred. Each request analyzes a snapshot, not continuous object tracking. Historical requests such as “Where was my backpack earlier?” retain the visual-memory workflow.
 
 ### Finding a place and getting there
 
@@ -219,6 +227,7 @@ Place searches use a **5 km radius** by default. “Nearest” selects the match
 | `SAMPLE_INTERVAL_SECONDS` | `1`; visual-memory sampling interval, independent of video playback. |
 | `DETECTION_MAX_AGE_SECONDS` | `2`; local observation freshness and maximum walking-image age before cloud analysis. |
 | `GEMINI_WALKING_MAX_AGE_SECONDS` | `6`; maximum total snapshot age after cloud analysis and at final answer validation. |
+| `OBJECT_FINDER_MAX_AGE_SECONDS` | `6`; maximum object-finding snapshot age after cloud analysis and final validation; input must still meet the two-second detection freshness limit. |
 | `GEMINI_DEADLINE_SECONDS` / `GEMINI_HTTP_TIMEOUT_SECONDS` | `5` / `4`; bounded current-view cloud analysis and HTTP request time. |
 | `CURRENT_ANSWER_TIMEOUT_SECONDS` | `8`; local current-view answer-processing budget. |
 | `PLACES_TIMEOUT_SECONDS` / `ROUTES_TIMEOUT_SECONDS` | `8` / `8`; provider request limits. |
@@ -306,7 +315,7 @@ npm test
 npm run build
 ```
 
-The latest targeted validation on **November 11, 2026** passed **220 backend tests**, covering walking/Gemini behavior, Places/Routes, saved destinations, destination memory, evidence freshness, configuration, authentication, and SOS, plus all **115 mobile tests** and mobile type/lint checks. Backend Ruff checks passed for the changed Python files. These are automated software checks; they do not establish real-world obstacle recall, route accessibility, speech accuracy, or physical-device usability.
+The latest targeted validation on **November 11, 2026** passed **277 backend tests**, covering object finding, walking/Gemini behavior, Places/Routes, saved destinations, destination memory, evidence freshness, configuration, authentication, and SOS, plus all **115 mobile tests** and mobile type/lint checks. Backend Ruff checks passed for the changed Python files. These are automated software checks; they do not establish real-world obstacle recall, route accessibility, speech accuracy, or physical-device usability.
 
 Real-service checks are available after model preparation:
 

@@ -8,7 +8,7 @@ import numpy as np
 from app.core.config import settings
 from app.core.errors import BackendError
 from app.db.models.frame import now
-from app.services.ai import gemini
+from app.services.ai import gemini, object_finder
 from app.services.ai.retrieval import retrieve_frames
 from app.services.ai.safety import STALE, guard_answer
 from app.services.frames.ingestion import ingest_bytes
@@ -30,7 +30,7 @@ def cloud_image(content, privacy_checked):
     return jpeg(image)
 
 
-async def answer_cloud_view(session_id, request, language, *, walking=False):
+async def answer_cloud_view(session_id, request, language, *, walking=False, finding=None):
     snapshot = streams.fresh_snapshot(session_id) if not (request.since or request.until) else None
     warnings = []
     if snapshot:
@@ -49,7 +49,7 @@ async def answer_cloud_view(session_id, request, language, *, walking=False):
     timestamp = frame.captured_at
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=timezone.utc)
-    max_age = settings.detection_max_age_seconds if walking else settings.recent_evidence_seconds
+    max_age = settings.detection_max_age_seconds if walking or finding else settings.recent_evidence_seconds
     if (now() - timestamp).total_seconds() > max_age:
         raise BackendError("Camera evidence is stale", 409, "gemini_evidence_stale")
     # Fetch the exact retained, redacted processed variant. The API owns the
@@ -66,10 +66,19 @@ async def answer_cloud_view(session_id, request, language, *, walking=False):
     # The input must be fresh, but cloud processing takes longer than one local
     # detection interval. Bound total snapshot age separately after inference.
     result_max_age = settings.gemini_walking_max_age_seconds if walking else max_age
+    if finding:
+        result_max_age = settings.object_finder_max_age_seconds
     if (now() - timestamp).total_seconds() > result_max_age:
         raise BackendError("Camera evidence became stale", 409, "gemini_evidence_stale")
     text = result.answer
     uncertain = result.uncertain or "quality_override" in frame.processing_warnings
+    if finding:
+        status = result.object_status or "uncertain"
+        horizontal, vertical = result.object_horizontal or "unknown", result.object_vertical or "unknown"
+        if uncertain or (status == "visible" and "unknown" in (horizontal, vertical)):
+            status = "uncertain"
+        uncertain = uncertain or status != "visible"
+        text = object_finder.cloud_prefix(status, horizontal, vertical, language) + " " + text
     if walking:
         assessment = result.visible_path or "unknown"
         # Missing ground may leave other hazards unknown without invalidating

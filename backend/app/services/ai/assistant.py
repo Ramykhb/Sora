@@ -14,7 +14,7 @@ from app.db.models.frame import now
 from app.db.session import SessionFactory
 from app.schemas import AnswerOut
 from app.services.ai.models import ModelAnswer, models
-from app.services.ai import gemini, places
+from app.services.ai import gemini, object_finder, places
 from app.services import saved_destinations
 from app.services.ai.cloud_view import answer_cloud_view
 from app.services.ai.retrieval import resolve_scope, retrieve_frames
@@ -209,9 +209,10 @@ async def answer_question(session_id, request, source="text", requester_id=None)
     start = perf_counter()
     session = await get_session(session_id)
     language = request.language or session.language
-    requested_scope = "recent" if ROUTE_QUESTION.search(request.question) else request.scope
+    finding = object_finder.query(request.question)
+    walking = bool(ROUTE_QUESTION.search(request.question)) and not finding
+    requested_scope = "recent" if walking or finding else request.scope
     scope = resolve_scope(request.question, requested_scope)
-    walking = bool(ROUTE_QUESTION.search(request.question))
     target = places.route_target(request.question) if not places.is_destination_reference(request.question) else None
     saved = None
     if target and (requester_id is None or requester_id == session.owner_id):
@@ -219,6 +220,7 @@ async def answer_question(session_id, request, source="text", requester_id=None)
     saved_request = target is not None and (saved is not None or target.saved_only)
     place_question = (request.scope != "memory" and not (request.since or request.until)
                       and places.is_place_question(request.question)
+                      and not finding
                       and not IDENTITY_QUESTION.search(request.question))
     place_question = bool(place_question or saved_request)
     trip_question = place_question and places.is_trip_question(request.question)
@@ -256,18 +258,18 @@ async def answer_question(session_id, request, source="text", requester_id=None)
                     # Reserve time for the local fallback within the same deadline.
                     async with asyncio.timeout(max(0.1, budget - min(0.5, budget / 2))):
                         answer, uncertain, evidence, warnings = await answer_cloud_view(
-                            session_id, request, language, walking=walking,
+                            session_id, request, language, walking=walking, finding=finding,
                         )
                         cloud_answer_used = True
                 except (BackendError, TimeoutError) as exc:
                     reason = exc.code if isinstance(exc, BackendError) else "gemini_timeout"
                     answer, uncertain, evidence, warnings = await answer_overview(
-                        session_id, request, language, walking=walking,
+                        session_id, request, language, walking=walking, finding=finding,
                     )
                     warnings = [*warnings, reason, "local_detection_fallback"]
-            elif scope == "recent" and (walking or is_overview(request.question)) and not IDENTITY_QUESTION.search(request.question):
+            elif scope == "recent" and (walking or finding or is_overview(request.question)) and not IDENTITY_QUESTION.search(request.question):
                 answer, uncertain, evidence, warnings = await answer_overview(
-                    session_id, request, language, walking=walking,
+                    session_id, request, language, walking=walking, finding=finding,
                 )
             else:
                 answer, uncertain, evidence, warnings = await _answer_evidence(
@@ -303,6 +305,9 @@ async def answer_question(session_id, request, source="text", requester_id=None)
             max_age = settings.recent_evidence_seconds
             if walking:
                 max_age = (settings.gemini_walking_max_age_seconds if cloud_answer_used
+                           else settings.detection_max_age_seconds)
+            elif finding:
+                max_age = (settings.object_finder_max_age_seconds if cloud_answer_used
                            else settings.detection_max_age_seconds)
             filters.append(
                 Frame.captured_at >= now() - timedelta(seconds=max_age)

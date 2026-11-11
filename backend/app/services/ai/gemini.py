@@ -9,12 +9,16 @@ from pydantic import BaseModel, Field, StrictBool
 from app.core.config import settings
 from app.core.errors import BackendError
 from app.services.ai.safety import ROUTE_QUESTION
+from app.services.ai import object_finder
 
 
 class GeminiAnswer(BaseModel):
     answer: str = Field(min_length=1, max_length=600)
     uncertain: StrictBool
     visible_path: Literal["unobstructed", "blocked", "unknown"] | None = None
+    object_status: Literal["visible", "not_visible", "uncertain"] | None = None
+    object_horizontal: Literal["left", "center", "right", "unknown"] | None = None
+    object_vertical: Literal["top", "middle", "bottom", "unknown"] | None = None
 
 
 def configured():
@@ -24,7 +28,8 @@ def configured():
 async def ask_image(image: bytes, question: str, language: str):
     if not configured():
         raise BackendError("Gemini is not configured", 503, "gemini_not_configured")
-    walking = bool(ROUTE_QUESTION.search(question))
+    finding = object_finder.query(question)
+    walking = bool(ROUTE_QUESTION.search(question)) and not finding
     instructions = (
         "Describe only evidence visible in the supplied camera image. Reply in "
         + {"en": "English", "fr": "French", "ar": "Arabic"}[language]
@@ -59,6 +64,29 @@ async def ask_image(image: bytes, question: str, language: str):
     if walking:
         properties["visible_path"] = {"type": "string", "enum": ["unobstructed", "blocked", "unknown"]}
         required.append("visible_path")
+    if finding:
+        instructions += (
+            " This is an object-finding request. Inspect the image specifically for the requested object, "
+            "including any stated color/type/appearance. Do not substitute a similar object or merely list "
+            "unrelated objects. Set object_status=visible only for a clear visual match; set "
+            "object_horizontal=left/center/right and object_vertical=top/middle/bottom relative to the "
+            "supplied image, not the user's body or compass direction. Set object_status=not_visible if "
+            "no match can be identified in this image; this never means it is absent from the surroundings. "
+            "Set object_status=uncertain for blurry, dark, partially hidden, or ambiguous matches, or when "
+            "multiple candidates prevent identifying the requested one. Use unknown position fields when "
+            "a position cannot be established. 'My backpack' means a visual backpack match, not proof of "
+            "ownership. Never identify a specific person or confirm personal identity; such a request is "
+            "uncertain. Do not infer distance or tell the user how to walk or reach it. For answer, provide "
+            "one short supporting visual description or the specific reason identification is uncertain; "
+            "the server adds the visibility/location statement. Set uncertain=true unless a match and its "
+            "position are clear. Return all object fields."
+        )
+        properties.update({
+            "object_status": {"type": "string", "enum": ["visible", "not_visible", "uncertain"]},
+            "object_horizontal": {"type": "string", "enum": ["left", "center", "right", "unknown"]},
+            "object_vertical": {"type": "string", "enum": ["top", "middle", "bottom", "unknown"]},
+        })
+        required.extend(["object_status", "object_horizontal", "object_vertical"])
     payload = {
         "systemInstruction": {"parts": [{"text": instructions}]},
         "contents": [{"role": "user", "parts": [
@@ -89,6 +117,8 @@ async def ask_image(image: bytes, question: str, language: str):
         result = GeminiAnswer.model_validate_json(text)
         if walking and result.visible_path is None:
             raise ValueError("Missing visible path assessment")
+        if finding and any(value is None for value in (result.object_status, result.object_horizontal, result.object_vertical)):
+            raise ValueError("Missing object visibility or position")
         return result
     except httpx.TimeoutException as exc:
         raise BackendError("Gemini response timed out", 504, "gemini_timeout") from exc
