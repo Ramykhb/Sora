@@ -11,6 +11,7 @@ import { NavigationBar } from 'expo-navigation-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useHandsFreeQuestions, useVoiceCommands, useVoiceStreamControls } from '@/providers/voice-commands';
 import { useAuth } from '@/providers/auth';
+import { cameraFeedback } from '@/lib/camera-feedback';
 import { usePreferences } from '@/providers/preferences';
 import type { StreamCommand } from '@/lib/voice-commands';
 import type { Answer, CaptureSession, Frame } from '@/lib/api';
@@ -33,6 +34,7 @@ function Capture() {
   const [uploading, setUploading] = useState(false);
   const voice = useVoiceCommands();
   const [voiceAnswer, setVoiceAnswer] = useState('');
+  const [viewTip, setViewTip] = useState<string | null>(null);
   const answerScroll = useRef<ComponentRef<typeof ScrollView>>(null);
   useEffect(() => { answerScroll.current?.scrollTo({ y: 0, animated: false }); }, [voiceAnswer]);
   const [connected, setConnected] = useState(false);
@@ -83,7 +85,9 @@ function Capture() {
     try {
       const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope: 'recent', language: session.language });
       setVoiceAnswer(answer.answer);
-      return answer;
+      const tip = cameraFeedback(answer.uncertain, answer.answer, answer.processing_warnings);
+      setViewTip(tip);
+      return tip && answer.language === 'en' ? { ...answer, answer: `${answer.answer} ${tip}` } : answer;
     } finally { setBusy(false); }
   }, `${session?.id}:${streamPaused}`);
   async function controlStream(command: StreamCommand) {
@@ -104,7 +108,7 @@ function Capture() {
     setStreamPaused(true); setConnected(false); setError('');
     try {
       await api.request<CaptureSession>(`/sessions/${session.id}/close`, 'POST');
-      setSession(null); setVoiceAnswer(''); setStreamPaused(false);
+      setSession(null); setVoiceAnswer(''); setViewTip(null); setStreamPaused(false);
       return 'Stream stopped. Your saved moments are still available.';
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Unable to end the session. Please try stop stream again.');
@@ -170,6 +174,7 @@ function Capture() {
         {!!error && <Label accessibilityRole="alert" style={{ color: colors.danger, backgroundColor: colors.surface, padding: 12, borderRadius: 12 }}>{error}</Label>}
         {preferences.voiceCommands && <Label style={{ color: controlColor, textAlign: 'center' }} size={12}>{voice.status}</Label>}
         {!!voiceAnswer && <Label selectable style={{ color: controlColor }} size={14}>{voiceAnswer}</Label>}
+        {!!viewTip && <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}><Icon name="camera-outline" size={18} color={controlColor} /><Label accessibilityLiveRegion="polite" style={{ color: controlColor, flex: 1 }} size={12}>{viewTip}</Label></View>}
         {busy && <Label accessibilityLiveRegion="polite" style={{ color: controlColor, textAlign: 'center' }}>Processing your request…</Label>}
         </ScrollView>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

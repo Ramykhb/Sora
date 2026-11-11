@@ -305,7 +305,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
     require(name) {
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
       if (name === 'react') return {
-        useState: initial => { const index = stateIndex++; return [active && index === 0 ? session : active && index === 6 ? true : index === 10 ? paused : initial, value => updates.push(value)]; }, useRef: current => ({ current }),
+        useState: initial => { const index = stateIndex++; return [active && index === 0 ? session : active && index === 7 ? true : index === 11 ? paused : initial, value => updates.push(value)]; }, useRef: current => ({ current }),
         useCallback: fn => fn, useEffect: fn => effects.push(fn),
       };
       if (name === 'react-native') return { AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) }, StyleSheet: { create: value => value }, Platform: { OS: 'ios' } };
@@ -316,6 +316,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
       if (name === '@/providers/auth') return { useAuth: () => ({ api: { async request(...args) { requests.push(args); if (args[0].endsWith('/close') && closeError) throw closeError; return args[0].endsWith('/questions') ? reply : session; } } }) };
       if (name === '@/providers/preferences') return { usePreferences: () => ({ colors: {}, preferences: { guidance: false } }) };
       if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() {} } };
+      if (name === '@/lib/camera-feedback') return { cameraFeedback: () => null };
       return {};
     },
   });

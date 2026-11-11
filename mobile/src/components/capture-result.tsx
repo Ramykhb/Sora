@@ -8,6 +8,7 @@ import { usePreferences } from '@/providers/preferences';
 import { speech } from '@/lib/speech';
 import { connectLive } from '@/lib/live';
 import type { Answer, CaptureSession, Frame, Language } from '@/lib/api';
+import { cameraFeedback } from '@/lib/camera-feedback';
 import { AuthScreen } from './auth-screen';
 import { ScreenIntro } from './brand';
 import { Card, Icon, Label, Page, Tap } from './sora-ui';
@@ -71,12 +72,14 @@ function Result({ text }: { text: boolean }) {
   const processing = frame && !answer && ['pending', 'processing'].includes(frame.enrichment_status || '');
   const content = text ? frame?.ocr_text : answer || frame?.caption;
   const resultCopy = content || (error && !frame ? 'Refresh or capture another image to continue.' : processing ? 'Your image is being analyzed.' : frame ? text ? 'No readable text detected. Try a closer, well-lit image.' : 'No scene description available. Try describing again.' : 'Loading your result…');
+  const viewTip = !text && frame ? cameraFeedback(uncertain || frame.processing_warnings.includes('scene_uncertain'), content || '', [...warnings, ...frame.processing_warnings]) : null;
+  const spokenContent = content && viewTip && language === 'en' ? `${content} ${viewTip}` : content;
   useEffect(() => {
-    if (!content || !focused) return;
-    speech.rememberAnswer(content, language);
-    if (!preferences.speak || spoken.current === content) return;
-    spoken.current = content; void speech.answer(content, language);
-  }, [content, preferences.speak, focused, language]);
+    if (!spokenContent || !focused) return;
+    speech.rememberAnswer(spokenContent, language);
+    if (!preferences.speak || spoken.current === spokenContent) return;
+    spoken.current = spokenContent; void speech.answer(spokenContent, language);
+  }, [spokenContent, preferences.speak, focused, language]);
   useHandsFreeQuestions(async question => {
     if (!sessionId || !frame) throw new Error('Please wait for this image to load, then ask again.');
     if (busy) throw new Error('Please wait for the current description to finish, then ask again.');
@@ -91,7 +94,7 @@ function Result({ text }: { text: boolean }) {
   }, `${sessionId}:${frameId}`);
   async function play() {
     if (playing) { await speech.stop(); setPlaying(false); return; }
-    if (content) { speech.rememberAnswer(content, language); await speech.answer(content, language, () => setPlaying(false)); setPlaying(true); }
+    if (spokenContent) { speech.rememberAnswer(spokenContent, language); await speech.answer(spokenContent, language, () => setPlaying(false)); setPlaying(true); }
   }
   function retake() { router.replace({ pathname: '/camera', params: { mode: text ? 'text' : 'scene', sessionId } }); }
   async function describe() {
@@ -116,7 +119,7 @@ function Result({ text }: { text: boolean }) {
         {processing && <ActivityIndicator color={colors.primary} accessibilityLabel="AI processing" />}
         {text ? <View style={{ borderRadius: 14, padding: 16, backgroundColor: colors.elevated }}><ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} style={{ maxHeight: 260 }}><Label bold size={20} selectable style={{ textAlign: 'center' }}>{resultCopy}</Label></ScrollView></View> : <Label bold size={22} selectable>{resultCopy}</Label>}
       </Card>
-      {uncertain && <Label muted>Sora is uncertain about this description.</Label>}
+      {viewTip && <Card tone="accent" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}><Icon name="camera-outline" size={20} /><Label accessibilityLiveRegion="polite" size={13} style={{ flex: 1 }}>{viewTip}</Label></Card>}
       {!!content && <Tap label={playing ? 'Stop audio' : text ? 'Read Aloud' : 'Play Description'} onPress={() => void play()}><Card tone="accent" style={{ flexDirection: 'row', alignItems: 'center', padding: 12, gap: 14 }}><View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: colors.primary, boxShadow: colors.primaryShadow, alignItems: 'center', justifyContent: 'center' }}><Icon name={playing ? 'stop' : 'play'} color={colors.onPrimary} size={23} /></View><Label bold size={13} style={{ flex: 1 }}>{playing ? 'Stop audio' : text ? 'Read Aloud' : 'Play Description'}</Label><Icon name="volume-high-outline" size={19} color={colors.muted} /></Card></Tap>}
       {!!error && <Card><Label accessibilityRole="alert" style={{ color: colors.danger }}>{error}</Label><Tap label="Refresh result" onPress={() => setAttempt(v => v + 1)}><Label bold>Refresh →</Label></Tap></Card>}
       {frame?.processing_warnings.map(warning => <Label key={warning} accessibilityRole="alert" style={{ color: colors.danger }}>{warning}</Label>)}
