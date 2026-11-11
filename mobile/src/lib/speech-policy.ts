@@ -10,7 +10,29 @@ export class SpeechController {
   private urgent = false;
   private seen = new Set<string>();
   private interruptors = new Set<() => void>();
+  private lastAnswer: { text: string; language: string } | null = null;
+  private lastDirections: { text: string; language: string } | null = null;
   constructor(private driver: Driver) {}
+  rememberAnswer(text: string, language: string) {
+    if (!text.trim()) return;
+    const reply = { text, language };
+    this.lastAnswer = reply;
+    // These are the localized headings emitted by the walking-route formatter.
+    // Keep a route available after an unrelated camera answer or app confirmation.
+    if (/(?:Walking directions from Google Maps:|Itinéraire piéton de Google Maps\s*:|اتجاهات المشي من Google Maps:)\s*$/.test(text.split('\n')[0])) {
+      this.lastDirections = reply;
+    }
+  }
+  clearHistory() {
+    this.lastAnswer = null;
+    this.lastDirections = null;
+  }
+  async repeatLastAnswer(directionsOnly = false) {
+    const reply = directionsOnly ? this.lastDirections : this.lastAnswer;
+    if (!reply) return false;
+    await this.answer(reply.text, reply.language);
+    return true;
+  }
   get isMuted() { return this.muted; }
   setMuted(muted: boolean) {
     this.muted = muted;

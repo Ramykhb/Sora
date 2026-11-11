@@ -1,6 +1,14 @@
-// Stream/listening controls require Hey Sora; explicit SOS phrases can act directly.
+// Stream/listening controls require Hey Sora; explicit playback/SOS phrases work directly.
 export type StreamCommand = 'pause-stream' | 'resume-stream' | 'stop-stream';
-export type VoiceCommand = 'start-stream' | StreamCommand | 'stop-listening' | 'start-listening' | 'mute' | 'unmute' | 'send-sos-location';
+export type PlaybackCommand = 'repeat-answer' | 'repeat-directions' | 'stop-speaking';
+export type VoiceCommand = 'start-stream' | StreamCommand | PlaybackCommand | 'stop-listening' | 'start-listening' | 'mute' | 'unmute' | 'send-sos-location';
+function playbackCommand(transcript: string): PlaybackCommand | null {
+  const words = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().replace(/^hey sora /, '');
+  if (/^(?:repeat (?:that|(?:the |my |your )?(?:last )?answer)|say that again)(?: please)?$/.test(words)) return 'repeat-answer';
+  if (/^repeat (?:the |my |your )?(?:last )?(?:directions|route)(?: please)?$/.test(words)) return 'repeat-directions';
+  if (/^stop (?:speaking|talking|audio)(?: please)?$/.test(words)) return 'stop-speaking';
+  return null;
+}
 export function isSOSLocationCommand(transcript: string) {
   const words = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   if (/^(?:hey sora )?(?:(?:send|share) (?:an? |my )?)?(?:sos|s o s)(?: (?:to )?(?:(?:my|the) )?(?:emergency )?contact)?(?: please)?$/.test(words)) return true;
@@ -8,6 +16,8 @@ export function isSOSLocationCommand(transcript: string) {
 }
 export function voiceCommand(transcript: string): VoiceCommand | null {
   if (isSOSLocationCommand(transcript)) return 'send-sos-location';
+  const playback = playbackCommand(transcript);
+  if (playback) return playback;
   const words = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   if (/^hey sora stop listening(?: please)?$/.test(words)) return 'stop-listening';
   if (/^hey sora (?:start|resume) listening(?: please)?$/.test(words)) return 'start-listening';
@@ -22,6 +32,8 @@ export function voiceInput(transcript: string): VoiceInput | null {
   const text = transcript.trim();
   if (!text) return null;
   if (isSOSLocationCommand(text)) return { kind: 'command', action: 'send-sos-location' };
+  const playback = playbackCommand(text);
+  if (playback) return { kind: 'command', action: playback };
   // Reserve the whole prefix, including commands that haven't been implemented yet.
   if (/^hey[\s,!.:;—-]+sora\b/i.test(text)) return { kind: 'command', action: voiceCommand(text) };
   return { kind: 'question', question: text };

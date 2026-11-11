@@ -99,6 +99,16 @@ Each command receives spoken confirmation. Voice listening remains available whi
 the stream is paused, so resume and stop work without touching the screen. Open
 sessions remain controllable when you visit Preferences or another screen.
 
+### Repeat and stop spoken answers
+
+- **“Repeat that”**, **“say that again”**, or **“Hey Sora, repeat the last answer”** replays the most recent answer in its original language.
+- **“Repeat the directions”** or **“Hey Sora, repeat my route”** replays the last walking route, including its steps and distances, even after an unrelated camera answer.
+- **“Stop speaking”**, **“stop talking”**, or **“Hey Sora, stop audio”** stops playback and suppresses a pending hands-free spoken reply. It does not mute future answers, pause the camera, or disable listening.
+
+These are exact command phrases, optionally followed by “please.” They do not send a question or fetch another route. They also work while ordinary questions or the stream are paused, provided foreground voice commands are enabled. Muted playback stays muted; unmute with “Hey Sora, unmute” before replaying. If there is no answer or route to repeat, Sora explains what to ask first. App confirmations, errors, and obstacle alerts do not replace the remembered answer. Answers from the voice assistant, typed questions, scene/text results, and manually selected answer playback can be remembered.
+
+Replay history is held only in the current app process, clears on sign-out/account/server changes and provider teardown, and is not restored from backend history after an app restart. This is separate from the backend's persistent destination memory. A repeated answer describes the original evidence; replay does not analyze a new frame or recalculate a route. Reload the app's JavaScript to receive these controls; no native rebuild is required.
+
 Preferences includes a **Hands-free voice** switch, listening status and a retry
 button. The switch controls automatic questions and commands. Listening pauses in
 the background and while recording a voice question, then resumes. During SORA

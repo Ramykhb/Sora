@@ -76,9 +76,14 @@ Destination memory stays within the same session and its retained answers. It su
 | “Hey Sora, stop stream” | Ends capture while preserving retained moments until expiry. |
 | “Hey Sora, stop listening” / “start listening” | Disables or enables ordinary hands-free questions; explicit app commands remain available. |
 | “Hey Sora, mute” / “unmute” | Changes spoken-answer output. |
+| “Repeat that” / “Say that again” | Replays the last answer in its original language without another API request. |
+| “Repeat the directions” | Replays the last walking route, even after another camera answer. |
+| “Stop speaking” | Stops current audio and suppresses a pending hands-free reply; keeps the camera and listening active. |
 | “Send my location to my SOS contact” | Submits a location email to the contact saved in Settings. |
 
 Ordinary questions, including route requests, do **not** need the wake phrase. Every utterance beginning with “Hey Sora” is reserved for app controls; unsupported commands receive feedback instead of being sent as questions. Listening runs while the app is open, pauses in the background, and remains available during answer playback so the user can interrupt speech. SOS submission requires location permission and configured email delivery; it does not dispatch emergency services or confirm that the recipient has read the message.
+
+Repeat and stop-speaking commands also accept the “Hey Sora” prefix and remain available while ordinary questions or the stream are paused. Playback respects mute; say “Hey Sora, unmute” first if needed. Replay history is held in the current app process and cleared on sign-out, account/server changes, or provider teardown. App confirmations and obstacle alerts do not replace the remembered answer. Repeating a route replays its existing instructions; it does not refresh the route or the camera scene.
 
 ## Architecture and technology
 
@@ -291,7 +296,7 @@ npm test
 npm run build
 ```
 
-The latest targeted validation on **November 11, 2026** passed **176 backend tests**, covering walking/Gemini behavior, Places/Routes, destination memory, evidence freshness, configuration, and authentication, plus all **93 mobile tests** and mobile type/lint checks. Backend Ruff checks passed for the changed Python files. These are automated software checks; they do not establish real-world obstacle recall, route accessibility, speech accuracy, or physical-device usability.
+The latest targeted validation on **November 11, 2026** passed **176 backend tests**, covering walking/Gemini behavior, Places/Routes, destination memory, evidence freshness, configuration, and authentication, plus all **108 mobile tests** and mobile type/lint checks. Backend Ruff checks passed for the changed Python files. These are automated software checks; they do not establish real-world obstacle recall, route accessibility, speech accuracy, or physical-device usability.
 
 Real-service checks are available after model preparation:
 

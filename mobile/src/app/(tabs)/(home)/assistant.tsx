@@ -75,6 +75,7 @@ function Assistant() {
   const receiveAnswer = useCallback((answer: Answer, readAloud = false) => {
     if (answer.session_id !== selectedId.current) return;
     setAnswers(previous => [answer, ...previous.filter(value => value.id !== answer.id)]);
+    speech.rememberAnswer(answer.answer, answer.language);
     if (readAloud && !voicePending.current && speak && !spoken.current.has(answer.id)) {
       spoken.current.add(answer.id); void speech.answer(answer.answer, answer.language);
     }

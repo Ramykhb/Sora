@@ -6,6 +6,7 @@ const vm = require('node:vm');
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
 const { VoiceLevelMeter } = require('../src/lib/voice-level.ts');
 const { voiceCommand, voiceInput, VoiceAudioGate } = require('../src/lib/voice-commands.ts');
+const { SpeechController } = require('../src/lib/speech-policy.ts');
 
 test('only a wake-prefixed start-stream command controls the app', () => {
   for (const phrase of ['Hey Sora, start stream!', 'HEY SORA START THE STREAM', 'hey sora start stream please']) assert.equal(voiceCommand(phrase), 'start-stream');
@@ -29,14 +30,18 @@ test('listening stays paused until every audio user releases it', () => {
 
 const providerSource = ts.transpileModule(fs.readFileSync(require.resolve('../src/providers/voice-commands.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 function mount({ native = true, granted = true, permissionPromise, enabled = true, questionsEnabled = true } = {}) {
-  const effects = [], cleanups = [], listeners = new Map(), navigation = [], starts = [], spoken = [], statuses = [], timers = new Map();
+  const effects = [], cleanups = [], listeners = new Map(), navigation = [], starts = [], spoken = [], spokenLanguages = [], statuses = [], timers = new Map();
   const preferences = { speak: true, onboarded: true, voiceCommands: enabled, handsFreeQuestions: questionsEnabled };
   const preferenceUpdates = [];
   const sosCalls = [];
   const gate = new VoiceAudioGate();
   const meter = new VoiceLevelMeter();
   const appState = { currentState: 'active', addEventListener: () => ({ remove() {} }) };
-  let imports = 0, aborts = 0, stops = 0, speechStops = 0, now = 10000, muted = false;
+  let imports = 0, aborts = 0, stops = 0, speechStops = 0, now = 10000;
+  const speech = new SpeechController({
+    async stop() { speechStops++; },
+    speak(text, options) { spoken.push(text); spokenLanguages.push(options.language); },
+  });
   const recognizer = {
     isRecognitionAvailable: () => true,
     requestPermissionsAsync: () => permissionPromise || Promise.resolve({ granted }),
@@ -65,7 +70,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
       if (name === '@/lib/emergency') return { shareSOSLocation: async () => { sosCalls.push(true); return 'Your location email was submitted to your SOS contact.'; } };
       if (name === '@/lib/voice-level') return { voiceLevel: meter };
       if (name === '@/lib/voice-commands') return { voiceAudioGate: gate, voiceInput };
-      if (name === '@/lib/speech') return { speech: { async setMuted(value) { muted = value; if (value) speechStops++; }, async answer(text) { if (!muted) spoken.push(text); }, async stop() { speechStops++; } } };
+      if (name === '@/lib/speech') return { speech };
       if (name === 'expo-speech-recognition') { imports++; assert.equal(native, true); return { ExpoSpeechRecognitionModule: recognizer }; }
       throw new Error(`Unexpected import ${name}`);
     },
@@ -73,7 +78,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
   const view = exports.VoiceCommandsProvider({ children: null });
   effects.forEach(fn => { const cleanup = fn(); if (cleanup) cleanups.push(cleanup); });
   return {
-    navigation, starts, spoken, statuses, sosCalls, gate, appState, view, imports, preferenceUpdates, preferences, meter,
+    navigation, starts, spoken, spokenLanguages, statuses, sosCalls, gate, appState, view, imports, preferenceUpdates, preferences, meter, speech,
     get stops() { return stops; },
     get speechStops() { return speechStops; },
     get aborts() { return aborts; },
@@ -83,6 +88,157 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
   };
 }
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+
+test('explicit repeat and stop-speaking commands work with or without the wake phrase', () => {
+  for (const [action, phrases] of [
+    ['repeat-answer', ['Repeat that', 'say that again', 'Hey Sora, repeat the last answer please']],
+    ['repeat-directions', ['repeat the directions', 'repeat directions', 'Hey Sora, repeat my route please']],
+    ['stop-speaking', ['stop speaking', 'Stop talking please', 'Hey Sora, stop audio']],
+  ]) {
+    for (const phrase of phrases) {
+      assert.equal(voiceCommand(phrase), action);
+      assert.deepEqual(voiceInput(phrase), { kind: 'command', action });
+    }
+  }
+  for (const phrase of ['stop', 'repeat', 'do not stop speaking', 'How do I repeat that?', 'repeat the directions to McDonalds', 'Hey Sora repeat that tomorrow']) {
+    assert.equal(voiceCommand(phrase), null);
+  }
+});
+
+test('repeat replays the exact last reply and language without sending another question', async () => {
+  const app = mount(), questions = [];
+  app.view.props.value.registerQuestions(async question => {
+    questions.push(question);
+    return { answer: 'Une porte est visible.', language: 'fr' };
+  });
+  await flush(); app.tick();
+  const say = async transcript => { app.emit('result', { results: [{ transcript }], isFinal: true }); await flush(); };
+  await say('what is in front of me');
+  await say('Hey Sora repeat that');
+  assert.deepEqual(questions, ['what is in front of me']);
+  assert.deepEqual(app.spoken, ['Une porte est visible.', 'Une porte est visible.']);
+  assert.deepEqual(app.spokenLanguages, ['fr', 'fr']);
+  app.cleanup();
+});
+
+test('repeat directions retains the route after a camera answer and app confirmation', async () => {
+  const app = mount(), questions = [];
+  const route = 'Cafe is approximately 500 m away on foot. Walking directions from Google Maps:\n1. Head north (100 m).\n2. Turn right (400 m).';
+  app.view.props.value.registerQuestions(async question => {
+    questions.push(question);
+    return { answer: questions.length === 1 ? route : 'A chair is visible.', language: 'en' };
+  });
+  await flush(); app.tick();
+  const say = async transcript => { app.emit('result', { results: [{ transcript }], isFinal: true }); await flush(); };
+  await say('start trip to the nearest cafe');
+  await say('what is in front of me');
+  await say('hey sora unmute');
+  await say('repeat the directions');
+  assert.equal(app.spoken.at(-1), route);
+  assert.equal(questions.length, 2);
+  assert.equal(app.preferenceUpdates.length, 1);
+  app.cleanup();
+});
+
+test('missing replay content gives guidance and never becomes a backend question', async () => {
+  const app = mount(), questions = [];
+  app.view.props.value.registerQuestions(async question => { questions.push(question); return { answer: 'Unused', language: 'en' }; });
+  await flush(); app.tick();
+  const say = async transcript => { app.emit('result', { results: [{ transcript }], isFinal: true }); await flush(); };
+  await say('repeat that');
+  assert.match(app.spoken.at(-1), /no answer to repeat/);
+  await say('repeat the directions');
+  assert.match(app.spoken.at(-1), /no directions to repeat/);
+  await say('say that again');
+  assert.match(app.spoken.at(-1), /no answer to repeat/);
+  assert.equal(questions.length, 0);
+  app.cleanup();
+});
+
+test('stop speaking silences pending answers without muting, changing the stream, or disabling questions', async () => {
+  const app = mount(), controls = [];
+  let resolve;
+  app.view.props.value.registerStream(async command => { controls.push(command); return 'Unexpected'; });
+  app.view.props.value.registerQuestions(() => new Promise(done => { resolve = done; }));
+  await flush(); app.tick();
+  const say = async transcript => { app.emit('result', { results: [{ transcript }], isFinal: true }); await flush(); };
+  await say('describe the scene');
+  await say('stop speaking');
+  resolve({ answer: 'Delayed answer must stay silent.', language: 'en' }); await flush();
+  assert.equal(app.spoken.length, 0);
+  assert.equal(await app.speech.repeatLastAnswer(), false);
+  assert.equal(app.preferences.handsFreeQuestions, true);
+  assert.equal(app.preferences.speak, true);
+  assert.deepEqual(controls, []);
+  assert.equal(app.preferenceUpdates.length, 0);
+  assert.ok(app.speechStops > 0);
+  app.view.props.value.registerQuestions(async () => ({ answer: 'A fresh answer.', language: 'en' }));
+  await say('what is ahead');
+  assert.equal(app.spoken.at(-1), 'A fresh answer.');
+  app.cleanup();
+});
+
+test('a stop command cancels a repeat still waiting to stop previous audio', async () => {
+  const app = mount();
+  await flush(); app.tick();
+  app.speech.rememberAnswer('An earlier answer.', 'en');
+  const stop = app.speech.stop.bind(app.speech);
+  let release, stops = 0;
+  app.speech.stop = async () => {
+    await stop();
+    if (++stops === 1) await new Promise(done => { release = done; });
+  };
+  const say = async transcript => { app.emit('result', { results: [{ transcript }], isFinal: true }); await flush(); };
+  await say('repeat that');
+  await say('stop speaking');
+  release(); await flush();
+  assert.equal(app.spoken.length, 0);
+  app.cleanup();
+});
+
+test('replay works while questions or the stream are paused and still respects mute', async () => {
+  const app = mount({ questionsEnabled: false }), questions = [];
+  app.view.props.value.registerQuestions(async question => { questions.push(question); return { answer: 'Unused', language: 'en' }; });
+  app.view.props.value.registerStream(async () => 'Unexpected', () => true);
+  await flush(); app.tick();
+  app.speech.rememberAnswer('The last answer.', 'en');
+  const say = async transcript => { app.emit('result', { results: [{ transcript }], isFinal: true }); await flush(); };
+  await say('repeat that');
+  assert.equal(app.spoken.at(-1), 'The last answer.');
+  await say('hey sora mute');
+  const count = app.spoken.length;
+  await say('say that again');
+  assert.equal(app.spoken.length, count);
+  assert.ok(app.statuses.some(value => typeof value === 'string' && /Voice is muted/.test(value)));
+  assert.equal(questions.length, 0);
+  app.cleanup();
+});
+
+test('cleanup clears replay history and rejects a reply arriving after logout or unmount', async () => {
+  const app = mount();
+  let resolve;
+  app.view.props.value.registerQuestions(() => new Promise(done => { resolve = done; }));
+  await flush(); app.tick();
+  app.speech.rememberAnswer('Previous private answer.', 'en');
+  app.emit('result', { results: [{ transcript: 'describe the scene' }], isFinal: true });
+  app.cleanup();
+  resolve({ answer: 'Late private answer.', language: 'en' }); await flush();
+  assert.equal(app.spoken.length, 0);
+  assert.equal(await app.speech.repeatLastAnswer(), false);
+});
+
+test('speaker echoes of playback commands cannot trigger replay or stop speech', async () => {
+  const app = mount();
+  await flush(); app.tick();
+  const release = app.gate.playback('You can say repeat that, repeat the directions, or stop speaking.');
+  for (const transcript of ['repeat that', 'repeat the directions', 'stop speaking']) {
+    app.emit('result', { results: [{ transcript }], isFinal: true });
+  }
+  await flush();
+  assert.equal(app.spoken.length, 0);
+  assert.equal(app.speechStops, 0);
+  release(); app.cleanup();
+});
 
 test('recognizer restarts after silence and ignores unrelated speech, duplicates, audio playback and background commands', async () => {
   const app = mount();

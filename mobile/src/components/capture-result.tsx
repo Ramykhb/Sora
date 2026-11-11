@@ -72,7 +72,9 @@ function Result({ text }: { text: boolean }) {
   const content = text ? frame?.ocr_text : answer || frame?.caption;
   const resultCopy = content || (error && !frame ? 'Refresh or capture another image to continue.' : processing ? 'Your image is being analyzed.' : frame ? text ? 'No readable text detected. Try a closer, well-lit image.' : 'No scene description available. Try describing again.' : 'Loading your result…');
   useEffect(() => {
-    if (!content || !preferences.speak || !focused || spoken.current === content) return;
+    if (!content || !focused) return;
+    speech.rememberAnswer(content, language);
+    if (!preferences.speak || spoken.current === content) return;
     spoken.current = content; void speech.answer(content, language);
   }, [content, preferences.speak, focused, language]);
   useHandsFreeQuestions(async question => {
@@ -89,7 +91,7 @@ function Result({ text }: { text: boolean }) {
   }, `${sessionId}:${frameId}`);
   async function play() {
     if (playing) { await speech.stop(); setPlaying(false); return; }
-    if (content) { await speech.answer(content, language, () => setPlaying(false)); setPlaying(true); }
+    if (content) { speech.rememberAnswer(content, language); await speech.answer(content, language, () => setPlaying(false)); setPlaying(true); }
   }
   function retake() { router.replace({ pathname: '/camera', params: { mode: text ? 'text' : 'scene', sessionId } }); }
   async function describe() {

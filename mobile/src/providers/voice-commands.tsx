@@ -17,7 +17,7 @@ type StreamHandler = (command: StreamCommand) => Promise<string>;
 type StreamTarget = { control: StreamHandler; isPaused: () => boolean };
 const Context = createContext<{ status: string; retry: () => void; setQuestionListening: (enabled: boolean) => void; registerStream: (control: StreamHandler, isPaused?: () => boolean) => () => void; refreshStreamState: () => void; registerQuestions: (ask: QuestionHandler, contextKey?: string) => () => void }>({ status: '', retry: () => {}, setQuestionListening: () => {}, registerStream: () => () => {}, refreshStreamState: () => {}, registerQuestions: () => () => {} });
 export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
-  const { api, tokens, ready } = useAuth();
+  const { api, tokens, ready, serverUrl } = useAuth();
   const { preferences, update } = usePreferences();
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [paused, setPaused] = useState(voiceAudioGate.paused);
@@ -38,6 +38,14 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
     asking.current = false;
     setThinking(false);
   }, []);
+  useEffect(() => {
+    speech.clearHistory();
+    return () => {
+      cancelQuestions();
+      speech.clearHistory();
+      void speech.stop().catch(() => {});
+    };
+  }, [tokens?.user?.id, serverUrl, cancelQuestions]);
   useEffect(() => {
     if (questionsEnabled.current !== preferences.handsFreeQuestions) {
       questionGeneration.current++;
@@ -117,7 +125,10 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
       asking.current = true; setThinking(true);
       try {
         const reply = await target.ask(question);
-        if (generation === questionGeneration.current && stillHere(target)) await speech.answer(reply.answer, reply.language);
+        if (generation === questionGeneration.current && stillHere(target)) {
+          speech.rememberAnswer(reply.answer, reply.language);
+          await speech.answer(reply.answer, reply.language);
+        }
       } catch (error) {
         if (generation === questionGeneration.current && stillHere(target)) await speech.answer(error instanceof Error ? error.message : 'Unable to answer. Please try again.', 'en');
       } finally { if (generation === questionGeneration.current) { asking.current = false; setThinking(false); } }
@@ -142,6 +153,30 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
         if (AppState.currentState === 'active') await speech.answer(error instanceof Error ? error.message : 'Unable to control your stream. Please try again.', 'en');
       } finally { controllingStream.current = false; }
     }
+    async function repeatReply(directionsOnly: boolean) {
+      cancelQuestions();
+      const generation = questionGeneration.current;
+      try {
+        await speech.stop();
+        if (disposed || generation !== questionGeneration.current || AppState.currentState !== 'active') return;
+        if (speech.isMuted) {
+          setStatus('Voice is muted. Say Hey Sora, unmute before repeating an answer.');
+          return;
+        }
+        const repeated = await speech.repeatLastAnswer(directionsOnly);
+        if (repeated) {
+          setStatus(directionsOnly ? 'Repeating the last directions.' : 'Repeating the last answer.');
+        } else {
+          const message = directionsOnly
+            ? 'There are no directions to repeat yet. Ask for a walking route first.'
+            : 'There is no answer to repeat yet. Ask a question first.';
+          setStatus(message);
+          await speech.answer(message, 'en');
+        }
+      } catch {
+        setStatus('Unable to repeat the answer. Please try again.');
+      }
+    }
     function fail(message: string) {
       blocked.current = true;
       clearTimeout(levelTimer); voiceLevel.setListening(false);
@@ -152,7 +187,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
     function start() {
       if (disposed || AppState.currentState !== 'active' || voiceAudioGate.paused || blocked.current) return;
       try {
-        recognizer!.start({ lang: 'en-US', continuous: true, interimResults: true, maxAlternatives: 1, volumeChangeEventOptions: { enabled: true, intervalMillis: 80 }, iosVoiceProcessingEnabled: true, iosCategory: { category: 'playAndRecord', categoryOptions: ['defaultToSpeaker', 'allowBluetooth'], mode: 'voiceChat' }, contextualStrings: ['Hey Sora', 'Hey Sora start stream', 'Hey Sora pause stream', 'Hey Sora resume stream', 'Hey Sora stop stream', 'Hey Sora stop listening', 'Hey Sora start listening', 'Hey Sora resume listening', 'Hey Sora mute', 'Hey Sora unmute', 'Describe the scene'], recordingOptions: { persist: false } });
+        recognizer!.start({ lang: 'en-US', continuous: true, interimResults: true, maxAlternatives: 1, volumeChangeEventOptions: { enabled: true, intervalMillis: 80 }, iosVoiceProcessingEnabled: true, iosCategory: { category: 'playAndRecord', categoryOptions: ['defaultToSpeaker', 'allowBluetooth'], mode: 'voiceChat' }, contextualStrings: ['Hey Sora', 'Hey Sora start stream', 'Hey Sora pause stream', 'Hey Sora resume stream', 'Hey Sora stop stream', 'Hey Sora stop listening', 'Hey Sora start listening', 'Hey Sora resume listening', 'Hey Sora mute', 'Hey Sora unmute', 'Repeat that', 'Repeat the directions', 'Stop speaking', 'Hey Sora repeat that', 'Hey Sora repeat the directions', 'Hey Sora stop speaking', 'Describe the scene'], recordingOptions: { persist: false } });
       } catch { fail('Voice listening could not start. Retry voice commands in Preferences.'); }
     }
     const subscriptions = [
@@ -193,7 +228,13 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
         // Reset cumulative transcripts before listening for the next utterance.
         recognizer.abort();
         if (input.kind === 'command') {
-          if (input.action === 'send-sos-location') {
+          if (input.action === 'stop-speaking') {
+            cancelQuestions();
+            void speech.stop().catch(() => {});
+            setStatus('Speech stopped. Listening is still on.');
+          } else if (input.action === 'repeat-answer' || input.action === 'repeat-directions') {
+            void repeatReply(input.action === 'repeat-directions');
+          } else if (input.action === 'send-sos-location') {
             if (sendingSOS.current) return;
             sendingSOS.current = true;
             setStatus('Getting your location for SOS…');
@@ -215,7 +256,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
             setQuestionListening(enabled);
             void speech.answer(enabled
               ? streamPaused.current ? 'Question listening is on. Resume your stream to ask questions.' : 'Listening for questions again.'
-              : 'I will only respond to Hey Sora commands. Say Hey Sora, start listening to ask questions again.', 'en');
+              : 'Questions are paused. Playback controls and Hey Sora commands remain available. Say Hey Sora, start listening to ask questions again.', 'en');
           } else if (input.action === 'start-stream') router.navigate({ pathname: '/camera', params: { mode: 'live', voiceStart: String(Date.now()) } });
           else if (input.action) void controlStream(input.action);
           else void speech.answer('That app command is not available yet.', 'en');
@@ -251,7 +292,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
     })();
     return () => { disposed = true; clearTimeout(levelTimer); voiceLevel.setListening(false); voiceAudioGate.setRecognitionState('off'); clearTimeout(timer); clearTimeout(utteranceTimer); subscriptions.forEach(sub => sub.remove()); recognizer.abort(); };
   }, [api, ready, tokens, preferences.onboarded, preferences.voiceCommands, recognizer, foreground, paused, attempt, cancelQuestions, refreshStreamState, setQuestionListening, update]);
-  const displayStatus = !ready || !tokens || !preferences.onboarded || !preferences.voiceCommands ? 'Voice commands are off.' : !recognizer ? Platform.OS === 'web' ? 'Voice commands are available in the mobile app.' : 'Install a new development build to enable Hey Sora voice commands.' : !foreground ? 'Voice listening pauses while SORA is in the background.' : paused ? 'Voice listening paused for audio.' : commandsOnlyForStream ? 'Stream paused. Only Hey Sora commands are active.' : !preferences.handsFreeQuestions ? 'Only Hey Sora commands are active. Say “Hey Sora, start listening” for questions.' : thinking ? 'Thinking about your question…' : status;
+  const displayStatus = !ready || !tokens || !preferences.onboarded || !preferences.voiceCommands ? 'Voice commands are off.' : !recognizer ? Platform.OS === 'web' ? 'Voice commands are available in the mobile app.' : 'Install a new development build to enable Hey Sora voice commands.' : !foreground ? 'Voice listening pauses while SORA is in the background.' : paused ? 'Voice listening paused for audio.' : commandsOnlyForStream ? 'Stream paused. Playback and Hey Sora commands are active.' : !preferences.handsFreeQuestions ? 'Playback and Hey Sora commands are active. Say “Hey Sora, start listening” for questions.' : thinking ? 'Thinking about your question…' : status;
   return <Context.Provider value={{ status: displayStatus, registerQuestions, registerStream, refreshStreamState, setQuestionListening, retry: () => { blocked.current = false; setAttempt(value => value + 1); } }}>{children}</Context.Provider>;
 }
 export function useVoiceCommands() { return useContext(Context); }

@@ -77,3 +77,53 @@ test('global mute stops playback and suppresses answers and alerts until unmuted
   await speech.answer('Voice unmuted', 'en');
   assert.equal(spoken.at(-1).text, 'Voice unmuted');
 });
+
+test('repeat preserves the answer and language across feedback, alerts, and stopping', async () => {
+  const { speech, spoken } = setup();
+  speech.rememberAnswer('Une chaise est devant la porte.', 'fr');
+  await speech.answer('Stream paused.', 'en');
+  await speech.alert('new-alert', 'Object in the center.', 'en', new Date(Date.now() + 2000).toISOString());
+  await speech.stop();
+  assert.equal(await speech.repeatLastAnswer(), true);
+  assert.equal(spoken.at(-1).text, 'Une chaise est devant la porte.');
+  assert.equal(spoken.at(-1).options.language, 'fr');
+});
+
+for (const [language, route] of [
+  ['en', 'Cafe is approximately 500 m away on foot. Walking directions from Google Maps:\n1. Head north (100 m).'],
+  ['fr', 'Cafe est à environ 500 m à pied. Itinéraire piéton de Google Maps :\n1. Tournez à droite (100 m).'],
+  ['ar', 'يقع Cafe على بُعد نحو 500 m سيراً على الأقدام. اتجاهات المشي من Google Maps:\n1. انعطف يميناً (100 m).'],
+]) {
+  test(`repeat directions retains the complete ${language} route after another answer`, async () => {
+    const { speech, spoken } = setup();
+    speech.rememberAnswer(route, language);
+    speech.rememberAnswer('A door is visible.', 'en');
+    assert.equal(await speech.repeatLastAnswer(), true);
+    assert.equal(spoken.at(-1).text, 'A door is visible.');
+    assert.equal(await speech.repeatLastAnswer(true), true);
+    assert.equal(spoken.at(-1).text, route);
+    assert.equal(spoken.at(-1).options.language, language);
+  });
+}
+
+test('missing and cleared replay history never falls back to unrelated speech', async () => {
+  const { speech, spoken } = setup();
+  await speech.answer('There is no answer to repeat yet.', 'en');
+  assert.equal(await speech.repeatLastAnswer(), false);
+  speech.rememberAnswer('A chair.', 'en');
+  assert.equal(await speech.repeatLastAnswer(true), false);
+  speech.clearHistory();
+  assert.equal(await speech.repeatLastAnswer(), false);
+  assert.equal(spoken.length, 1);
+});
+
+test('mute suppresses replay without deleting the remembered response', async () => {
+  const { speech, spoken } = setup();
+  speech.rememberAnswer('A chair.', 'en');
+  await speech.setMuted(true);
+  await speech.repeatLastAnswer();
+  assert.equal(spoken.length, 0);
+  await speech.setMuted(false);
+  await speech.repeatLastAnswer();
+  assert.equal(spoken[0].text, 'A chair.');
+});

@@ -52,12 +52,13 @@ export function AnswerCard({ answer, onError }: { answer: Answer; onError: (mess
         await file.write(new Uint8Array(data)); media.current = file; uri = file.uri;
       }
       if (!mounted.current || generation !== playbackGeneration.current) { clearMedia(); return; }
+      speech.rememberAnswer(answer.answer, answer.language);
       player.replace({ uri }); player.play();
     } catch (e) { if (mounted.current) onError(e instanceof Error ? e.message : 'Audio playback failed'); }
     finally { if (mounted.current) setBusy(false); }
   }
   return <Card style={{ gap: 14 }}><View style={{ flexDirection: 'row', gap: 9, alignItems: 'flex-start' }}><Icon name="mic-outline" size={18} color={colors.accent} /><View style={{ flex: 1, gap: 5 }}><Label muted size={10}>YOU ASKED</Label><Label bold size={15}>{answer.question}</Label></View></View><View style={{ backgroundColor: colors.elevated, borderRadius: 12, padding: 14, gap: 9 }}><View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}><Icon name="sparkles-outline" size={15} /><Label bold size={10} style={{ color: colors.primary }}>SORA</Label></View><Label size={14} selectable>{answer.answer}</Label></View>{answer.uncertain && <Label muted size={12}>Sora is uncertain about this answer.</Label>}{answer.processing_warnings.map(w => <Label key={w} style={{ color: colors.danger }}>{w}</Label>)}<Label muted size={10}>{new Date(answer.created_at).toLocaleString()} · {answer.evidence_frame_ids.length} evidence images</Label>
-    <View style={ui.row}><Action title="Read aloud" disabled={!preferences.speak} onPress={() => void speech.answer(answer.answer, answer.language)} /><Action title="Server voice" disabled={busy || !preferences.speak} onPress={() => void audio()} /><Action title="Stop audio" onPress={() => void speech.stop()} /></View>
+    <View style={ui.row}><Action title="Read aloud" disabled={!preferences.speak} onPress={() => { speech.rememberAnswer(answer.answer, answer.language); void speech.answer(answer.answer, answer.language); }} /><Action title="Server voice" disabled={busy || !preferences.speak} onPress={() => void audio()} /><Action title="Stop audio" onPress={() => void speech.stop()} /></View>
     <View style={ui.row}>{(['correct', 'incorrect', 'unsure'] as const).map(rating => <Action key={rating} disabled={busy} title={`${feedback === rating ? '✓ ' : ''}${rating}`} onPress={() => {
       setBusy(true); void api.request(`/sessions/${answer.session_id}/questions/${answer.id}/feedback`, 'POST', { rating }).then(() => setFeedback(rating)).catch(e => onError(e.message)).finally(() => setBusy(false));
     }} />)}</View>
