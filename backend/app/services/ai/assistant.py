@@ -214,15 +214,31 @@ async def answer_question(session_id, request, source="text"):
     place_question = (request.scope != "memory" and not (request.since or request.until)
                       and places.is_place_question(request.question)
                       and not IDENTITY_QUESTION.search(request.question))
+    trip_question = place_question and places.is_trip_question(request.question)
+    # Only place turns participate in destination memory. Empty context records
+    # an unsuccessful new search so "there" never silently reuses an older place.
+    place_context = {} if place_question else None
+    if place_question and places.is_destination_reference(request.question):
+        async with SessionFactory() as db:
+            previous = await db.scalar(select(QuestionAnswer).where(
+                QuestionAnswer.session_id == session_id,
+                QuestionAnswer.expires_at > now(),
+                QuestionAnswer.place_context.is_not(None),
+            ).order_by(QuestionAnswer.created_at.desc(), QuestionAnswer.id.desc()).limit(1))
+            if previous is not None:
+                place_context = dict(previous.place_context or {})
     use_cloud = not place_question and scope == "recent" and gemini.configured() and not IDENTITY_QUESTION.search(request.question) and (walking or not is_overview(request.question))
+    cloud_answer_used = False
     budget = (settings.places_timeout_seconds + settings.groq_timeout_seconds + 1) if place_question else (settings.gemini_deadline_seconds if use_cloud else settings.current_answer_timeout_seconds)
+    if trip_question:
+        budget += settings.routes_timeout_seconds
     try:
         # Includes snapshot processing and waiting for the model gate, not just
         # HTTP inference. Current-view questions must not wait for minutes only
         # to lose their evidence at the end.
         async with asyncio.timeout(budget if place_question or scope == "recent" else None):
             if place_question:
-                answer, uncertain, evidence, warnings = await places.answer_nearby(request, language)
+                answer, uncertain, evidence, warnings = await places.answer_nearby(request, language, place_context=place_context)
             elif use_cloud:
                 try:
                     # Reserve time for the local fallback within the same deadline.
@@ -230,6 +246,7 @@ async def answer_question(session_id, request, source="text"):
                         answer, uncertain, evidence, warnings = await answer_cloud_view(
                             session_id, request, language, walking=walking,
                         )
+                        cloud_answer_used = True
                 except (BackendError, TimeoutError) as exc:
                     reason = exc.code if isinstance(exc, BackendError) else "gemini_timeout"
                     answer, uncertain, evidence, warnings = await answer_overview(
@@ -254,6 +271,11 @@ async def answer_question(session_id, request, source="text"):
         if place_question:
             answer = places.MESSAGES["places_unavailable"][("en", "fr", "ar").index(language)]
             warnings = ["places_timeout"]
+            if trip_question:
+                from app.services.ai.directions import MESSAGES
+
+                answer = MESSAGES["routes_unavailable"][language]
+                warnings = ["routes_timeout"]
     await get_session(session_id)
     # Revalidate after inference: expensive CPU inference must not turn an old frame
     # into an assertion about the current scene or expose already-expired evidence.
@@ -266,10 +288,12 @@ async def answer_question(session_id, request, source="text"):
             Frame.expires_at > now(),
         ]
         if scope == "recent":
+            max_age = settings.recent_evidence_seconds
+            if walking:
+                max_age = (settings.gemini_walking_max_age_seconds if cloud_answer_used
+                           else settings.detection_max_age_seconds)
             filters.append(
-                Frame.captured_at >= now() - timedelta(seconds=(
-                    settings.detection_max_age_seconds if walking else settings.recent_evidence_seconds
-                ))
+                Frame.captured_at >= now() - timedelta(seconds=max_age)
             )
         async with SessionFactory() as db:
             valid = {str(x) for x in (await db.scalars(select(Frame.id).where(*filters))).all()}
@@ -287,6 +311,7 @@ async def answer_question(session_id, request, source="text"):
         evidence_frame_ids=evidence,
         source=source,
         processing_warnings=list(dict.fromkeys(warnings)),
+        place_context=place_context,
         latency_ms=(perf_counter() - start) * 1000,
         expires_at=now() + timedelta(hours=settings.frame_retention_hours),
     )

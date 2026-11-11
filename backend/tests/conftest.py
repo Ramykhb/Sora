@@ -62,6 +62,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(processing, "detect_live", lambda _: (
         100, 100, [{"label": "chair", "confidence": 0.9, "box": [20, 20, 80, 95]}]
     ))
+    monkeypatch.setattr("app.services.ai.live_answer.detect_live", processing.detect_live)
     monkeypatch.setattr(ingestion, "read_text", lambda *args: ("EXIT", 95))
     # Background enrichment is driven explicitly in its integration tests.
     async def idle_enrichment():

@@ -179,11 +179,11 @@ def walking_observation(objects, width, language):
             "ar": "لم يتم اكتشاف أجسام مدعومة في صورة الكاميرا.",
         }[language]
     limits = {
-        "en": "I can't confirm the route; steps, drop-offs and hazards outside the image may be missed.",
-        "fr": "Je ne peux pas confirmer le passage ; des marches, dénivelés et dangers hors image peuvent échapper à la détection.",
-        "ar": "لا يمكنني تأكيد حالة المسار؛ قد لا تُكتشف الدرجات والحفر والمخاطر خارج الصورة.",
+        "en": "Not sure about the walking path: object detection alone can't confirm the ground or passage.",
+        "fr": "Le passage reste indéterminé : la détection d’objets seule ne permet pas d’évaluer le sol ou le passage.",
+        "ar": "حالة المسار غير محددة؛ كشف الأجسام وحده لا يكفي لتقييم الأرض أو الممر.",
     }[language]
-    return observed + " " + limits
+    return limits + " " + observed
 
 
 async def answer_overview(session_id, request, language, *, walking=False):

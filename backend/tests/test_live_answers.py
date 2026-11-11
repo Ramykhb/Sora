@@ -85,7 +85,7 @@ def test_overview_responds_while_ocr_and_generative_inference_are_busy(client, m
     assert "current_view_timeout" not in answer.processing_warnings
     if ROUTE_QUESTION.search(question):
         assert "center" in answer.answer
-        assert "can't confirm" in answer.answer
+        assert "Not sure about the walking path" in answer.answer
     frames = api.get(f"/api/v1/sessions/{sid}/frames").json()
     assert frames[0]["enrichment_status"] == "skipped"
     assert frames[0]["ocr_text"] == ""

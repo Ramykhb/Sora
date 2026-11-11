@@ -63,15 +63,38 @@ async def answer_cloud_view(session_id, request, language, *, walking=False):
         content = await asyncio.to_thread(get_image, row.processed_object_key)
     image = await asyncio.to_thread(cloud_image, content, PRIVACY_VERSION in frame.enhancements)
     result = await gemini.ask_image(image, request.question, language)
-    if (now() - timestamp).total_seconds() > max_age:
+    # The input must be fresh, but cloud processing takes longer than one local
+    # detection interval. Bound total snapshot age separately after inference.
+    result_max_age = settings.gemini_walking_max_age_seconds if walking else max_age
+    if (now() - timestamp).total_seconds() > result_max_age:
         raise BackendError("Camera evidence became stale", 409, "gemini_evidence_stale")
     text = result.answer
+    uncertain = result.uncertain or "quality_override" in frame.processing_warnings
     if walking:
-        text += " " + {
-            "en": "I cannot confirm the route; hazards outside this view may be missed.",
-            "fr": "Je ne peux pas confirmer le passage ; des dangers hors image peuvent échapper à la détection.",
-            "ar": "لا يمكنني تأكيد حالة المسار؛ قد لا تُكتشف المخاطر خارج الصورة.",
-        }[language]
+        assessment = result.visible_path or "unknown"
+        # Missing ground may leave other hazards unknown without invalidating
+        # an observed forward blocker. Uncertainty can never promote clear space.
+        if "quality_override" in frame.processing_warnings or (result.uncertain and assessment == "unobstructed"):
+            assessment = "unknown"
+        uncertain = uncertain or assessment == "unknown"
+        prefix = {
+            "en": {
+                "unobstructed": "The visible path appears unobstructed.",
+                "blocked": "An obstacle or hazard is visible in the path.",
+                "unknown": "Not sure from this view.",
+            },
+            "fr": {
+                "unobstructed": "La partie visible du passage semble dégagée.",
+                "blocked": "Un obstacle ou un danger est visible sur le passage.",
+                "unknown": "Impossible de déterminer avec cette image.",
+            },
+            "ar": {
+                "unobstructed": "يبدو الجزء الظاهر من المسار خالياً من العوائق.",
+                "blocked": "يوجد عائق أو خطر ظاهر في المسار.",
+                "unknown": "لا يمكن التحديد من هذه الصورة.",
+            },
+        }[language][assessment]
+        text = prefix + " " + text
     evidence = [str(frame.id)]
-    answer, uncertain = guard_answer(text, result.uncertain or walking or "quality_override" in frame.processing_warnings, language, evidence)
+    answer, uncertain = guard_answer(text, uncertain, language, evidence)
     return answer, uncertain, evidence, warnings

@@ -1,7 +1,7 @@
 import { useFullscreenTabBar } from '@/providers/tab-bar';
 import { ScreenIntro, SoraHero } from '@/components/brand';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Platform, StyleSheet, Switch, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
+import { AppState, Platform, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
@@ -33,6 +33,8 @@ function Capture() {
   const [uploading, setUploading] = useState(false);
   const voice = useVoiceCommands();
   const [voiceAnswer, setVoiceAnswer] = useState('');
+  const answerScroll = useRef<ComponentRef<typeof ScrollView>>(null);
+  useEffect(() => { answerScroll.current?.scrollTo({ y: 0, animated: false }); }, [voiceAnswer]);
   const [connected, setConnected] = useState(false);
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [focused, setFocused] = useState(true); const [foreground, setForeground] = useState(AppState.currentState === 'active');
@@ -159,15 +161,17 @@ function Capture() {
     {focused && foreground && (mode === 'live' ? <LiveCamera sessionId={session.id} active={!streamPaused} fullscreen facing={facing} onConnectionChange={setConnected} /> : <CameraView ref={camera} style={StyleSheet.absoluteFill} facing={facing} />)}
     <SafeAreaView style={{ flex: 1, justifyContent: 'space-between' }} pointerEvents="box-none">
       <View style={{ flexDirection: 'row', paddingHorizontal: 18, paddingTop: 12, gap: 12, alignItems: 'center' }}><Tap label="Back to home" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} style={roundStyle}><Icon name="chevron-back" color={controlColor} /></Tap><View style={{ flex: 1, alignItems: 'center' }}><View style={{ backgroundColor: colors.cameraControl, borderColor: colors.heroEdge, borderWidth: 1, borderRadius: 30, padding: 12, flexDirection: 'row', gap: 8, alignItems: 'center' }}><View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: mode !== 'live' || connected ? colors.success : colors.primary }} /><Label bold size={12} style={{ color: controlColor }}>{mode === 'live' ? streamPaused ? 'Stream paused' : connected ? 'Live Assistance' : 'Connecting...' : mode === 'text' ? 'Read Text' : 'Describe Scene'}</Label></View></View><Tap label={preferences.speak ? 'Mute descriptions' : 'Unmute descriptions'} onPress={() => { update({ speak: !preferences.speak }); void speech.stop(); }} style={roundStyle}><Icon name={preferences.speak ? 'volume-high-outline' : 'volume-mute-outline'} color={controlColor} size={23} /></Tap></View>
-      <View pointerEvents="none" style={{ height: mode === 'live' ? '30%' : '40%', marginHorizontal: 40 }}>{[0, 1, 2, 3].map(index => <View key={index} style={{ position: 'absolute', width: 42, height: 42, borderColor: colors.cameraFrame, ...(index < 2 ? { top: 0, borderTopWidth: 4 } : { bottom: 0, borderBottomWidth: 4 }), ...(index % 2 === 0 ? { left: 0, borderLeftWidth: 4 } : { right: 0, borderRightWidth: 4 }), borderTopLeftRadius: index === 0 ? 16 : 0, borderTopRightRadius: index === 1 ? 16 : 0, borderBottomLeftRadius: index === 2 ? 16 : 0, borderBottomRightRadius: index === 3 ? 16 : 0 }} />)}</View>
-      <View style={{ gap: 8 }}>
-        <View style={{ gap: 13, backgroundColor: colors.cameraOverlay, borderColor: colors.heroEdge, borderTopWidth: 1, padding: 18, borderTopLeftRadius: 22, borderTopRightRadius: 22 }}>
+      <View pointerEvents="none" style={{ height: mode === 'live' ? '30%' : '40%', flexShrink: 1, marginHorizontal: 40 }}>{[0, 1, 2, 3].map(index => <View key={index} style={{ position: 'absolute', width: 42, height: 42, borderColor: colors.cameraFrame, ...(index < 2 ? { top: 0, borderTopWidth: 4 } : { bottom: 0, borderBottomWidth: 4 }), ...(index % 2 === 0 ? { left: 0, borderLeftWidth: 4 } : { right: 0, borderRightWidth: 4 }), borderTopLeftRadius: index === 0 ? 16 : 0, borderTopRightRadius: index === 1 ? 16 : 0, borderBottomLeftRadius: index === 2 ? 16 : 0, borderBottomRightRadius: index === 3 ? 16 : 0 }} />)}</View>
+      <View style={{ gap: 8, maxHeight: '70%', flexShrink: 1 }}>
+        <View style={{ gap: 13, flexShrink: 1, backgroundColor: colors.cameraOverlay, borderColor: colors.heroEdge, borderTopWidth: 1, padding: 18, borderTopLeftRadius: 22, borderTopRightRadius: 22 }}>
+        <ScrollView ref={answerScroll} accessibilityLabel="Live assistance messages" style={{ flexGrow: 0, flexShrink: 1 }} contentContainerStyle={{ gap: 13, paddingRight: 6, paddingBottom: 4 }} showsVerticalScrollIndicator indicatorStyle={dark ? 'white' : 'black'} keyboardShouldPersistTaps="handled">
         {mode === 'live' && <><Label bold size={14} style={{ color: controlColor, textAlign: 'center' }}>Sora · live companion</Label><VoiceWaveform commandsOnly={streamPaused || !preferences.handsFreeQuestions} /></>}
         {mode === 'live' && <View style={{ flexDirection: 'row', justifyContent: 'space-around', gap: 12 }}><Tap label={streamPaused ? 'Resume stream' : 'Pause stream'} onPress={() => void controlFromButton(streamPaused ? 'resume-stream' : 'pause-stream')} style={{ alignItems: 'center', justifyContent: 'center' }}><Label bold style={{ color: controlColor }}>{streamPaused ? 'Resume stream' : 'Pause stream'}</Label></Tap><Tap label="Stop stream" onPress={() => void controlFromButton('stop-stream')} style={{ alignItems: 'center', justifyContent: 'center' }}><Label bold style={{ color: colors.danger }}>Stop stream</Label></Tap></View>}
         {!!error && <Label accessibilityRole="alert" style={{ color: colors.danger, backgroundColor: colors.surface, padding: 12, borderRadius: 12 }}>{error}</Label>}
         {preferences.voiceCommands && <Label style={{ color: controlColor, textAlign: 'center' }} size={12}>{voice.status}</Label>}
-        {!!voiceAnswer && <Label style={{ color: controlColor }} size={14}>{voiceAnswer}</Label>}
+        {!!voiceAnswer && <Label selectable style={{ color: controlColor }} size={14}>{voiceAnswer}</Label>}
         {busy && <Label accessibilityLiveRegion="polite" style={{ color: controlColor, textAlign: 'center' }}>Processing your request…</Label>}
+        </ScrollView>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Tap label="Choose image from gallery" disabled={busy} onPress={() => void run(async () => { const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 }); if (!picked.canceled) await upload(picked.assets[0].uri, picked.assets[0].mimeType || 'image/jpeg', picked.assets[0].fileName || 'gallery.jpg'); })} style={roundStyle}><Icon name="image-outline" color={dark ? controlColor : colors.primary} size={29} /></Tap>
           <Tap label={mode === 'live' ? 'Capture and describe current scene' : 'Capture image'} disabled={busy || streamPaused} onPress={() => void run(capture)} style={{ width: 86, height: 86, borderRadius: 43, borderWidth: 5, borderColor: colors.cameraFrame, padding: 4, boxShadow: colors.primaryShadow }}><LinearGradient colors={colors.buttonGradient} style={{ flex: 1, borderRadius: 40 }} /></Tap>

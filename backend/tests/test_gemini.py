@@ -99,7 +99,8 @@ def test_cloud_path_skips_ocr_detector_and_model_gate_and_sends_blurred_pixels(c
     assert "face_blur" in stored["enhancements"]
 
 
-def test_cloud_deadline_uses_local_fallback_instead_of_slow_local_vlm(client, cloud, monkeypatch):
+@pytest.mark.parametrize("question", ["Describe the current scene in detail", "Is it safe to walk?"])
+def test_cloud_deadline_uses_local_fallback_instead_of_slow_local_vlm(client, cloud, monkeypatch, question):
     api, _ = client
     sid = UUID(create(api))
     monkeypatch.setattr(settings, "gemini_deadline_seconds", 1.2)
@@ -113,7 +114,7 @@ def test_cloud_deadline_uses_local_fallback_instead_of_slow_local_vlm(client, cl
         state.observation = {"captured_at": now().isoformat(), "expires_at": (now() + timedelta(seconds=2)).isoformat(),
                              "width": 100, "height": 100, "detected_objects": [{"label": "chair", "confidence": .9, "box": [20, 20, 80, 95]}]}
         try:
-            return await answer_question(sid, QuestionRequest(question="Describe the current scene in detail", scope="recent"))
+            return await answer_question(sid, QuestionRequest(question=question, scope="recent"))
         finally:
             await streams.stop(sid)
     start = monotonic()
@@ -121,6 +122,8 @@ def test_cloud_deadline_uses_local_fallback_instead_of_slow_local_vlm(client, cl
     assert monotonic() - start < 1.5
     assert "local_detection_fallback" in answer.processing_warnings
     assert answer.uncertain
+    if question == "Is it safe to walk?":
+        assert answer.answer.startswith("Not sure about the walking path")
 
 
 def test_cloud_walking_answer_cannot_declare_route_safe(client, cloud, monkeypatch):
@@ -135,6 +138,125 @@ def test_cloud_walking_answer_cannot_declare_route_safe(client, cloud, monkeypat
     assert "path is clear" not in answer["answer"] and "safely" not in answer["answer"]
 
 
+@pytest.mark.parametrize("assessment,reason,uncertain,prefix", [
+    ("unobstructed", "The floor ahead is visible with no apparent obstacles.", False, "The visible path appears unobstructed."),
+    ("blocked", "A chair occupies the center of the walkway.", False, "An obstacle or hazard is visible in the path."),
+    ("blocked", "A closed door blocks the passage directly ahead; the floor is out of view.", False, "An obstacle or hazard is visible in the path."),
+    ("blocked", "A wall blocks the forward passage; the ground is not visible.", True, "An obstacle or hazard is visible in the path."),
+    ("unknown", "Only a TV and wall are visible; the ground is out of view.", False, "Not sure from this view."),
+    ("unobstructed", "The ground is partly obscured by glare.", True, "Not sure from this view."),
+])
+def test_walking_cloud_assessment_uses_image_reason_without_stock_disclaimer(
+    client, cloud, monkeypatch, assessment, reason, uncertain, prefix,
+):
+    api, _ = client
+    sid = create(api)
+    upload(api, sid)
+
+    async def assess(image, question, language):
+        assert image and question == "Is it safe to walk?"
+        return gemini.GeminiAnswer(answer=reason, uncertain=uncertain, visible_path=assessment)
+
+    monkeypatch.setattr(gemini, "ask_image", assess)
+    response = api.post(f"/api/v1/sessions/{sid}/questions", json={"question": "Is it safe to walk?"})
+    assert response.status_code == 200
+    result = response.json()
+    assert result["answer"] == prefix + " " + reason
+    assert result["uncertain"] == (assessment == "unknown" or uncertain)
+    assert result["evidence_frame_ids"]
+    assert "cannot confirm the route" not in result["answer"]
+
+
+@pytest.mark.parametrize("assessment", ["unobstructed", "blocked", "unknown", None, "safe"])
+def test_walking_protocol_requires_valid_visible_path(cloud, monkeypatch, assessment):
+    def handle(request):
+        body = json.loads(request.content)
+        schema = body["generationConfig"]["responseJsonSchema"]
+        assert "visible_path" in schema["required"]
+        assert schema["properties"]["visible_path"]["enum"] == ["unobstructed", "blocked", "unknown"]
+        prompt = body["systemInstruction"]["parts"][0]["text"]
+        assert "ground/walking surface" in prompt and "body and head height" in prompt
+        assert "closed door" in prompt and "takes precedence over missing ground" in prompt
+        assert "BOTH the ground and forward passage" in prompt and "side wall" in prompt
+        result = {"answer": "The ground is visible.", "uncertain": False}
+        if assessment is not None:
+            result["visible_path"] = assessment
+        return httpx.Response(200, json={"candidates": [{"finishReason": "STOP", "content": {"parts": [
+            {"text": json.dumps(result)},
+        ]}}]})
+
+    mock_transport(monkeypatch, handle)
+    if assessment in {None, "safe"}:
+        with pytest.raises(BackendError) as error:
+            asyncio.run(gemini.ask_image(b"jpeg", "Is it safe to walk?", "en"))
+        assert error.value.code == "gemini_unavailable"
+    else:
+        result = asyncio.run(gemini.ask_image(b"jpeg", "Is it safe to walk?", "en"))
+        assert result.visible_path == assessment
+
+
+@pytest.mark.parametrize("elapsed", [3, 7])
+def test_walking_cloud_result_age_allows_inference_but_remains_bounded(client, cloud, monkeypatch, elapsed):
+    from app.services.ai import assistant, cloud_view
+
+    api, _ = client
+    sid = create(api)
+    upload(api, sid)
+    offset = [0]
+
+    def clock():
+        return now() + timedelta(seconds=offset[0])
+
+    monkeypatch.setattr(cloud_view, "now", clock)
+    monkeypatch.setattr(assistant, "now", clock)
+    monkeypatch.setattr(settings, "gemini_walking_max_age_seconds", 6)
+
+    async def assess(*args):
+        offset[0] = elapsed
+        return gemini.GeminiAnswer(
+            answer="A table occupies the center of the walkway.",
+            uncertain=False, visible_path="blocked",
+        )
+
+    monkeypatch.setattr(gemini, "ask_image", assess)
+    result = api.post(f"/api/v1/sessions/{sid}/questions", json={"question": "Is it safe to walk?"}).json()
+    if elapsed == 3:
+        assert result["answer"].startswith("An obstacle or hazard is visible in the path.")
+        assert result["evidence_frame_ids"]
+        assert not result["uncertain"]
+        assert "local_detection_fallback" not in result["processing_warnings"]
+    else:
+        assert result["uncertain"]
+        assert "gemini_evidence_stale" in result["processing_warnings"]
+        assert "A table occupies" not in result["answer"]
+
+
+def test_walking_cloud_rejects_old_input_before_sending_image(client, cloud, monkeypatch):
+    from sqlalchemy import update
+    from app.db.models import Frame
+
+    api, factory = client
+    sid = create(api)
+    frame = upload(api, sid)
+
+    async def age():
+        async with factory() as db:
+            await db.execute(update(Frame).where(Frame.id == UUID(frame["id"])).values(
+                captured_at=now() - timedelta(seconds=3),
+            ))
+            await db.commit()
+
+    api.portal.call(age)
+
+    async def forbidden(*args):
+        raise AssertionError("Walking input must still be fresh before inference")
+
+    monkeypatch.setattr(gemini, "ask_image", forbidden)
+    result = api.post(f"/api/v1/sessions/{sid}/questions", json={"question": "Is it safe to walk?"}).json()
+    assert result["uncertain"] and not result["evidence_frame_ids"]
+    assert "gemini_evidence_stale" in result["processing_warnings"]
+
+
 def test_identity_requests_never_reach_gemini(client, cloud, monkeypatch):
     api, _ = client
     sid = create(api)
@@ -146,6 +268,8 @@ def test_identity_requests_never_reach_gemini(client, cloud, monkeypatch):
 
 
 def test_privacy_failure_never_sends_unblurred_image(client, cloud, monkeypatch):
+    from app.services.ai import live_answer
+
     api, _ = client
     sid = UUID(create(api))
     def privacy_failure(*args):
@@ -154,6 +278,9 @@ def test_privacy_failure_never_sends_unblurred_image(client, cloud, monkeypatch)
         raise AssertionError("Unredacted images must never reach Google")
     monkeypatch.setattr(processing, "face_regions", privacy_failure)
     monkeypatch.setattr(gemini, "ask_image", forbidden)
+    # The fallback uses an imported detector reference. Keep this privacy test
+    # independent of real model downloads and inference timing.
+    monkeypatch.setattr(live_answer, "detect_live", lambda _: (100, 100, []))
     async def exercise():
         state = streams.start(sid, "test")
         state.latest, state.latest_at = image_bytes(), now()

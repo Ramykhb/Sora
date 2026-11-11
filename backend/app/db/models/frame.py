@@ -86,6 +86,7 @@ class QuestionAnswer(Base):
     evidence_frame_ids: Mapped[list] = mapped_column(JSON, default=list)
     source: Mapped[str] = mapped_column(String(20), default="text")
     processing_warnings: Mapped[list] = mapped_column(JSON, default=list)
+    place_context: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     latency_ms: Mapped[float] = mapped_column(Float, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
