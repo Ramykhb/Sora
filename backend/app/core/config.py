@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     vision_image_max_side: int = Field(default=448, ge=224, le=2048)
     gemini_enabled: bool = False
     gemini_api_key: SecretStr = SecretStr("")
+    gemini_api_key_2: SecretStr = SecretStr("")
+    gemini_obstacle_interval_seconds: float = Field(default=5, ge=1, le=60)
     gemini_model: str = Field(default="gemini-3.5-flash-lite", pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]{1,100}$")
     gemini_thinking_level: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH"] = "MINIMAL"
     gemini_deadline_seconds: float = Field(default=5, ge=1, le=10)

@@ -44,6 +44,8 @@ class LiveState:
     worker: asyncio.Task | None = None
     detector_worker: asyncio.Task | None = None
     history_worker: asyncio.Task | None = None
+    obstacle_worker: asyncio.Task | None = None
+    obstacle_error: str | None = None
     detection_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=1))
     history_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=32))
     last_detection_sampled: float = float("-inf")
@@ -86,6 +88,7 @@ class Streams:
         state.worker = asyncio.create_task(self.consume(session_id, state))
         state.detector_worker = asyncio.create_task(self.detect(session_id, state))
         state.history_worker = asyncio.create_task(self.persist_alerts(session_id, state))
+        state.obstacle_worker = asyncio.create_task(self.detect_obstacles(session_id, state))
         events.publish(session_id, {"type": "stream_started", "source": source})
         return state
 
@@ -144,6 +147,7 @@ class Streams:
         from app.services.frames.processing import detect_live
         from app.services.sessions import get_session
         from app.services.alerts import alert_candidates
+        from app.services.ai import gemini
 
         while True:
             content, timestamp = await state.detection_queue.get()
@@ -170,7 +174,7 @@ class Streams:
                 state.observation = observation
                 state.observation_content = content
                 events.publish(session_id, observation)
-                if session.alerts_enabled:
+                if session.alerts_enabled and not gemini.obstacles_configured():
                     view = SimpleNamespace(
                         width=width, height=height, detected_objects=objects, scene_flags=[],
                     )
@@ -215,6 +219,76 @@ class Streams:
                     self.enqueue_sample(state, content, timestamp)
             finally:
                 state.detection_queue.task_done()
+
+    async def detect_obstacles(self, session_id, state):
+        from app.services.ai import gemini
+
+        # Separate from local detection/storage. No overlapping calls or backlog.
+        await asyncio.sleep(settings.gemini_obstacle_interval_seconds)
+        while True:
+            started = monotonic()
+            try:
+                if gemini.obstacles_configured():
+                    async with asyncio.timeout(settings.gemini_walking_max_age_seconds):
+                        await self.check_obstacles(session_id, state)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                state.obstacle_error = getattr(exc, "code", "gemini_obstacle_unavailable")
+                events.publish(session_id, {"type": "obstacle_error", "code": state.obstacle_error})
+            # Slow requests skip missed ticks, never trigger catch-up uploads.
+            elapsed = monotonic() - started
+            await asyncio.sleep(max(0, settings.gemini_obstacle_interval_seconds - elapsed))
+
+    async def check_obstacles(self, session_id, state):
+        from app.services.ai import gemini
+        from app.services.ai.cloud_view import cloud_image
+        from app.services.ai.safety import blocked_text
+        from app.services.sessions import get_session
+
+        session = await get_session(session_id, active=True)
+        if not session.alerts_enabled or self.states.get(session_id) is not state:
+            return
+        snapshot = self.fresh_snapshot(session_id)
+        if snapshot is None:
+            return
+        content, timestamp = snapshot
+        # Reuse the face-redaction/resize path without waiting for persistence,
+        # OCR, local detection or the enrichment/model queue.
+        image = await asyncio.to_thread(cloud_image, content, False)
+        if (now() - timestamp).total_seconds() > settings.detection_max_age_seconds:
+            return
+        result = await gemini.ask_obstacles(image, session.language)
+        session = await get_session(session_id, active=True)
+        if not session.alerts_enabled or self.states.get(session_id) is not state:
+            return
+        expires = timestamp + timedelta(seconds=settings.gemini_walking_max_age_seconds)
+        if now() >= expires:
+            return
+        state.obstacle_error = None
+        if result.visible_path != "blocked":
+            if result.visible_path == "unobstructed" and not result.uncertain:
+                state.alert_times.pop("gemini_obstacle", None)
+            return
+        if blocked_text(result.answer):
+            return
+        current = monotonic()
+        if current - state.alert_times.get("gemini_obstacle", float("-inf")) < settings.alert_cooldown_seconds:
+            return
+        state.alert_times["gemini_obstacle"] = current
+        alert = {
+            "type": "alert", "id": str(uuid4()), "frame_id": None,
+            "label": "gemini_obstacle", "message": result.answer, "language": session.language,
+            "captured_at": timestamp.isoformat(), "expires_at": expires.isoformat(),
+            "created_at": now().isoformat(),
+            "latency_ms": round((now() - timestamp).total_seconds() * 1000, 1),
+        }
+        events.publish(session_id, alert)
+        if state.history_queue.full():
+            state.history_queue.get_nowait()
+            state.history_queue.task_done()
+            state.alert_history_dropped += 1
+        state.history_queue.put_nowait(alert)
 
     async def persist_alerts(self, session_id, state):
         from datetime import datetime
@@ -290,6 +364,8 @@ class Streams:
             "last_frame_seconds_ago": monotonic() - state.last_received,
             "processing_error": state.error,
             "detection_error": state.detection_error,
+            "obstacle_error": state.obstacle_error,
+            "gemini_obstacle_interval_seconds": settings.gemini_obstacle_interval_seconds,
             "detection_interval_seconds": settings.detection_interval_seconds,
             "detection_frames_dropped": state.detection_dropped,
             "alert_history_dropped": state.alert_history_dropped,
@@ -332,7 +408,10 @@ class Streams:
         state.updated.set()
         tasks = [
             task
-            for task in [state.worker, state.detector_worker, state.history_worker, *state.readers]
+            for task in [
+                state.worker, state.detector_worker, state.history_worker,
+                state.obstacle_worker, *state.readers,
+            ]
             if task and task is not asyncio.current_task()
         ]
         for task in tasks:

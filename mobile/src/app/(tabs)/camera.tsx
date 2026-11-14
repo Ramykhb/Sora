@@ -17,6 +17,7 @@ import { usePreferences } from '@/providers/preferences';
 import type { StreamCommand } from '@/lib/voice-commands';
 import type { Answer, CaptureSession, Frame } from '@/lib/api';
 import { speech } from '@/lib/speech';
+import { connectLive } from '@/lib/live';
 import { questionLocation } from '@/lib/question-location';
 import { speechLanguage, voiceText } from '@/lib/voice-language';
 import { AuthScreen } from '@/components/auth-screen';
@@ -38,6 +39,7 @@ function Capture() {
   const [uploading, setUploading] = useState(false);
   const voice = useVoiceCommands();
   const [voiceAnswer, setVoiceAnswer] = useState('');
+  const [obstacleAlert, setObstacleAlert] = useState<{ message: string; expiresAt: string } | null>(null);
   const routePlayback = useSyncExternalStore(speech.subscribeRoute, speech.getRoutePlayback, speech.getRoutePlayback);
   const [viewTip, setViewTip] = useState<string | null>(null);
   const answerScroll = useRef<ComponentRef<typeof ScrollView>>(null);
@@ -45,11 +47,26 @@ function Capture() {
   const [connected, setConnected] = useState(false);
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [focused, setFocused] = useState(true); const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  const [streamPaused, setStreamPaused] = useState(false);
+  useEffect(() => {
+    if (!session || mode !== 'live' || !focused || !foreground || streamPaused) return;
+    const live = connectLive(api, `/sessions/${session.id}/events`, event => {
+      if (event.type === 'alert' && event.message && event.id && event.expires_at && Date.parse(event.expires_at) > Date.now()) {
+        setObstacleAlert({ message: event.message, expiresAt: event.expires_at });
+        void speech.alert(event.id, event.message, event.language || session.language, event.expires_at).catch(() => {});
+      }
+    }, () => {});
+    return () => { live.close(); setObstacleAlert(null); };
+  }, [api, session, mode, focused, foreground, streamPaused]);
+  useEffect(() => {
+    if (!obstacleAlert) return;
+    const timer = setTimeout(() => setObstacleAlert(null), Math.max(0, Date.parse(obstacleAlert.expiresAt) - Date.now()));
+    return () => clearTimeout(timer);
+  }, [obstacleAlert]);
   useFullscreenTabBar(!!session);
   useFocusEffect(useCallback(() => { setFocused(true); return () => { setFocused(false); void speech.stop(); }; }, []));
   useEffect(() => { const sub = AppState.addEventListener('change', value => { setForeground(value === 'active'); }); return () => sub.remove(); }, []);
   useEffect(() => { if (!session) return; const timer = setTimeout(() => { setSession(null); setError('This session expired. Start a new session.'); }, Math.max(0, Date.parse(session.expires_at) - Date.now())); return () => clearTimeout(timer); }, [session]);
-  const [streamPaused, setStreamPaused] = useState(false);
   const changingStream = useRef(false);
   const starting = useRef(false);
   const consumedVoiceStart = useRef<string | undefined>(undefined);
@@ -67,7 +84,7 @@ function Capture() {
       const granted = permission?.granted ? permission : await requestPermission();
       if (!granted.granted) throw new Error(voiceText('cameraPermission', language));
       const previous = params.sessionId ? await api.request<CaptureSession>(`/sessions/${params.sessionId}`) : null;
-      const created = previous?.status === 'active' ? previous : await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language, alerts_enabled: false });
+      const created = previous?.status === 'active' ? previous : await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language, alerts_enabled: mode === 'live' });
       setStreamPaused(false); setSession(created);
       if (preferences.guidance) void speech.answer(voiceText('cameraGuidance', language), speechLanguage(language));
     } catch (error) {
@@ -75,7 +92,7 @@ function Capture() {
       setError(message);
       if (fromVoice) void speech.answer(message, message === voiceText('cameraPermission', language) ? speechLanguage(language) : 'en');
     } finally { starting.current = false; setBusy(false); }
-  }, [api, params.sessionId, permission, requestPermission, preferences.guidance, session, streamPaused, language]);
+  }, [api, params.sessionId, permission, requestPermission, preferences.guidance, session, streamPaused, language, mode]);
   useEffect(() => {
     if (!focused || !foreground || mode !== 'live' || !params.voiceStart || consumedVoiceStart.current === params.voiceStart) return;
     consumedVoiceStart.current = params.voiceStart;
@@ -176,6 +193,7 @@ function Capture() {
         <ScrollView ref={answerScroll} accessibilityLabel="Live assistance messages" style={{ flexGrow: 0, flexShrink: 1 }} contentContainerStyle={{ gap: 13, paddingRight: 6, paddingBottom: 4 }} showsVerticalScrollIndicator indicatorStyle={dark ? 'white' : 'black'} keyboardShouldPersistTaps="handled">
         {mode === 'live' && <><Label bold size={14} style={{ color: controlColor, textAlign: 'center' }}>Sora · live companion</Label><VoiceWaveform commandsOnly={streamPaused || !preferences.handsFreeQuestions} /></>}
         {mode === 'live' && <View style={{ flexDirection: 'row', justifyContent: 'space-around', gap: 12 }}><Tap label={streamPaused ? 'Resume stream' : 'Pause stream'} onPress={() => void controlFromButton(streamPaused ? 'resume-stream' : 'pause-stream')} style={{ alignItems: 'center', justifyContent: 'center' }}><Label bold style={{ color: controlColor }}>{streamPaused ? 'Resume stream' : 'Pause stream'}</Label></Tap><Tap label="Stop stream" onPress={() => void controlFromButton('stop-stream')} style={{ alignItems: 'center', justifyContent: 'center' }}><Label bold style={{ color: colors.danger }}>Stop stream</Label></Tap></View>}
+        {!!obstacleAlert && <Label accessibilityRole="alert" style={{ color: controlColor }} size={14}>{obstacleAlert.message}</Label>}
         {!!error && <Label accessibilityRole="alert" style={{ color: colors.danger, backgroundColor: colors.surface, padding: 12, borderRadius: 12 }}>{error}</Label>}
         {preferences.voiceCommands && <Label style={{ color: controlColor, textAlign: 'center' }} size={12}>{voice.status}</Label>}
         {mode === 'live' && routePlayback && routePlayback.text !== voiceAnswer && <RouteAnswer text={routePlayback.text} language={routePlayback.language} color={controlColor} onError={setError} />}

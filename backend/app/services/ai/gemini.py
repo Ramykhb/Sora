@@ -28,8 +28,20 @@ def configured():
     return settings.gemini_enabled and bool(settings.gemini_api_key.get_secret_value())
 
 
-async def ask_image(image: bytes, question: str, language: str):
-    if not configured():
+def obstacles_configured():
+    # Automatic analysis never borrows the question key.
+    return bool(settings.gemini_api_key_2.get_secret_value())
+
+
+async def ask_obstacles(image: bytes, language: str):
+    return await ask_image(
+        image, "Are there visible obstacles or hazards in the forward walking passage?", language,
+        automatic_obstacles=True,
+    )
+
+
+async def ask_image(image: bytes, question: str, language: str, *, automatic_obstacles=False):
+    if not (obstacles_configured() if automatic_obstacles else configured()):
         raise BackendError("Gemini is not configured", 503, "gemini_not_configured")
     finding = object_finder.query(question)
     walking = bool(ROUTE_QUESTION.search(question)) and not finding
@@ -118,7 +130,9 @@ async def ask_image(image: bytes, question: str, language: str):
         async with httpx.AsyncClient(timeout=settings.gemini_http_timeout_seconds) as client:
             response = await client.post(
                 f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent",
-                headers={"x-goog-api-key": settings.gemini_api_key.get_secret_value()}, json=payload,
+                headers={"x-goog-api-key": (
+                    settings.gemini_api_key_2 if automatic_obstacles else settings.gemini_api_key
+                ).get_secret_value()}, json=payload,
             )
             response.raise_for_status()
         candidates = response.json().get("candidates", [])

@@ -408,11 +408,11 @@ test('old native builds and disabled voice commands leave the app usable', async
 
 
 const cameraSource = ts.transpileModule(fs.readFileSync(require.resolve('../src/app/(tabs)/camera.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-async function voiceStartCamera(granted, { active = false, paused = false, question, command, closeError, language = 'en' } = {}) {
-  const effects = [], requests = [], spoken = [], updates = [];
+async function voiceStartCamera(granted, { active = false, paused = false, question, command, closeError, language = 'en', event } = {}) {
+  const effects = [], requests = [], spoken = [], updates = [], alerts = [], sessionUpdates = [];
   const session = { id: 'voice-session', status: 'active', language: 'en' };
   const reply = { answer: 'A chair beside a table.', language: 'en' };
-  let voiceQuestion, voiceControl, stateIndex = 0;
+  let voiceQuestion, voiceControl, liveEvent, stateIndex = 0;
   const exports = {};
   const jsx = (type, props) => ({ type, props });
   vm.runInNewContext(cameraSource + '\nexports.captureForTest = Capture;', {
@@ -420,8 +420,8 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
     require(name) {
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
       if (name === 'react') return {
-        useState: initial => { const index = stateIndex++; return [active && index === 0 ? session : active && index === 7 ? true : index === 11 ? paused : initial, value => updates.push(value)]; }, useRef: current => ({ current }),
-        useCallback: fn => fn, useEffect: fn => effects.push(fn),
+        useState: initial => { const index = stateIndex++; return [active && index === 0 ? session : active && index === 8 ? true : index === 12 ? paused : initial, value => { updates.push(value); if (index === 0) sessionUpdates.push(value); }]; }, useRef: current => ({ current }),
+        useCallback: fn => fn, useEffect: fn => effects.push(fn), useSyncExternalStore: (_, snapshot) => snapshot(),
       };
       if (name === 'react-native') return { AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) }, StyleSheet: { create: value => value }, Platform: { OS: 'ios' } };
       if (name === '@/providers/tab-bar') return { useFullscreenTabBar() {} };
@@ -431,7 +431,8 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
       if (name === '@/providers/auth') return { useAuth: () => ({ api: { async request(...args) { requests.push(args); if (args[0].endsWith('/close') && closeError) throw closeError; return args[0].endsWith('/questions') ? reply : session; } } }) };
       if (name === '@/providers/preferences') return { usePreferences: () => ({ colors: {}, preferences: { guidance: false, language } }) };
       if (name === '@/lib/voice-language') return { ...require('../src/lib/voice-language.ts'), voiceLanguage: () => 'en' };
-      if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() {} } };
+      if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() {}, async alert(...args) { alerts.push(args); }, getRoutePlayback: () => null, subscribeRoute: () => () => {} } };
+      if (name === '@/lib/live') return { connectLive: (_, path, handler) => { liveEvent = handler; return { close() {} }; } };
       if (name === '@/lib/camera-feedback') return { cameraFeedback: () => null };
       if (name === '@/lib/question-location') return { questionLocation: async () => ({ latitude: 33.89, longitude: 35.5 }) };
       return {};
@@ -443,11 +444,12 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
   // React effects may run again: one voice request must create only one session.
   effects.forEach(fn => fn());
   await flush();
+  if (event) liveEvent?.(event);
   const askedReply = question ? await voiceQuestion(question) : null;
   let controlReply, controlError;
   try { if (command) controlReply = await voiceControl(command); } catch (error) { controlError = error; }
   cleanups.forEach(fn => { if (typeof fn === 'function') fn(); });
-  return { requests, spoken, updates, session, askedReply, controlReply, controlError };
+  return { requests, spoken, updates, alerts, sessionUpdates, session, askedReply, controlReply, controlError };
 }
 
 test('a voice start requests camera permission and creates exactly one streaming session without taps', async () => {
@@ -456,6 +458,7 @@ test('a voice start requests camera permission and creates exactly one streaming
   assert.equal(app.requests[0][0], '/sessions');
   assert.equal(app.requests[0][1], 'POST');
   assert.equal(app.requests[0][2].consent, true);
+  assert.equal(app.requests[0][2].alerts_enabled, true);
   assert.ok(app.updates.includes(app.session));
   assert.ok(app.spoken.includes('Starting your stream.'));
 });
@@ -637,7 +640,7 @@ test('camera stop closes capture without deleting saved moments', async () => {
   assert.equal(app.requests.length, 1);
   assert.equal(app.requests[0][0], '/sessions/voice-session/close');
   assert.equal(app.requests[0][1], 'POST');
-  assert.ok(app.updates.includes(null));
+  assert.ok(app.sessionUpdates.includes(null));
   assert.match(app.controlReply, /Stream stopped/);
 });
 
@@ -645,7 +648,7 @@ test('failed session closure keeps the camera paused and propagates the error fo
   const failure = new Error('Server unavailable.');
   const app = await voiceStartCamera(true, { active: true, command: 'stop-stream', closeError: failure });
   assert.equal(app.controlError, failure);
-  assert.equal(app.updates.includes(null), false);
+  assert.equal(app.sessionUpdates.includes(null), false);
   assert.ok(app.updates.includes(true));
 });
 
@@ -912,5 +915,17 @@ test('route playback phrases are local commands with or without the wake word', 
   }
   for (const phrase of ['What is the next step to the cafe?', 'show full route to the library', 'do not go to the previous step']) {
     assert.equal(voiceInput(phrase).kind, 'question');
+  }
+});
+
+
+test('live camera announces fresh obstacle alerts and ignores stale or non-alert results', async () => {
+  const alert = { type: 'alert', id: 'obstacle', message: 'A chair blocks the passage.', language: 'en', expires_at: new Date(Date.now() + 5000).toISOString() };
+  const fresh = await voiceStartCamera(true, { active: true, event: alert });
+  assert.equal(fresh.alerts.length, 1);
+  assert.equal(fresh.alerts[0][1], alert.message);
+  for (const event of [{ ...alert, expires_at: new Date(Date.now() - 1000).toISOString() }, { ...alert, type: 'observation' }]) {
+    const ignored = await voiceStartCamera(true, { active: true, event });
+    assert.equal(ignored.alerts.length, 0);
   }
 });
