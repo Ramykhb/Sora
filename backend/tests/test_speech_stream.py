@@ -14,6 +14,8 @@ from app.services.ai import gemini_speech, speech_stream
 def cloud(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", SecretStr("test-private-key"))
     monkeypatch.setattr(settings, "gemini_tts_enabled", True)
+    monkeypatch.setattr(settings, "gemini_tts_model", "gemini-3.8-flash-tts")
+    monkeypatch.setattr(settings, "gemini_tts_fallback_model", "gemini-3.8-flash-lite-tts")
     gemini_speech._cache.clear()
     gemini_speech._blocked_models.clear()
 
@@ -65,6 +67,47 @@ def test_stream_falls_back_to_lite_with_the_same_voice_on_rate_limit(monkeypatch
     assert asyncio.run(consume()) == pcm
     assert asyncio.run(consume()) == pcm
     assert calls == [settings.gemini_tts_model, settings.gemini_tts_fallback_model]
+
+
+@pytest.mark.parametrize("failure", [httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout, TimeoutError])
+def test_connection_failure_before_first_chunk_uses_backup(monkeypatch, failure):
+    calls = []
+    def handle(request):
+        model = json.loads(request.content)["model"]
+        calls.append(model)
+        if model == settings.gemini_tts_model:
+            raise failure("Connection failed")
+        return httpx.Response(200, content=events(b"\x00\x00" * 2400))
+    original = httpx.AsyncClient
+    monkeypatch.setattr(speech_stream.httpx, "AsyncClient", lambda **kwargs: original(
+        transport=httpx.MockTransport(handle), **kwargs,
+    ))
+    async def consume():
+        return b"".join([chunk async for chunk in speech_stream.pcm_chunks("مرحبا")])
+    assert asyncio.run(consume()) == b"\x00\x00" * 2400
+    assert calls == [settings.gemini_tts_model, settings.gemini_tts_fallback_model]
+
+
+def test_disconnected_partial_audio_is_not_replayed_from_the_backup(monkeypatch):
+    calls = []
+    class Disconnected(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield events(b"\x00\x00" * 2400).split(b"data: [DONE]")[0]
+            raise httpx.ReadError("Connection lost after the first audio")
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(200, stream=Disconnected())
+    original = httpx.AsyncClient
+    monkeypatch.setattr(speech_stream.httpx, "AsyncClient", lambda **kwargs: original(
+        transport=httpx.MockTransport(handle), **kwargs,
+    ))
+    async def consume():
+        audio = speech_stream.pcm_chunks("مرحبا")
+        assert len(await anext(audio)) == 4800
+        with pytest.raises(httpx.ReadError):
+            await anext(audio)
+    asyncio.run(consume())
+    assert len(calls) == 1
 
 
 def test_pcm_is_yielded_before_provider_finishes(monkeypatch):

@@ -3,6 +3,7 @@ import asyncio
 import base64
 from io import BytesIO
 import json
+import logging
 import wave
 
 import httpx
@@ -10,6 +11,8 @@ import httpx
 from app.core.config import settings
 from app.core.errors import BackendError
 from app.services.ai import gemini_speech
+
+logger = logging.getLogger(__name__)
 
 
 async def _provider_pcm(text: str, model: str):
@@ -64,6 +67,13 @@ async def pcm_chunks(text: str):
             pcm = bytearray()
             source = _provider_pcm(text, model)
             try:
+                # A stalled first model must leave time for the next one before
+                # the mobile player's startup deadline. Once speech begins,
+                # never retry a prefix that the user has already heard.
+                async with asyncio.timeout(min(4, settings.gemini_tts_timeout_seconds)):
+                    first = await anext(source)
+                pcm.extend(first)
+                yield first
                 async for chunk in source:
                     pcm.extend(chunk)
                     yield chunk
@@ -72,6 +82,13 @@ async def pcm_chunks(text: str):
                 if pcm or exc.response.status_code not in {429, 503}:
                     raise
                 gemini_speech.block_model(model)
+                logger.warning("Gemini speech stream rejected: model=%s status=%s", model, exc.response.status_code)
+                continue
+            except (httpx.TransportError, TimeoutError) as exc:
+                if pcm:
+                    raise
+                gemini_speech.block_model(model)
+                logger.warning("Gemini speech stream connection failed: model=%s reason=%s", model, type(exc).__name__)
                 continue
             finally:
                 await source.aclose()

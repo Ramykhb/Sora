@@ -27,6 +27,7 @@ def cloud(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", SecretStr("test-private-key"))
     monkeypatch.setattr(settings, "gemini_tts_enabled", True)
     monkeypatch.setattr(settings, "gemini_tts_model", "gemini-3.8-flash-tts")
+    monkeypatch.setattr(settings, "gemini_tts_fallback_model", "gemini-3.8-flash-lite-tts")
     monkeypatch.setattr(settings, "gemini_tts_voice", "Aoede")
     gemini_speech._cache.clear()
     gemini_speech._blocked_models.clear()
@@ -112,6 +113,20 @@ def test_rate_limited_model_uses_same_voice_on_fallback_and_cools_down(monkeypat
     gemini_speech.synthesize_arabic("ابدأ البث")
     assert calls[-1] == settings.gemini_tts_fallback_model
     assert len(calls) == 3
+
+
+@pytest.mark.parametrize("failure", [httpx.RemoteProtocolError, httpx.ReadTimeout])
+def test_connection_failure_before_audio_tries_the_other_model(monkeypatch, failure):
+    calls = []
+    def handle(request):
+        model = json.loads(request.content)["model"]
+        calls.append(model)
+        if model == settings.gemini_tts_model:
+            raise failure("Connection failed")
+        return httpx.Response(200, json=response())
+    transport(monkeypatch, handle)
+    assert gemini_speech.synthesize_arabic("مرحبا") == wav_bytes()
+    assert calls == [settings.gemini_tts_model, settings.gemini_tts_fallback_model]
 
 
 def test_existing_speech_safety_filter_runs_before_cloud_synthesis(monkeypatch):

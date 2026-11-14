@@ -2,6 +2,7 @@
 import base64
 from collections import OrderedDict
 from io import BytesIO
+import logging
 import threading
 from time import monotonic
 import wave
@@ -21,6 +22,7 @@ _cache: OrderedDict[tuple[str, str, str], bytes] = OrderedDict()
 _cache_lock = threading.Lock()
 _CACHE_BYTES = 8 * 1024 * 1024
 _blocked_models: dict[str, float] = {}
+logger = logging.getLogger(__name__)
 
 
 def cached_audio(text: str, model: str | None = None) -> bytes | None:
@@ -78,15 +80,21 @@ def synthesize_arabic(text: str) -> bytes:
             return cached
     try:
         for model in speech_models():
-            with httpx.Client(timeout=settings.gemini_tts_timeout_seconds) as client:
-                response = client.post(
-                    "https://generativelanguage.googleapis.com/v1beta/interactions",
-                    headers={"x-goog-api-key": key}, json=speech_request(text, model=model),
-                )
-                if response.status_code in {429, 503}:
-                    block_model(model)
-                    continue
-                response.raise_for_status()
+            try:
+                with httpx.Client(timeout=settings.gemini_tts_timeout_seconds) as client:
+                    response = client.post(
+                        "https://generativelanguage.googleapis.com/v1beta/interactions",
+                        headers={"x-goog-api-key": key}, json=speech_request(text, model=model),
+                    )
+                    if response.status_code in {429, 503}:
+                        block_model(model)
+                        logger.warning("Gemini speech model rejected request: model=%s status=%s", model, response.status_code)
+                        continue
+                    response.raise_for_status()
+            except httpx.TransportError as exc:
+                block_model(model)
+                logger.warning("Gemini speech connection failed: model=%s reason=%s", model, type(exc).__name__)
+                continue
             payload = response.json()
             if payload.get("status") != "completed":
                 raise ValueError("Incomplete speech response")
