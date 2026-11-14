@@ -25,13 +25,14 @@ export default function HomeScreen() {
 function Assistant() {
   const ui = useUI();
   const { api, tokens } = useAuth();
+  const { preferences: appPreferences, update, colors } = usePreferences();
   const [session, setSession] = useState<CaptureSession | null>(null);
   const [sessions, setSessions] = useState<CaptureSession[]>([]);
   const [consent, setConsent] = useState(false);
-  const [language, setLanguage] = useState<Language>('en');
+  const [languageChoice, setLanguageChoice] = useState<Language | null>(null);
+  const language = languageChoice ?? session?.language ?? appPreferences.language;
   const [scope, setScope] = useState<Scope>('recent');
   const [alerts, setAlerts] = useState(false);
-  const { preferences: appPreferences, update, colors } = usePreferences();
   const speak = appPreferences.speak;
   const setSpeak = (value: boolean) => update({ speak: value });
   const [active, setActive] = useState(false);
@@ -53,7 +54,7 @@ function Assistant() {
   const select = useCallback((value: CaptureSession | null) => {
     selectedId.current = value?.id || null;
     setActive(false); setAnswers([]); setFrame(null); setObservation(null); setSession(value);
-    if (value) { setLanguage(value.language); setAlerts(value.alerts_enabled); }
+    if (value) { setLanguageChoice(value.language); setAlerts(value.alerts_enabled); }
     void speech.stop();
   }, []);
   const fail = useCallback((e: unknown) => {
@@ -104,7 +105,7 @@ function Assistant() {
     const live = connectLive(api, `${path}/events`, event => {
       if (event.type === 'ready') sync();
       if (event.type === 'session_updated' && event.session) {
-        setSession(event.session); setLanguage(event.session.language); setAlerts(event.session.alerts_enabled);
+        setSession(event.session); setLanguageChoice(event.session.language); setAlerts(event.session.alerts_enabled);
         if (event.session.status !== 'active') setActive(false);
       }
       if (event.frame) {
@@ -168,7 +169,7 @@ function Assistant() {
   }, !!session && session.status === 'active', !active);
   async function preferences(nextLanguage: Language, nextAlerts: boolean) {
     if (session) setSession(await api.request<CaptureSession>(`/sessions/${session.id}`, 'PATCH', { language: nextLanguage, alerts_enabled: nextAlerts }));
-    setLanguage(nextLanguage); setAlerts(nextAlerts);
+    setLanguageChoice(nextLanguage); setAlerts(nextAlerts);
   }
   return <Page title="Ask Sora" footer={<BottomNav active="Assist" />}>
     <ScreenIntro eyebrow="Voice & vision" title={`Hello, ${tokens?.user.display_name || 'there'}.`} subtitle="Ask a question. Get a little more clarity." />

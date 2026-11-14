@@ -1,12 +1,12 @@
-export async function currentLocation(highAccuracy = false) {
+export async function currentLocation(highAccuracy = false, messages?: { permission: string; timeout: string }) {
   const Location = await import('expo-location');
   const permission = await Location.requestForegroundPermissionsAsync();
-  if (!permission.granted) throw new Error('Allow location access in Settings to use your current location.');
+  if (!permission.granted) throw new Error(messages?.permission || 'Allow location access in Settings to use your current location.');
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const position = await Promise.race([
       Location.getCurrentPositionAsync({ accuracy: highAccuracy ? Location.Accuracy.High : Location.Accuracy.Balanced }),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Location timed out. Move where GPS is available and try again.')), 15000); }),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(messages?.timeout || 'Location timed out. Move where GPS is available and try again.')), 15000); }),
     ]);
     return {
       latitude: position.coords.latitude, longitude: position.coords.longitude,

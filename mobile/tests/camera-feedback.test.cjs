@@ -18,6 +18,14 @@ test('camera advice names a view problem only when the answer supports it', () =
   assert.match(feedback(true, 'The object is cut off.'), /center it in the frame/);
 });
 
+test('recapture advice follows the answer language', () => {
+  assert.match(feedback(true, 'Le sol n’est pas visible.', [], true, 'fr'), /Inclinez légèrement/);
+  assert.match(feedback(true, 'L’image est floue.', [], true, 'fr'), /Tenez la caméra immobile/);
+  assert.match(feedback(true, 'الصورة مظلمة.', [], true, 'ar'), /إضاءة أفضل/);
+  assert.match(feedback(true, 'جزء من الهدف خارج الإطار.', [], true, 'ar'), /وسط الإطار/);
+  assert.match(feedback(true, 'I cannot identify it confidently.', [], true, 'fr'), /centrez ce que vous voulez identifier/);
+});
+
 test('uncertainty alone receives neutral guidance and certain answers receive none', () => {
   const generic = feedback(true, 'I cannot identify it confidently.', ['quality_override']);
   assert.match(generic, /center what you want to identify/);

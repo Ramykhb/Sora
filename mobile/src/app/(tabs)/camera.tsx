@@ -67,7 +67,7 @@ function Capture() {
       const previous = params.sessionId ? await api.request<CaptureSession>(`/sessions/${params.sessionId}`) : null;
       const created = previous?.status === 'active' ? previous : await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language, alerts_enabled: false });
       setStreamPaused(false); setSession(created);
-      if (preferences.guidance) void speech.answer('Point your camera at your surroundings. Say describe the scene, or ask a question about your surroundings.', 'en');
+      if (preferences.guidance) void speech.answer(voiceText('cameraGuidance', language), speechLanguage(language));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to start your stream. Please try again.';
       setError(message);
@@ -88,9 +88,9 @@ function Capture() {
     try {
       const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope: 'recent', language: session.language, location: await questionLocation(question) });
       setVoiceAnswer(answer.answer);
-      const tip = cameraFeedback(answer.uncertain, answer.answer, answer.processing_warnings);
+      const tip = cameraFeedback(answer.uncertain, answer.answer, answer.processing_warnings, true, session.language);
       setViewTip(tip);
-      return tip && answer.language === 'en' ? { ...answer, answer: `${answer.answer} ${tip}` } : answer;
+      return tip ? { ...answer, answer: `${answer.answer} ${tip}` } : answer;
     } finally { setBusy(false); }
   }, `${session?.id}:${streamPaused}`);
   async function controlStream(command: StreamCommand) {

@@ -72,8 +72,8 @@ function Result({ text }: { text: boolean }) {
   const processing = frame && !answer && ['pending', 'processing'].includes(frame.enrichment_status || '');
   const content = text ? frame?.ocr_text : answer || frame?.caption;
   const resultCopy = content || (error && !frame ? 'Refresh or capture another image to continue.' : processing ? 'Your image is being analyzed.' : frame ? text ? 'No readable text detected. Try a closer, well-lit image.' : 'No scene description available. Try describing again.' : 'Loading your result…');
-  const viewTip = !text && frame ? cameraFeedback(uncertain || frame.processing_warnings.includes('scene_uncertain'), content || '', [...warnings, ...frame.processing_warnings]) : null;
-  const spokenContent = content && viewTip && language === 'en' ? `${content} ${viewTip}` : content;
+  const viewTip = !text && frame ? cameraFeedback(uncertain || frame.processing_warnings.includes('scene_uncertain'), content || '', [...warnings, ...frame.processing_warnings], true, language) : null;
+  const spokenContent = content && viewTip ? `${content} ${viewTip}` : content;
   useEffect(() => {
     if (!spokenContent || !focused) return;
     speech.rememberAnswer(spokenContent, language);

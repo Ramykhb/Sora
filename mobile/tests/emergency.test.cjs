@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const source = ts.transpileModule(fs.readFileSync(require.resolve('../src/lib/emergency.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
 function helper(currentLocation) {
   const exports = {};
-  vm.runInNewContext(source, { exports, Error, require: () => ({ currentLocation }) });
+  vm.runInNewContext(source, { exports, Error, require: name => name === './voice-language' ? require('../src/lib/voice-language.ts') : ({ currentLocation }) });
   return exports.shareSOSLocation;
 }
 
@@ -18,7 +18,7 @@ test('SOS reads saved contact, gets a fresh fix, and sends coordinates rather th
     calls.push({ path, method, body });
     return path.endsWith('/contact') ? { email: 'friend@example.com' } : { message: 'Email submitted' };
   } });
-  assert.equal(message, 'Email submitted');
+  assert.equal(message, 'Your location was sent to your SOS contact.');
   assert.equal(calls[1].path, '/emergency/location');
   assert.equal(calls[1].method, 'POST');
   assert.equal(calls[1].body, coordinates);

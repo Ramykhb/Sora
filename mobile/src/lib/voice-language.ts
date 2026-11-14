@@ -46,6 +46,15 @@ const english = {
   pausedConfirm: 'Stream paused. Say Hey Sora, resume stream when you are ready.',
   stopConfirm: 'Stream stopped. Your saved moments are still available.',
   cameraPermission: 'Camera access is required. Enable it in your device settings, then try again.',
+  cameraGuidance: 'Point your camera at your surroundings. Say describe the scene, or ask a question about your surroundings.',
+  homeGuidance: 'Tap anywhere in the main area to start your stream. More tools and settings are at the bottom.',
+  sosGetting: 'Getting your current location for SOS…',
+  sosSent: 'Your location was sent to your SOS contact.',
+  sosContactRequired: 'Add and save your SOS contact email in Settings first.',
+  sosSignInChanged: 'Sign-in changed. Please try sharing your SOS location again.',
+  sosFailed: 'Unable to send your SOS location.',
+  locationAccessRequired: 'Allow location access in Settings to use your current location.',
+  locationTimedOut: 'Location timed out. Move where GPS is available and try again.',
 };
 export type VoiceMessage = keyof typeof english;
 const messages: Record<VoiceLanguage, Record<VoiceMessage, string>> = {
@@ -69,6 +78,15 @@ const messages: Record<VoiceLanguage, Record<VoiceMessage, string>> = {
     pausedConfirm: 'تم إيقاف البث مؤقتاً. قل «يا سورا، استأنف البث» عندما تكون مستعداً.',
     stopConfirm: 'تم إيقاف البث. لحظاتك المحفوظة ما زالت متاحة.',
     cameraPermission: 'مطلوب إذن الكاميرا. فعّله من إعدادات الجهاز ثم حاول مرة أخرى.',
+    cameraGuidance: 'وجّه الكاميرا نحو ما حولك. قل «صف المشهد» أو اطرح سؤالاً عما حولك.',
+    homeGuidance: 'اضغط في أي مكان في المنطقة الرئيسية لبدء البث. المزيد من الأدوات والإعدادات في الأسفل.',
+    sosGetting: 'جارٍ تحديد موقعك لإرسال الطوارئ…',
+    sosSent: 'تم إرسال موقعك إلى جهة اتصال الطوارئ.',
+    sosContactRequired: 'أضف بريد جهة اتصال الطوارئ واحفظه في الإعدادات أولاً.',
+    sosSignInChanged: 'تغيّر تسجيل الدخول. حاول إرسال موقع الطوارئ مرة أخرى.',
+    sosFailed: 'تعذر إرسال موقع الطوارئ.',
+    locationAccessRequired: 'اسمح بالوصول إلى الموقع في الإعدادات لاستخدام موقعك الحالي.',
+    locationTimedOut: 'انتهت مهلة تحديد الموقع. انتقل إلى مكان يتوفر فيه GPS وحاول مرة أخرى.',
   },
   fr: {
     startStreamFirst: 'Démarrez d’abord un flux en disant « Hé Sora, démarre le flux ». Posez ensuite votre question sur ce qui vous entoure.',
@@ -89,6 +107,15 @@ const messages: Record<VoiceLanguage, Record<VoiceMessage, string>> = {
     pausedConfirm: 'Flux en pause. Dites « Hé Sora, reprends le flux » quand vous êtes prêt.',
     stopConfirm: 'Flux arrêté. Vos moments enregistrés restent disponibles.',
     cameraPermission: 'L’accès à la caméra est requis. Activez-le dans les réglages de votre appareil, puis réessayez.',
+    cameraGuidance: 'Pointez la caméra vers ce qui vous entoure. Dites « décris la scène » ou posez une question sur votre environnement.',
+    homeGuidance: 'Touchez n’importe où dans la zone principale pour démarrer votre flux. Plus d’outils et les réglages se trouvent en bas.',
+    sosGetting: 'Localisation de votre position pour le SOS…',
+    sosSent: 'Votre position a été envoyée à votre contact SOS.',
+    sosContactRequired: 'Ajoutez et enregistrez l’adresse e-mail de votre contact SOS dans Réglages.',
+    sosSignInChanged: 'La session a changé. Réessayez d’envoyer votre position SOS.',
+    sosFailed: 'Impossible d’envoyer votre position SOS.',
+    locationAccessRequired: 'Autorisez l’accès à la position dans Réglages pour utiliser votre position actuelle.',
+    locationTimedOut: 'La localisation a expiré. Déplacez-vous là où le GPS fonctionne et réessayez.',
   },
 };
 export function voiceText(message: VoiceMessage, language: VoiceLanguage = voiceLanguage()) { return messages[language][message]; }

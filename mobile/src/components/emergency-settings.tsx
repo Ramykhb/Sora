@@ -3,6 +3,7 @@ import { useAuth } from '@/providers/auth';
 import { usePreferences } from '@/providers/preferences';
 import { shareSOSLocation } from '@/lib/emergency';
 import { speech } from '@/lib/speech';
+import { speechLanguage, voiceText } from '@/lib/voice-language';
 import { Action, Field } from './controls';
 import { Card, Label } from './sora-ui';
 
@@ -13,7 +14,7 @@ export function EmergencySettings() {
 
 function EmergencyContactForm() {
   const { api } = useAuth();
-  const { colors } = usePreferences();
+  const { colors, preferences } = usePreferences();
   const [email, setEmail] = useState('');
   const [saved, setSaved] = useState('');
   const [loading, setLoading] = useState(true);
@@ -37,9 +38,13 @@ function EmergencyContactForm() {
     finally { setBusy(false); }
   }
   async function share() {
-    setBusy(true); setError(''); setMessage('Getting your current location…');
-    try { const result = await shareSOSLocation(api); setMessage(result); await speech.answer(result, 'en'); }
-    catch (e) { setMessage(''); setError(e instanceof Error ? e.message : 'Unable to send your location.'); }
+    setBusy(true); setError(''); setMessage(voiceText('sosGetting', preferences.language));
+    try {
+      const result = await shareSOSLocation(api, preferences.language);
+      setMessage(result);
+      await speech.answer(result, speechLanguage(preferences.language));
+    }
+    catch (e) { setMessage(''); setError(e instanceof Error ? e.message : voiceText('sosFailed', preferences.language)); }
     finally { setBusy(false); }
   }
   return <Card style={{ gap: 12 }}>

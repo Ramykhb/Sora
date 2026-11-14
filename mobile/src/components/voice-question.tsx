@@ -4,6 +4,7 @@ import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, use
 import { File } from 'expo-file-system';
 import { voiceAudioGate } from '@/lib/voice-commands';
 import { speech } from '@/lib/speech';
+import { questionLocation } from '@/lib/question-location';
 import { useAuth } from '@/providers/auth';
 import type { Answer, Language, Scope } from '@/lib/api';
 import { Action, useUI } from './controls';
@@ -58,6 +59,7 @@ export function VoiceQuestion({ sessionId, language, scope, onAnswer, onError, d
         const transcript = await api.upload<{ text: string }>('/speech/transcriptions', form);
         const answer = await api.request<Answer>(`/sessions/${sessionId}/questions`, 'POST', {
           question: transcript.text, language, scope, source: 'audio',
+          location: await questionLocation(transcript.text),
         });
         if (mounted.current) onAnswer(answer);
       }

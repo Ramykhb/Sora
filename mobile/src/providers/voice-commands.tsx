@@ -254,12 +254,12 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
           } else if (input.action === 'send-sos-location') {
             if (sendingSOS.current) return;
             sendingSOS.current = true;
-            setStatus('Getting your location for SOS…');
-            void shareSOSLocation(api).then(message => {
-              setStatus(message); return speech.answer(message, 'en');
+            setStatus(voiceText('sosGetting', language));
+            void shareSOSLocation(api, language).then(message => {
+              setStatus(message); return speech.answer(message, speechLanguage(language));
             }).catch(error => {
-              const message = error instanceof Error ? error.message : 'Unable to send your SOS location.';
-              setStatus(message); return speech.answer(message, 'en');
+              const message = error instanceof Error ? error.message : voiceText('sosFailed', language);
+              setStatus(message); return speech.answer(message, speechLanguage(language));
             }).finally(() => { sendingSOS.current = false; });
           } else if (input.action === 'mute' || input.action === 'unmute') {
             const muted = input.action === 'mute';

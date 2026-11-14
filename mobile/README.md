@@ -90,10 +90,12 @@ Every utterance beginning with **“Hey Sora”**, **“Hé Sora”**, or **“�
 reserved for app commands. Every command below also works in Arabic and French,
 for example **“يا سورا، ابدأ البث”**, **“يا سورا، أوقف البث مؤقتاً”**,
 **“Hé Sora, démarre le flux”**, and **“Hé Sora, mets le flux en pause”**.
-Settings offers English, Arabic and French for voice commands (defaulting to the
-phone's locale). The selected language controls what the recognizer listens for,
-the language of spoken command feedback, and the language of live-stream answers.
-Unsupported commands receive spoken feedback and are never submitted as questions.
+Settings offers English, Arabic and French (defaulting to the phone's locale).
+The selected language controls what the recognizer listens for, the language SORA
+uses for answers and spoken feedback, and the language attached to new sessions.
+You can ask questions in any of the three languages; SORA replies in the selected
+language. Unsupported commands receive spoken feedback and are never submitted as
+questions.
 Supported stream commands:
 
 - **“Hey Sora, start stream”** starts live assistance.

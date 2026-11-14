@@ -21,7 +21,7 @@ export function AnswerCard({ answer, onError }: { answer: Answer; onError: (mess
   }, [playback.playing, answer.answer]);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
-  const viewTip = cameraFeedback(answer.uncertain, answer.answer, answer.processing_warnings, answer.evidence_frame_ids.length > 0);
+  const viewTip = cameraFeedback(answer.uncertain, answer.answer, answer.processing_warnings, answer.evidence_frame_ids.length > 0, answer.language);
   const media = useRef<string | File | null>(null);
   const mounted = useRef(true);
   function clearMedia() {

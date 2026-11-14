@@ -6,6 +6,7 @@ import { useAuth } from '@/providers/auth';
 import { usePreferences } from '@/providers/preferences';
 import { useVoiceCommands } from '@/providers/voice-commands';
 import { speech } from '@/lib/speech';
+import { speechLanguage, voiceText } from '@/lib/voice-language';
 import { AuthScreen } from '@/components/auth-screen';
 import { Welcome } from '@/components/welcome';
 import { SoraHero, SoraLogo } from '@/components/brand';
@@ -30,11 +31,11 @@ function StartStreamHome() {
     if (preferences.guidance) {
       // VoiceOver/TalkBack already announce the large accessible button.
       void AccessibilityInfo.isScreenReaderEnabled().then(enabled => {
-        if (!cancelled && !enabled) return speech.answer('Tap anywhere in the main area to start your stream. More tools and settings are at the bottom.', 'en');
+        if (!cancelled && !enabled) return speech.answer(voiceText('homeGuidance', preferences.language), speechLanguage(preferences.language));
       }).catch(() => {});
     }
     return () => { cancelled = true; void speech.stop(); };
-  }, [preferences.guidance]));
+  }, [preferences.guidance, preferences.language]));
 
   function startStream() {
     if (starting.current) return;
