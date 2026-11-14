@@ -7,7 +7,7 @@ import { voiceAudioGate, voiceInput, type StreamCommand } from '@/lib/voice-comm
 import { shareSOSLocation } from '@/lib/emergency';
 import { voiceLevel } from '@/lib/voice-level';
 import { speech } from '@/lib/speech';
-import { recognitionLanguage, speechLanguage, voiceLanguage, voiceText } from '@/lib/voice-language';
+import { recognitionLanguage, speechLanguage, voiceText } from '@/lib/voice-language';
 import type { Answer } from '@/lib/api';
 import { useAuth } from './auth';
 import { usePreferences } from './preferences';
@@ -36,7 +36,7 @@ const COMMAND_PHRASES = [
 export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
   const { api, tokens, ready, serverUrl } = useAuth();
   const { preferences, update } = usePreferences();
-  const language = voiceLanguage();
+  const language = preferences.language;
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [paused, setPaused] = useState(voiceAudioGate.paused);
   const [status, setStatus] = useState('Preparing voice listening…');

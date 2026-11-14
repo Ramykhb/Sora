@@ -16,7 +16,7 @@ import { usePreferences } from '@/providers/preferences';
 import type { StreamCommand } from '@/lib/voice-commands';
 import type { Answer, CaptureSession, Frame } from '@/lib/api';
 import { speech } from '@/lib/speech';
-import { speechLanguage, voiceLanguage, voiceText } from '@/lib/voice-language';
+import { speechLanguage, voiceText } from '@/lib/voice-language';
 import { AuthScreen } from '@/components/auth-screen';
 import { VoiceWaveform } from '@/components/voice-waveform';
 import { LiveCamera } from '@/components/live-camera';
@@ -26,7 +26,7 @@ function Capture() {
   const params = useLocalSearchParams<{ mode?: string; sessionId?: string; voiceStart?: string }>();
   const mode = params.mode === 'text' ? 'text' : params.mode === 'scene' ? 'scene' : 'live';
   const { api } = useAuth(); const { preferences, colors, update, dark } = usePreferences();
-  const language = voiceLanguage();
+  const language = preferences.language;
   const roundStyle = [cameraStyles.round, { backgroundColor: colors.cameraControl, borderColor: colors.heroEdge }];
   const controlColor = colors.cameraInk;
   const [permission, requestPermission] = useCameraPermissions();
@@ -64,7 +64,7 @@ function Capture() {
       const granted = permission?.granted ? permission : await requestPermission();
       if (!granted.granted) throw new Error(voiceText('cameraPermission', language));
       const previous = params.sessionId ? await api.request<CaptureSession>(`/sessions/${params.sessionId}`) : null;
-      const created = previous?.status === 'active' ? previous : await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language: 'en', alerts_enabled: false });
+      const created = previous?.status === 'active' ? previous : await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language, alerts_enabled: false });
       setStreamPaused(false); setSession(created);
       if (preferences.guidance) void speech.answer('Point your camera at your surroundings. Say describe the scene, or ask a question about your surroundings.', 'en');
     } catch (error) {
@@ -159,7 +159,7 @@ function Capture() {
     const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
     if (picked.canceled) return;
     const previous = params.sessionId ? await api.request<CaptureSession>(`/sessions/${params.sessionId}`) : null;
-    const created = previous?.status === 'active' ? previous : await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language: 'en', alerts_enabled: false });
+    const created = previous?.status === 'active' ? previous : await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language, alerts_enabled: false });
     const asset = picked.assets[0];
     await upload(asset.uri, asset.mimeType || 'image/jpeg', asset.fileName || 'gallery.jpg', created.id);
   })} style={{ alignItems: 'center', justifyContent: 'center' }}><Label bold>Choose from gallery</Label></Tap></View></Page>;

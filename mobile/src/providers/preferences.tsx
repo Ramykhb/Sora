@@ -6,6 +6,7 @@ import * as SystemUI from 'expo-system-ui';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
+import { voiceLanguage, type VoiceLanguage } from '@/lib/voice-language';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 /** Shared dashboard palette. Both appearances keep the same purple identity. */
@@ -47,8 +48,8 @@ export const palettes = {
     streamGradient: ['#090B10', '#171224', '#090B10'] as const,
   },
 };
-export type Preferences = { theme: 'system' | 'light' | 'dark'; speak: boolean; guidance: boolean; vibration: boolean; largerText: boolean; highContrast: boolean; onboarded: boolean; voiceCommands: boolean; handsFreeQuestions: boolean };
-const defaults: Preferences = { theme: 'dark', speak: true, guidance: true, vibration: true, largerText: false, highContrast: false, onboarded: false, voiceCommands: true, handsFreeQuestions: true };
+export type Preferences = { theme: 'system' | 'light' | 'dark'; speak: boolean; guidance: boolean; vibration: boolean; largerText: boolean; highContrast: boolean; onboarded: boolean; voiceCommands: boolean; handsFreeQuestions: boolean; language: VoiceLanguage };
+const defaults: Preferences = { theme: 'dark', speak: true, guidance: true, vibration: true, largerText: false, highContrast: false, onboarded: false, voiceCommands: true, handsFreeQuestions: true, language: voiceLanguage() };
 const key = 'sora.preferences.v1';
 const speechDefaultsVersion = 1;
 const Context = createContext<{ preferences: Preferences; update: (value: Partial<Preferences>) => void; colors: typeof palettes.light | typeof palettes.dark; dark: boolean; storageError: string } | null>(null);
@@ -67,6 +68,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         const next = { ...defaults };
         for (const name of Object.keys(defaults) as (keyof Preferences)[]) {
           if (name === 'theme') { if (['system', 'light', 'dark'].includes(saved.theme)) next.theme = saved.theme; }
+          else if (name === 'language') { if (['en', 'ar', 'fr'].includes(saved.language)) next.language = saved.language; }
           else if (typeof saved[name] === 'boolean') next[name] = saved[name];
         }
         // Enable automatic answers once on upgrade; later mute choices still persist.

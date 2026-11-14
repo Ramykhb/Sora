@@ -39,6 +39,7 @@ function renderPreferences(saved, initialSystem = 'dark') {
     if (name === 'expo-status-bar') return { StatusBar: 'StatusBar' };
     if (name === 'expo-navigation-bar') return { NavigationBar: 'NavigationBar' };
     if (name === '../../assets/fonts/Sora.ttf') return 'Sora';
+    if (name === '@/lib/voice-language') return { voiceLanguage: () => 'en' };
     throw new Error(`Unexpected import: ${name}`);
   } });
   function render() { cursor = 0; effects.length = 0; return exports.PreferencesProvider({ children: 'app' }); }
@@ -62,6 +63,21 @@ test('saved appearance restores before the app is shown and persists later chang
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(app.writes.at(-1).theme, 'light');
   assert.equal(app.nativeAppearance.at(-1), 'light');
+});
+
+test('saved language restores and later changes persist', async () => {
+  const app = renderPreferences(JSON.stringify({ language: 'ar', onboarded: true }));
+  app.render();
+  app.flushEffects();
+  await new Promise(resolve => setImmediate(resolve));
+  const restored = app.render().props.value;
+  assert.equal(restored.preferences.language, 'ar');
+  app.flushEffects();
+  restored.update({ language: 'fr' });
+  assert.equal(app.render().props.value.preferences.language, 'fr');
+  app.flushEffects();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.writes.at(-1).language, 'fr');
 });
 
 test('System appearance follows operating-system changes', async () => {

@@ -63,9 +63,9 @@ test('listening stays paused until every audio user releases it', () => {
 });
 
 const providerSource = ts.transpileModule(fs.readFileSync(require.resolve('../src/providers/voice-commands.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-function mount({ native = true, granted = true, permissionPromise, enabled = true, questionsEnabled = true } = {}) {
+function mount({ native = true, granted = true, permissionPromise, enabled = true, questionsEnabled = true, language = 'en' } = {}) {
   const effects = [], cleanups = [], listeners = new Map(), navigation = [], starts = [], spoken = [], spokenLanguages = [], statuses = [], timers = new Map();
-  const preferences = { speak: true, onboarded: true, voiceCommands: enabled, handsFreeQuestions: questionsEnabled };
+  const preferences = { speak: true, onboarded: true, voiceCommands: enabled, handsFreeQuestions: questionsEnabled, language };
   const preferenceUpdates = [];
   const sosCalls = [];
   const gate = new VoiceAudioGate();
@@ -316,6 +316,17 @@ test('unmounting while permissions are pending cannot start a listener later', a
   assert.equal(app.starts.length, 0);
 });
 
+test('the selected language drives recognition and spoken feedback', async () => {
+  const app = mount({ language: 'fr' });
+  await flush(); app.tick();
+  assert.equal(app.starts[0].lang, 'fr-FR');
+  app.emit('result', { results: [{ transcript: 'décris la scène' }], isFinal: true });
+  await flush();
+  assert.match(app.spoken.at(-1), /Démarrez d’abord un flux/);
+  assert.equal(app.spokenLanguages.at(-1), 'fr-FR');
+  app.cleanup();
+});
+
 test('old native builds and disabled voice commands leave the app usable', async () => {
   const old = mount({ native: false });
   assert.equal(old.imports, 0);
@@ -328,7 +339,7 @@ test('old native builds and disabled voice commands leave the app usable', async
 
 
 const cameraSource = ts.transpileModule(fs.readFileSync(require.resolve('../src/app/(tabs)/camera.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-async function voiceStartCamera(granted, { active = false, paused = false, question, command, closeError } = {}) {
+async function voiceStartCamera(granted, { active = false, paused = false, question, command, closeError, language = 'en' } = {}) {
   const effects = [], requests = [], spoken = [], updates = [];
   const session = { id: 'voice-session', status: 'active', language: 'en' };
   const reply = { answer: 'A chair beside a table.', language: 'en' };
@@ -349,7 +360,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
       if (name === 'expo-router') return { useFocusEffect() {}, useLocalSearchParams: () => ({ mode: 'live', voiceStart: '123' }) };
       if (name === '@/providers/voice-commands') return { useHandsFreeQuestions(handler) { voiceQuestion = handler; }, useVoiceStreamControls(handler) { voiceControl = handler; }, useVoiceCommands: () => ({ status: '' }) };
       if (name === '@/providers/auth') return { useAuth: () => ({ api: { async request(...args) { requests.push(args); if (args[0].endsWith('/close') && closeError) throw closeError; return args[0].endsWith('/questions') ? reply : session; } } }) };
-      if (name === '@/providers/preferences') return { usePreferences: () => ({ colors: {}, preferences: { guidance: false } }) };
+      if (name === '@/providers/preferences') return { usePreferences: () => ({ colors: {}, preferences: { guidance: false, language } }) };
       if (name === '@/lib/voice-language') return { ...require('../src/lib/voice-language.ts'), voiceLanguage: () => 'en' };
       if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() {} } };
       if (name === '@/lib/camera-feedback') return { cameraFeedback: () => null };
@@ -377,6 +388,12 @@ test('a voice start requests camera permission and creates exactly one streaming
   assert.equal(app.requests[0][2].consent, true);
   assert.ok(app.updates.includes(app.session));
   assert.ok(app.spoken.includes('Starting your stream.'));
+});
+
+test('a camera session uses the selected language for answers', async () => {
+  const app = await voiceStartCamera(true, { language: 'ar' });
+  assert.equal(app.requests[0][2].language, 'ar');
+  assert.ok(app.spoken.includes('جارٍ بدء البث.'));
 });
 
 test('denied camera permission is spoken and never creates a streaming session', async () => {

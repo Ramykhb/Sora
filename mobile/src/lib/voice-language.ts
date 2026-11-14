@@ -1,7 +1,13 @@
-// SORA understands English, Arabic and French voice commands. The phone's locale
-// picks which language the speech recognizer listens in and which language SORA
-// speaks its command feedback in. Parsing itself always accepts all three.
+// SORA understands English, Arabic and French voice commands. The language chosen
+// in Settings (defaulting to the phone's locale) picks which language the speech
+// recognizer listens in and which language SORA speaks its command feedback in.
+// Parsing itself always accepts all three.
 export type VoiceLanguage = 'en' | 'ar' | 'fr';
+export const VOICE_LANGUAGES: { id: VoiceLanguage; label: string }[] = [
+  { id: 'en', label: 'English' },
+  { id: 'ar', label: 'العربية' },
+  { id: 'fr', label: 'Français' },
+];
 const tags: Record<VoiceLanguage, { speech: string; recognition: string }> = {
   en: { speech: 'en-US', recognition: 'en-US' },
   ar: { speech: 'ar-SA', recognition: 'ar-SA' },
