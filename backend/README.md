@@ -11,10 +11,12 @@ See [the complete environment reference](docs/environment.md) for native/Docker 
 - OpenCV and Pillow for enhancement, image validation and quality/novelty checks.
 - Local PaddleOCR PP-OCRv5 for text detection/recognition in English, French and Arabic; YOLO11 nano for object labels, confidence and bounding boxes.
 - Ollama running Qwen2.5-VL 3B for scene descriptions and grounded answers; Qwen3 Embedding 0.6B for multilingual semantic retrieval over captions/OCR/objects.
-- faster-whisper base for multilingual speech recognition; eSpeak NG for WAV output.
+- faster-whisper base for multilingual speech recognition; eSpeak NG for local WAV output, with optional Gemini Arabic speech.
 - aiortc WebRTC ingest and live viewer relay, one-second image sampling, optional TURN relay, legacy JPEG ingress/preview and authenticated event WebSockets.
 
-The vision model and embedding model are separate tasks. This system uses text embeddings of scene descriptions, OCR and object labels rather than CLIP image embeddings. Changing the embedding dimensions requires a DB migration; the initial schema is 1024 dimensions. Models run locally with no paid API key, but download several GB of weights. CPU inference works and can be slow on a MacBook Air. Accuracy and latency need measurement on your scenes and hardware. eSpeak Arabic pronunciation relies on diacritics; English and French are the primary speech demo languages.
+The vision model and embedding model are separate tasks. This system uses text embeddings of scene descriptions, OCR and object labels rather than CLIP image embeddings. Changing the embedding dimensions requires a DB migration; the initial schema is 1024 dimensions. Models run locally with no paid API key, but download several GB of weights. CPU inference works and can be slow on a MacBook Air. Accuracy and latency need measurement on your scenes and hardware. eSpeak Arabic pronunciation relies on diacritics; English and French are the primary local speech demo languages.
+
+For a female Arabic voice with Lebanese delivery, set `GEMINI_TTS_ENABLED=true` and a server-only `GEMINI_API_KEY`. The defaults are `GEMINI_TTS_MODEL=gemini-3.8-flash-tts`, `GEMINI_TTS_VOICE=Aoede`, and a 20-second provider timeout. This speech setting is independent of `GEMINI_ENABLED` for camera analysis. Gemini receives the spoken text and accent instructions; short prompts are cached in memory within an 8 MB limit. The accent is prompted and should be auditioned on your phrases. The mobile app requests this voice for Arabic answers and command feedback, falling back to its installed voice when the service is unavailable. Urgent obstacle alerts keep immediate local speech. Recreate the API container after changing its environment; reload the mobile app after updating its JavaScript.
 
 ## Run Python natively on macOS
 

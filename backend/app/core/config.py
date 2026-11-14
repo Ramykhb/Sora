@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     gemini_walking_max_age_seconds: float = Field(default=6, ge=1, le=10)
     object_finder_max_age_seconds: float = Field(default=6, ge=1, le=15)
     gemini_image_max_side: int = Field(default=1024, ge=320, le=2048)
+    gemini_tts_enabled: bool = False
+    gemini_tts_model: str = "gemini-3.8-flash-tts"
+    gemini_tts_voice: str = "Aoede"
+    gemini_tts_timeout_seconds: float = Field(default=20, ge=1, le=60)
     google_place_api_key: SecretStr = SecretStr("")
     google_routes_api_key: SecretStr = SecretStr("")
     routes_timeout_seconds: float = Field(default=8, ge=1, le=20)

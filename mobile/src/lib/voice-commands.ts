@@ -5,7 +5,7 @@ export type PlaybackCommand = 'repeat-answer' | 'repeat-directions' | 'stop-spea
 export type VoiceCommand = 'start-stream' | StreamCommand | PlaybackCommand | 'stop-listening' | 'start-listening' | 'mute' | 'unmute' | 'send-sos-location';
 const ARABIC_MARKS = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g;
 // "Hey Sora", "Hé Sora", "يا سورا" and common recognizer spellings of them.
-const WAKE = /^(?:(?:hey|he|hay)\s+sora|(?:يا|هي|هيا|هاي)\s+سور[اىي])(?=\s|$)/;
+const WAKE = /^(?:hey|he|hay|يا|هي|هيا|هاي)\s*(?:sora|[سص]ور[ايه]|سار[اه])(?=\s|$)/;
 const PLEASE = '(?: please| s il te plait| s il vous plait| من فضلك| لو سمحت)?';
 const at = (body: string) => new RegExp(`^(?:${body})${PLEASE}$`);
 function normalize(transcript: string) {
@@ -54,8 +54,8 @@ export function voiceCommand(transcript: string): VoiceCommand | null {
   if (at('mute(?: (?:your )?voice)?|(?:coupe|mets|desactive|baisse) (?:le |la )?(?:son|audio|voix)(?: en sourdine)?|sourdine|silence|(?:اكتم|كتم) (?:ال)?صوت|صامت').test(words)) return 'mute';
   if (at('pause (?:the )?stream|(?:mets|met) (?:le |la )?(?:flux|stream|direct) en pause|(?:pause|pauses) (?:le |la )?(?:flux|stream|direct)|(?:اوقف|ايقاف|علق) (?:ال)?بث موقتا').test(words)) return 'pause-stream';
   if (at('resume (?:the )?stream|(?:reprends|reprend|reprendre|continue|relance) (?:le |la )?(?:flux|stream|direct)|(?:reprise) (?:du |le )?(?:flux|stream|direct)|(?:استانف|استئناف|تابع|واصل|اكمل) (?:ال)?بث(?: المباشر)?').test(words)) return 'resume-stream';
-  if (at('stop (?:the )?stream|(?:arrete|stoppe|termine) (?:le |la )?(?:flux|stream|direct)|(?:اوقف|ايقاف|انهي|انهاء|اغلق) (?:ال)?بث(?: المباشر)?').test(words)) return 'stop-stream';
-  if (at('start (?:the )?stream|(?:demarre|commence|lance) (?:le |la )?(?:flux|stream|direct)|(?:ابدا|ابدء|اشغل|شغل) (?:ال)?بث(?: المباشر)?').test(words)) return 'start-stream';
+  if (at('stop (?:the )?stream|(?:arrete|stoppe|termine) (?:le |la )?(?:flux|stream|direct)|(?:اوقف|وقف|ايقاف|انهي|انهاء|اغلق) (?:ال)?بث(?: المباشر)?').test(words)) return 'stop-stream';
+  if (at('start (?:the )?stream|(?:demarre|commence|lance) (?:le |la )?(?:flux|stream|direct)|(?:ابدا|ابدء|بلش)(?: (?:ال)?بث(?: المباشر)?)?|(?:اشغل|شغل) (?:ال)?بث(?: المباشر)?').test(words)) return 'start-stream';
   return null;
 }
 
@@ -130,7 +130,10 @@ export class VoiceAudioGate {
     return [...this.playbacks.values(), ...this.recentPlayback.map(value => value.text)];
   }
   userTranscript(transcript: string, utterancePlayback: readonly string[] = []) {
-    const tokens = (value: string) => [...value.toLocaleLowerCase().matchAll(/[\p{L}\p{N}]+/gu)];
+    // Keep original offsets, but compare Arabic with/without spoken vowel marks
+    // identically so a vocalized prompt cannot trigger its own command.
+    const tokens = (value: string) => [...value.matchAll(/[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu)]
+      .map(match => ({ 0: normalize(match[0]), index: match.index }));
     const heard = tokens(transcript);
     if (!heard.length) return '';
     const sources = [...this.playbackTexts, ...utterancePlayback];

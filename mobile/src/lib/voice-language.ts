@@ -27,6 +27,13 @@ export function voiceLanguage(): VoiceLanguage {
 export function speechLanguage(language: VoiceLanguage = voiceLanguage()) { return tags[language].speech; }
 export function recognitionLanguage(language: VoiceLanguage = voiceLanguage()) { return tags[language].recognition; }
 
+// Supply vowels for the ambiguous imperative without rewriting displayed text
+// or the distinct word «أبداً» (never). Preserve already vocalized Arabic.
+export function speechText(text: string, language: string) {
+  if (language.toLowerCase().split(/[-_]/)[0] !== 'ar') return text;
+  return text.replace(/(^|[^\p{L}\p{N}\p{M}])(?:ابدأ|إبدأ)(?=$|[^\p{L}\p{N}\p{M}])/gu, '$1اِبْدَأْ');
+}
+
 const english = {
   startStreamFirst: 'Start a stream first by saying Hey Sora, start stream. Then ask about your surroundings.',
   noStream: 'There is no stream open to control. Say Hey Sora, start stream first.',

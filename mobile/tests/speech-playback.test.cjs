@@ -7,15 +7,23 @@ require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileMo
 const { SpeechController } = require('../src/lib/speech-policy.ts');
 const { VoiceAudioGate } = require('../src/lib/voice-commands.ts');
 const source = ts.transpileModule(fs.readFileSync(require.resolve('../src/lib/speech.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
-function setup(configure = async () => {}) {
+function setup(configure = async () => {}, cloud = {}) {
   const spoken = [], modes = [];
   const gate = new VoiceAudioGate();
   const exports = {};
   vm.runInNewContext(source, { exports, require(name) {
     if (name === 'expo-audio') return { async setAudioModeAsync(mode) { modes.push(mode); await configure(); } };
-    if (name === 'expo-speech') return { async stop() {}, speak(text, options) { spoken.push({ text, options }); } };
+    if (name === 'expo-speech') return {
+      async stop() {}, speak(text, options) { spoken.push({ text, options }); },
+      async getAvailableVoicesAsync() { return [
+        { identifier: 'ar-sa-compact', language: 'ar-SA', quality: 'Default' },
+        { identifier: 'ar-eg-enhanced', language: 'ar-EG', quality: 'Enhanced' },
+      ]; },
+    };
     if (name === './speech-policy') return { SpeechController };
     if (name === './voice-commands') return { voiceAudioGate: gate };
+    if (name === './voice-language') return require('../src/lib/voice-language.ts');
+    if (name === './server-speech') return { serverSpeech: { stop() {}, async speak() { return false; }, ...cloud } };
     throw new Error(name);
   } });
   return { speech: exports.speech, spoken, modes, gate };
@@ -34,6 +42,25 @@ test('automatic answers use the configured playback session and resume listening
   assert.equal(gate.playing, false);
 });
 
+test('Arabic playback prefers an Enhanced voice and uses a faster rate', async () => {
+  const { speech, spoken } = setup();
+  await speech.answer('مرحباً، الطريق أمامك.', 'ar-SA');
+  assert.equal(spoken[0].options.voice, 'ar-eg-enhanced');
+  assert.equal(spoken[0].options.rate, 1.25);
+  assert.equal(spoken[0].options.language, 'ar-SA');
+});
+
+test('Arabic start prompts supply pronunciation vowels without changing other words', async () => {
+  const { speech, spoken } = setup();
+  const prompt = 'ابدأ البث. قل «يا سورا، ابدأ الاستماع». لا تتوقف أبداً.';
+  await speech.answer(prompt, 'ar-SA');
+  assert.equal(spoken[0].text, 'اِبْدَأْ البث. قل «يا سورا، اِبْدَأْ الاستماع». لا تتوقف أبداً.');
+  await speech.answer('اِبْدَأْ البث، ابدأنا، أبدان، أبدا، أبداً، ابدا.', 'ar');
+  assert.equal(spoken[1].text, 'اِبْدَأْ البث، ابدأنا، أبدان، أبدا، أبداً، ابدا.');
+  await speech.answer('ابدأ', 'en-US');
+  assert.equal(spoken[2].text, 'ابدأ');
+});
+
 test('stopping while audio config is pending prevents a delayed answer from speaking', async () => {
   let ready;
   const app = setup(() => new Promise(resolve => { ready = resolve; }));
@@ -46,6 +73,38 @@ test('stopping while audio config is pending prevents a delayed answer from spea
   assert.equal(app.spoken.length, 0);
   assert.equal(app.gate.paused, false);
   assert.equal(app.gate.playing, false);
+});
+
+test('Arabic answers use server speech and release the playback gate on completion', async () => {
+  let callbacks;
+  const cloud = [];
+  const app = setup(undefined, { async speak(text, options) { cloud.push(text); callbacks = options; return true; } });
+  await app.speech.answer('ابدأ البث', 'ar-SA');
+  assert.deepEqual(cloud, ['اِبْدَأْ البث']);
+  assert.equal(app.spoken.length, 0);
+  assert.equal(app.gate.playing, true);
+  callbacks.onDone();
+  assert.equal(app.gate.playing, false);
+});
+
+test('stopping during a cloud request prevents both remote and fallback playback', async () => {
+  let resolve;
+  let stops = 0;
+  const app = setup(undefined, { stop() { stops++; }, speak() { return new Promise(done => { resolve = done; }); } });
+  const pending = app.speech.answer('مرحبا', 'ar');
+  for (let i = 0; i < 15; i++) await Promise.resolve();
+  await app.speech.stop();
+  resolve(false);
+  await pending;
+  assert.equal(app.spoken.length, 0);
+  assert.equal(app.gate.playing, false);
+  assert.ok(stops >= 2);
+});
+
+test('urgent Arabic obstacle alerts use the immediate local voice', async () => {
+  const app = setup(undefined, { async speak() { throw new Error('Alerts must not wait on cloud synthesis'); } });
+  await app.speech.alert('urgent', 'عائق أمامك', 'ar', new Date(Date.now() + 5000).toISOString());
+  assert.equal(app.spoken.length, 1);
 });
 
 test('audio setup errors release the microphone gate', async () => {

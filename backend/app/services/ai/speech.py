@@ -83,12 +83,16 @@ def synthesize(text: str, language: str) -> bytes:
 
     if blocked_text(text):
         text = UNKNOWN[language]
+    if language == "ar" and settings.gemini_tts_enabled:
+        from app.services.ai.gemini_speech import synthesize_arabic
+
+        return synthesize_arabic(text)
     binary = shutil.which(settings.espeak_binary)
     if not binary:
         raise BackendError("eSpeak NG is not installed", 503, "tts_unavailable")
     try:
         result = subprocess.run(
-            [binary, "--stdout", "--stdin", "-v", language, "-s", "155"],
+            [binary, "--stdout", "--stdin", "-v", language, "-s", "175" if language == "ar" else "155"],
             input=text.encode("utf-8"),
             capture_output=True,
             check=True,

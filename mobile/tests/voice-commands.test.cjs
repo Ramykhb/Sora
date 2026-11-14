@@ -47,6 +47,24 @@ test('Arabic and French playback and SOS phrases work without the wake word', ()
   }
 });
 
+test('Arabic recognizer spellings and short start commands remain wake-prefixed', () => {
+  for (const phrase of ['يا سورا ابدأ', 'يا سورة ابدأ البث', 'يا صورة إبدأ البث', 'هاي سورا بلّش البث', 'ياصورا ابدأ', 'Hey سورا ابدأ البث', 'يا Sora ابدأ البث']) {
+    assert.deepEqual(voiceInput(phrase), { kind: 'command', action: 'start-stream' }, phrase);
+  }
+  assert.equal(voiceCommand('يا سورا وقف البث'), 'stop-stream');
+  for (const phrase of ['ابدأ', 'بلش البث', 'يا سورا لا تبدأ البث', 'يا سورا ابدأ رحلة إلى بيروت', 'يا سورا ابدأ البث غداً']) {
+    assert.equal(voiceCommand(phrase), null, phrase);
+  }
+});
+
+test('Arabic speaker echoes match vocalized text without losing user transcript offsets', () => {
+  const gate = new VoiceAudioGate();
+  gate.playback('اِبْدَأْ البث بقول «يا سُورا، اِبْدَأْ البث».');
+  assert.equal(gate.userTranscript('يا سورا ابدأ البث'), '');
+  assert.equal(gate.userTranscript('ابدأ البث بقول ما الذي أمامي'), 'ما الذي أمامي');
+  assert.equal(gate.userTranscript('يا سورا أوقف البث'), 'يا سورا أوقف البث');
+});
+
 test('listening stays paused until every audio user releases it', () => {
   const gate = new VoiceAudioGate();
   const states = [];
@@ -106,6 +124,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
       if (name === '@/lib/voice-commands') return { voiceAudioGate: gate, voiceInput };
       if (name === '@/lib/voice-language') return { ...require('../src/lib/voice-language.ts'), voiceLanguage: () => 'en' };
       if (name === '@/lib/speech') return { speech };
+      if (name === '@/lib/server-speech') return { serverSpeech: { configure: () => () => {} } };
       if (name === 'expo-speech-recognition') { imports++; assert.equal(native, true); return { ExpoSpeechRecognitionModule: recognizer }; }
       throw new Error(`Unexpected import ${name}`);
     },
@@ -324,6 +343,56 @@ test('the selected language drives recognition and spoken feedback', async () =>
   await flush();
   assert.match(app.spoken.at(-1), /Démarrez d’abord un flux/);
   assert.equal(app.spokenLanguages.at(-1), 'fr-FR');
+  app.cleanup();
+});
+
+test('Arabic recognition routes a short start command to the live camera', async () => {
+  const app = mount({ language: 'ar' });
+  await flush(); app.tick();
+  assert.equal(app.starts[0].lang, 'ar-SA');
+  assert.ok(app.starts[0].contextualStrings.includes('يا سورا ابدأ'));
+  app.emit('result', { results: [{ transcript: 'يا صورة، إبدأ' }], isFinal: true });
+  assert.equal(app.navigation.length, 1);
+  assert.equal(app.navigation[0].pathname, '/camera');
+  assert.equal(app.navigation[0].params.mode, 'live');
+  app.cleanup();
+});
+
+test('Arabic full start command accepts a recognizer spelling of Sora as Sarah', async () => {
+  const app = mount({ language: 'ar' });
+  await flush(); app.tick();
+  app.emit('result', { results: [{ transcript: 'يا سارة ابدأ البث' }], isFinal: true });
+  assert.equal(app.navigation.length, 1);
+  app.cleanup();
+});
+
+test('an unmatched Arabic wake command can use a supported stream alternative', async () => {
+  const app = mount({ language: 'ar' });
+  await flush(); app.tick();
+  assert.equal(app.starts[0].maxAlternatives, 5);
+  app.emit('result', { results: [{ transcript: 'يا سورا ابدأ البحث' }, { transcript: 'يا سورا ابدأ البث' }], isFinal: true });
+  assert.equal(app.navigation.length, 1);
+  app.cleanup();
+});
+
+test('recognition alternatives cannot replace questions or speaker echoes with stream commands', async () => {
+  for (const echo of [false, true]) {
+    const app = mount({ language: 'ar' });
+    await flush(); app.tick();
+    const primary = echo ? 'يا سورا ابدأ البث' : 'ما الذي أمامي';
+    if (echo) app.gate.playback(primary);
+    app.emit('result', { results: [{ transcript: primary }, { transcript: 'يا سورا ابدأ البث' }], isFinal: true });
+    assert.equal(app.navigation.length, 0);
+    app.cleanup();
+  }
+});
+
+test('unmatched commands show the actual transcript for troubleshooting', async () => {
+  const app = mount({ language: 'ar' });
+  await flush(); app.tick();
+  app.emit('result', { results: [{ transcript: 'يا سورا ابدأ البحث' }], isFinal: true });
+  assert.ok(app.statuses.includes('Unrecognized Sora command: “يا سورا ابدأ البحث”'));
+  assert.equal(app.navigation.length, 0);
   app.cleanup();
 });
 

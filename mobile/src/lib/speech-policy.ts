@@ -1,6 +1,6 @@
 type Driver = {
   stop: () => Promise<void>;
-  speak: (text: string, options: { language: string; onDone?: () => void; onStopped?: () => void; onError?: (error: Error) => void }) => void | Promise<void>;
+  speak: (text: string, options: { language: string; urgent?: boolean; onDone?: () => void; onStopped?: () => void; onError?: (error: Error) => void }) => void | Promise<void>;
 };
 
 // Shared by automatic answers and obstacle alerts. No device APIs in this policy.
@@ -69,6 +69,6 @@ export class SpeechController {
     if (generation !== this.generation) return;
     if (deadline <= Date.now()) { this.urgent = false; return; }
     const done = () => { if (generation === this.generation) this.urgent = false; };
-    await this.driver.speak(text, { language, onDone: done, onStopped: done, onError: done });
+    await this.driver.speak(text, { language, urgent: true, onDone: done, onStopped: done, onError: done });
   }
 }

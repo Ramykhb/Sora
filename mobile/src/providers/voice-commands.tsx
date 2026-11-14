@@ -7,6 +7,7 @@ import { voiceAudioGate, voiceInput, type StreamCommand } from '@/lib/voice-comm
 import { shareSOSLocation } from '@/lib/emergency';
 import { voiceLevel } from '@/lib/voice-level';
 import { speech } from '@/lib/speech';
+import { serverSpeech } from '@/lib/server-speech';
 import { recognitionLanguage, speechLanguage, voiceText } from '@/lib/voice-language';
 import type { Answer } from '@/lib/api';
 import { useAuth } from './auth';
@@ -29,6 +30,7 @@ const COMMAND_PHRASES = [
   'Répète la réponse', 'Répète les directions', 'Arrête de parler', 'Décris la scène',
   "Envoie ma position à mon contact d'urgence",
   'يا سورا ابدأ البث', 'يا سورا أوقف البث مؤقتاً', 'يا سورا استأنف البث', 'يا سورا أوقف البث',
+  'يا سورا ابدأ', 'يا سورا بلش البث', 'يا سورا وقف البث', 'هاي سورا ابدأ البث',
   'يا سورا توقف عن الاستماع', 'يا سورا ابدأ الاستماع', 'يا سورا اكتم الصوت', 'يا سورا ألغ كتم الصوت',
   'أعد الإجابة', 'أعد الاتجاهات', 'توقف عن الكلام', 'صف المشهد',
   'أرسل موقعي إلى جهة اتصال طوارئ',
@@ -37,6 +39,9 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
   const { api, tokens, ready, serverUrl } = useAuth();
   const { preferences, update } = usePreferences();
   const language = preferences.language;
+  const authenticated = !!tokens;
+  const userId = tokens?.user?.id;
+  useEffect(() => serverSpeech.configure(authenticated ? api : null), [api, authenticated, userId, serverUrl]);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [paused, setPaused] = useState(voiceAudioGate.paused);
   const [status, setStatus] = useState('Preparing voice listening…');
@@ -204,7 +209,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
     function start() {
       if (disposed || AppState.currentState !== 'active' || voiceAudioGate.paused || blocked.current) return;
       try {
-        recognizer!.start({ lang: recognitionLanguage(language), continuous: true, interimResults: true, maxAlternatives: 1, volumeChangeEventOptions: { enabled: true, intervalMillis: 80 }, iosVoiceProcessingEnabled: true, iosCategory: { category: 'playAndRecord', categoryOptions: ['defaultToSpeaker', 'allowBluetooth'], mode: 'voiceChat' }, contextualStrings: COMMAND_PHRASES, recordingOptions: { persist: false } });
+        recognizer!.start({ lang: recognitionLanguage(language), continuous: true, interimResults: true, maxAlternatives: 5, volumeChangeEventOptions: { enabled: true, intervalMillis: 80 }, iosVoiceProcessingEnabled: true, iosCategory: { category: 'playAndRecord', categoryOptions: ['defaultToSpeaker', 'allowBluetooth'], mode: 'voiceChat' }, contextualStrings: COMMAND_PHRASES, recordingOptions: { persist: false } });
       } catch { fail('Voice listening could not start. Retry voice commands in Preferences.'); }
     }
     const subscriptions = [
@@ -220,7 +225,20 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
         failures = 0;
         clearTimeout(utteranceTimer);
         if (!utterancePlayback.length) utterancePlayback = voiceAudioGate.playbackTexts;
-        const transcript = voiceAudioGate.userTranscript(event.results[0]?.transcript || '', utterancePlayback);
+        let transcript = voiceAudioGate.userTranscript(event.results[0]?.transcript || '', utterancePlayback);
+        const primary = voiceInput(transcript);
+        // Only repair a recognized wake-prefixed but unmatched command. A normal
+        // question or speaker echo must never turn into an alternative command.
+        if (event.isFinal && primary?.kind === 'command' && !primary.action) {
+          for (const result of event.results.slice(1)) {
+            const candidate = voiceAudioGate.userTranscript(result.transcript, utterancePlayback);
+            const input = voiceInput(candidate);
+            if (input?.kind === 'command' && input.action && /^(?:start|pause|resume|stop)-stream$/.test(input.action)) {
+              transcript = candidate;
+              break;
+            }
+          }
+        }
         if (event.isFinal) utterancePlayback = [];
         if (!transcript) return;
         if (voiceAudioGate.playing && !interrupting) {
@@ -276,7 +294,10 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
               : 'listeningOff', language), speechLanguage(language));
           } else if (input.action === 'start-stream') router.navigate({ pathname: '/camera', params: { mode: 'live', voiceStart: String(Date.now()) } });
           else if (input.action) void controlStream(input.action);
-          else void speech.answer(voiceText('notAvailable', language), speechLanguage(language));
+          else {
+            setStatus(`Unrecognized Sora command: “${transcript}”`);
+            void speech.answer(voiceText('notAvailable', language), speechLanguage(language));
+          }
         } else void askQuestion(input.question);
       }),
       recognizer.addListener('error', event => {
