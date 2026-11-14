@@ -78,7 +78,9 @@ async def answer_cloud_view(session_id, request, language, *, walking=False, fin
         if uncertain or (status == "visible" and "unknown" in (horizontal, vertical)):
             status = "uncertain"
         uncertain = uncertain or status != "visible"
-        text = object_finder.cloud_prefix(status, horizontal, vertical, language) + " " + text
+        text = object_finder.cloud_prefix(
+            status, horizontal, vertical, language, result.object_distance,
+        ) + " " + text
     if walking:
         assessment = result.visible_path or "unknown"
         # Missing ground may leave other hazards unknown without invalidating

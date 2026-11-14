@@ -13,7 +13,7 @@ from app.core.errors import BackendError
 from app.db.models import Frame
 from app.db.models.frame import now
 from app.schemas import QuestionRequest
-from app.services.ai import gemini, object_finder
+from app.services.ai import depth, gemini, object_finder
 from app.services.ai.assistant import answer_question
 from app.services.ai.models import models
 from app.services.streaming.session import streams
@@ -60,7 +60,8 @@ def test_detected_box_maps_to_all_nine_image_positions(horizontal, x, vertical, 
     ], 100, 100, "en")
     assert not uncertain
     assert "backpack" in text and object_finder.position(horizontal, vertical, "en") in text
-    assert "your backpack" not in text and "meters" not in text
+    assert "your backpack" not in text
+    assert "meters in front of you" in text
 
 
 @pytest.mark.parametrize("objects", [[],
@@ -75,6 +76,19 @@ def test_missing_wrong_weak_or_invalid_detections_never_identify_a_target(object
     assert uncertain and "can't identify" in text
     assert "chair" not in text
     assert "not here" not in text
+
+
+def test_detection_answer_reports_a_coarse_distance_band():
+    finding = object_finder.query("find my backpack")
+    near_box, far_box = [35, 55, 65, 95], [47, 48, 53, 52]
+    near = object_finder.detection_answer(finding, [
+        {"label": "backpack", "confidence": .95, "box": near_box},
+    ], 100, 100, "en")[0]
+    far = object_finder.detection_answer(finding, [
+        {"label": "backpack", "confidence": .95, "box": far_box},
+    ], 100, 100, "en")[0]
+    assert "in front of you" in near and "in front of you" in far
+    assert depth.metres("backpack", near_box, 100, 100) < depth.metres("backpack", far_box, 100, 100)
 
 
 def test_multiple_low_confidence_and_unsupported_attribute_matches_remain_uncertain():
@@ -175,12 +189,15 @@ def test_gemini_object_protocol_requires_bounded_status_and_image_relative_posit
     def handle(request):
         payload = json.loads(request.content)
         schema = payload["generationConfig"]["responseJsonSchema"]
-        assert {"object_status", "object_horizontal", "object_vertical"} <= set(schema["required"])
+        assert {"object_status", "object_horizontal", "object_vertical", "object_distance"} <= set(schema["required"])
+        assert "unknown" in schema["properties"]["object_distance"]["enum"]
         assert "visible_path" not in schema["required"]
         instructions = payload["systemInstruction"]["parts"][0]["text"]
         assert "object-finding request" in instructions and "not proof of ownership" in instructions
         assert "Do not substitute a similar object" in instructions
-        response = {"answer": "A dark backpack is beside a table.", "uncertain": False, **fields}
+        assert "never state a precise distance" in instructions
+        response = {"answer": "A dark backpack is beside a table.", "uncertain": False,
+                    "object_distance": "about_2m", **fields}
         return httpx.Response(200, json={"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": json.dumps(response)}]}}]})
 
     monkeypatch.setattr(gemini.httpx, "AsyncClient", lambda **kw: HTTP_CLIENT(transport=httpx.MockTransport(handle), **kw))
@@ -251,7 +268,8 @@ def test_safety_equipment_finding_is_not_misrouted_to_walking_assessment(client,
         required = payload["generationConfig"]["responseJsonSchema"]["required"]
         assert "object_status" in required and "visible_path" not in required
         result = {"answer": "A yellow helmet is beside the table.", "uncertain": False,
-                  "object_status": "visible", "object_horizontal": "right", "object_vertical": "middle"}
+                  "object_status": "visible", "object_horizontal": "right", "object_vertical": "middle",
+                  "object_distance": "about_2m"}
         return httpx.Response(200, json={"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": json.dumps(result)}]}}]})
 
     monkeypatch.setattr(gemini.httpx, "AsyncClient", lambda **kw: HTTP_CLIENT(transport=httpx.MockTransport(handle), **kw))

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.db.models.frame import now
+from app.services.ai import depth
 from app.services.ai.retrieval import retrieve_frames
 from app.services.ai.safety import STALE
 from app.services.frames.ingestion import ingest_bytes
@@ -129,11 +130,17 @@ LABELS = {parts[0]: dict(zip(("en", "fr", "ar"), parts))
           for line in _NAMES.strip().splitlines() if (parts := line.split("|"))}
 
 
-def object_overview(objects, language):
-    labels = list(dict.fromkeys(
-        obj["label"] for obj in sorted(objects, key=lambda o: o.get("confidence", 0), reverse=True)
-        if obj.get("confidence", 0) >= settings.yolo_confidence and obj.get("label") in LABELS
-    ))[:5]
+def object_overview(objects, language, width=0, height=0):
+    labels, seen = [], set()
+    for obj in sorted(objects, key=lambda o: o.get("confidence", 0), reverse=True):
+        label = obj.get("label")
+        if obj.get("confidence", 0) < settings.yolo_confidence or label not in LABELS or label in seen:
+            continue
+        seen.add(label)
+        distance = depth.phrase(label, obj.get("box", ()), width, height, language, short=True)
+        labels.append(f"{LABELS[label][language]} ({distance})" if distance else LABELS[label][language])
+        if len(labels) == 5:
+            break
     if not labels:
         return {
             "en": "No supported objects were identified; that does not establish a clear route.",
@@ -148,7 +155,7 @@ def object_overview(objects, language):
     }[language]
 
 
-def walking_observation(objects, width, language):
+def walking_observation(objects, width, language, height=0):
     """Camera-relative locations, never a judgment about navigable space."""
     supported = [obj for obj in objects if obj.get("label") in LABELS
                  and obj.get("confidence", 0) >= settings.yolo_confidence]
@@ -157,15 +164,18 @@ def walking_observation(objects, width, language):
         center = (obj["box"][0] + obj["box"][2]) / (2 * width)
         return "left" if center < .3 else "right" if center > .7 else "center"
 
+    def describe(obj):
+        detail = places[position(obj)]
+        distance = depth.phrase(obj["label"], obj.get("box", ()), width, height, language, short=True)
+        return f"{LABELS[obj['label']][language]} ({detail}{', ' + distance if distance else ''})"
+
     supported.sort(key=lambda obj: (position(obj) != "center", -obj["confidence"]))
     places = {
         "en": {"left": "left", "center": "center", "right": "right"},
         "fr": {"left": "gauche", "center": "centre", "right": "droite"},
         "ar": {"left": "اليسار", "center": "الوسط", "right": "اليمين"},
     }[language]
-    names = list(dict.fromkeys(
-        f"{LABELS[obj['label']][language]} ({places[position(obj)]})" for obj in supported
-    ))[:5]
+    names = list(dict.fromkeys(describe(obj) for obj in supported))[:5]
     if names:
         observed = {
             "en": "The camera detects " + ", ".join(names) + " in its view.",
@@ -225,5 +235,9 @@ async def answer_overview(session_id, request, language, *, walking=False, findi
             quality_uncertain="quality_override" in frame.processing_warnings,
         )
         return answer, uncertain, [str(frame.id)], warnings
-    answer = walking_observation(frame.detected_objects, frame.width, language) if walking else object_overview(frame.detected_objects, language)
+    answer = (
+        walking_observation(frame.detected_objects, frame.width, language, frame.height)
+        if walking
+        else object_overview(frame.detected_objects, language, frame.width, frame.height)
+    )
     return answer, True, [str(frame.id)], warnings

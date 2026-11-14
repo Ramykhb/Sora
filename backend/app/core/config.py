@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     detection_max_age_seconds: float = Field(default=2.0, ge=0.25, le=10)
     detection_image_size: int = Field(default=320, ge=192, le=1280)
     detector_threads: int = Field(default=2, ge=1, le=8)
+    depth_estimation_enabled: bool = True
+    # Single-frame depth assumes a chest-height, roughly level phone camera.
+    depth_camera_height_meters: float = Field(default=1.5, ge=0.5, le=2.5)
+    depth_vertical_fov_degrees: float = Field(default=50, ge=20, le=100)
     max_pending_enrichments: int = Field(default=2, ge=1, le=10)
     recent_evidence_seconds: int = Field(default=15, ge=1)
     current_answer_timeout_seconds: float = Field(default=8, ge=0.1, le=30)

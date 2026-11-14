@@ -5,6 +5,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from app.core.config import settings
+from app.services.ai import depth
 from app.services.ai.live_answer import LABELS
 
 
@@ -73,14 +74,21 @@ def unknown(language):
     }[language]
 
 
-def cloud_prefix(status, horizontal, vertical, language):
+def cloud_prefix(status, horizontal, vertical, language, distance=None):
     if status == "visible" and horizontal != "unknown" and vertical != "unknown":
         location = position(horizontal, vertical, language)
-        return {
+        prefix = {
             "en": f"A matching object is visible {location} in the camera view.",
             "fr": f"Un objet correspondant est visible {location} de l’image.",
             "ar": f"يوجد جسم مطابق {location} في الصورة.",
         }[language]
+        if phrase := depth.text(distance, language):
+            prefix += {
+                "en": f" It is {phrase}.",
+                "fr": f" Il se trouve {phrase}.",
+                "ar": f" وهو {phrase}.",
+            }[language]
+        return prefix
     if status == "not_visible":
         return {
             "en": "I can't identify the requested object in this camera view.",
@@ -113,32 +121,40 @@ def detection_answer(finding, objects, width, height, language, quality_uncertai
         x, y = (x1 + x2) / (2 * width), (y1 + y2) / (2 * height)
         horizontal = "left" if x < 1 / 3 else "right" if x > 2 / 3 else "center"
         vertical = "top" if y < 1 / 3 else "bottom" if y > 2 / 3 else "middle"
-        matches.append((confidence, position(horizontal, vertical, language)))
+        band = depth.band(finding.detector_label, item["box"], width, height)
+        matches.append((
+            confidence, position(horizontal, vertical, language),
+            depth.text(band, language), depth.text(band, language, short=True),
+        ))
     if not matches:
         return {
             "en": "I can't identify the requested object in this camera view. It may be obscured or outside the image.",
             "fr": "Je ne repère pas l’objet demandé dans cette image. Il peut être masqué ou hors champ.",
             "ar": "لا أستطيع تحديد الجسم المطلوب في هذه الصورة؛ قد يكون محجوباً أو خارجها.",
         }[language], True
-    matches.sort(reverse=True)
+    matches.sort(key=lambda match: match[0], reverse=True)
     label = LABELS[finding.detector_label][language]
     if len(matches) > 1:
-        locations = "; ".join(location for _, location in matches[:3])
+        locations = "; ".join(
+            f"{location} ({distance})" if distance else location
+            for _, location, _, distance in matches[:3]
+        )
         return {
             "en": f"Multiple possible matches for {label} are visible: {locations} in the camera view. I can't tell which one you mean.",
             "fr": f"Plusieurs objets possibles ({label}) sont visibles : {locations} de l’image. Je ne peux pas déterminer lequel vous cherchez.",
             "ar": f"توجد عدة أجسام محتملة ({label}): {locations} في الصورة. لا أستطيع تحديد أيها تقصد.",
         }[language], True
-    confidence, location = matches[0]
+    confidence, location, distance, _ = matches[0]
+    detail = f", {distance}" if distance else ""
     if confidence < max(settings.yolo_confidence, .65):
         return {
-            "en": f"A possible match ({label}) appears {location} in the camera view; I can't identify it confidently.",
-            "fr": f"Un objet possible ({label}) apparaît {location} de l’image, sans identification certaine.",
-            "ar": f"يظهر جسم محتمل ({label}) {location} في الصورة، لكن لا يمكنني تحديده بثقة.",
+            "en": f"A possible match ({label}) appears {location} in the camera view{detail}; I can't identify it confidently.",
+            "fr": f"Un objet possible ({label}) apparaît {location} de l’image{detail}, sans identification certaine.",
+            "ar": f"يظهر جسم محتمل ({label}) {location} في الصورة{detail}، لكن لا يمكنني تحديده بثقة.",
         }[language], True
     article = "some" if finding.detector_label in {"scissors", "skis"} else "an" if label[0] in "aeiou" else "a"
     return {
-        "en": f"I can see {article} {label} {location} in the camera view.",
-        "fr": f"Un objet correspondant ({label}) est visible {location} de l’image.",
-        "ar": f"أرى جسماً مطابقاً ({label}) {location} في الصورة.",
+        "en": f"I can see {article} {label} {location} in the camera view{detail}.",
+        "fr": f"Un objet correspondant ({label}) est visible {location} de l’image{detail}.",
+        "ar": f"أرى جسماً مطابقاً ({label}) {location} في الصورة{detail}.",
     }[language], False
