@@ -123,7 +123,7 @@ def test_cloud_deadline_uses_local_fallback_instead_of_slow_local_vlm(client, cl
     assert "local_detection_fallback" in answer.processing_warnings
     assert answer.uncertain
     if question == "Is it safe to walk?":
-        assert answer.answer.startswith("Not sure about the walking path")
+        assert answer.answer.startswith("The path ahead looks obstructed")
 
 
 def test_cloud_walking_answer_cannot_declare_route_safe(client, cloud, monkeypatch):
@@ -138,16 +138,16 @@ def test_cloud_walking_answer_cannot_declare_route_safe(client, cloud, monkeypat
     assert "path is clear" not in answer["answer"] and "safely" not in answer["answer"]
 
 
-@pytest.mark.parametrize("assessment,reason,uncertain,prefix", [
-    ("unobstructed", "The floor ahead is visible with no apparent obstacles.", False, "The visible path appears unobstructed."),
-    ("blocked", "A chair occupies the center of the walkway.", False, "An obstacle or hazard is visible in the path."),
-    ("blocked", "A closed door blocks the passage directly ahead; the floor is out of view.", False, "An obstacle or hazard is visible in the path."),
-    ("blocked", "A wall blocks the forward passage; the ground is not visible.", True, "An obstacle or hazard is visible in the path."),
-    ("unknown", "Only a TV and wall are visible; the ground is out of view.", False, "Not sure from this view."),
-    ("unobstructed", "The ground is partly obscured by glare.", True, "Not sure from this view."),
+@pytest.mark.parametrize("assessment,reason,uncertain,distance,prefix", [
+    ("unobstructed", "The floor ahead is visible with no apparent obstacles.", False, None, "The visible path appears unobstructed."),
+    ("blocked", "A chair occupies the center of the walkway.", False, "about_1m", "An obstacle or hazard is visible in the path, about 1 meter away."),
+    ("blocked", "A closed door blocks the passage directly ahead; the floor is out of view.", False, "unknown", "An obstacle or hazard is visible in the path; its distance is unclear."),
+    ("blocked", "A wall blocks the forward passage; the ground is not visible.", True, None, "An obstacle or hazard is visible in the path; its distance is unclear."),
+    ("unknown", "Only a TV and wall are visible; the ground is out of view.", False, None, "Not sure from this view."),
+    ("unobstructed", "The ground is partly obscured by glare.", True, None, "Not sure from this view."),
 ])
 def test_walking_cloud_assessment_uses_image_reason_without_stock_disclaimer(
-    client, cloud, monkeypatch, assessment, reason, uncertain, prefix,
+    client, cloud, monkeypatch, assessment, reason, uncertain, distance, prefix,
 ):
     api, _ = client
     sid = create(api)
@@ -155,7 +155,10 @@ def test_walking_cloud_assessment_uses_image_reason_without_stock_disclaimer(
 
     async def assess(image, question, language):
         assert image and question == "Is it safe to walk?"
-        return gemini.GeminiAnswer(answer=reason, uncertain=uncertain, visible_path=assessment)
+        return gemini.GeminiAnswer(
+            answer=reason, uncertain=uncertain, visible_path=assessment,
+            visible_path_distance=distance,
+        )
 
     monkeypatch.setattr(gemini, "ask_image", assess)
     response = api.post(f"/api/v1/sessions/{sid}/questions", json={"question": "Is it safe to walk?"})
@@ -172,15 +175,18 @@ def test_walking_protocol_requires_valid_visible_path(cloud, monkeypatch, assess
     def handle(request):
         body = json.loads(request.content)
         schema = body["generationConfig"]["responseJsonSchema"]
-        assert "visible_path" in schema["required"]
+        assert "visible_path" in schema["required"] and "visible_path_distance" in schema["required"]
         assert schema["properties"]["visible_path"]["enum"] == ["unobstructed", "blocked", "unknown"]
+        assert "unknown" in schema["properties"]["visible_path_distance"]["enum"]
         prompt = body["systemInstruction"]["parts"][0]["text"]
         assert "ground/walking surface" in prompt and "body and head height" in prompt
         assert "closed door" in prompt and "takes precedence over missing ground" in prompt
         assert "BOTH the ground and forward passage" in prompt and "side wall" in prompt
+        assert "visible_path_distance" in prompt and "Never state a precise distance" in prompt
         result = {"answer": "The ground is visible.", "uncertain": False}
         if assessment is not None:
             result["visible_path"] = assessment
+            result["visible_path_distance"] = "about_1m"
         return httpx.Response(200, json={"candidates": [{"finishReason": "STOP", "content": {"parts": [
             {"text": json.dumps(result)},
         ]}}]})
@@ -193,6 +199,19 @@ def test_walking_protocol_requires_valid_visible_path(cloud, monkeypatch, assess
     else:
         result = asyncio.run(gemini.ask_image(b"jpeg", "Is it safe to walk?", "en"))
         assert result.visible_path == assessment
+
+
+def test_walking_protocol_requires_a_distance_band(cloud, monkeypatch):
+    def handle(request):
+        result = {"answer": "A chair blocks the way.", "uncertain": False, "visible_path": "blocked"}
+        return httpx.Response(200, json={"candidates": [{"finishReason": "STOP", "content": {"parts": [
+            {"text": json.dumps(result)},
+        ]}}]})
+
+    mock_transport(monkeypatch, handle)
+    with pytest.raises(BackendError) as error:
+        asyncio.run(gemini.ask_image(b"jpeg", "Is it safe to walk?", "en"))
+    assert error.value.code == "gemini_unavailable"
 
 
 @pytest.mark.parametrize("elapsed", [3, 7])
@@ -221,7 +240,7 @@ def test_walking_cloud_result_age_allows_inference_but_remains_bounded(client, c
     monkeypatch.setattr(gemini, "ask_image", assess)
     result = api.post(f"/api/v1/sessions/{sid}/questions", json={"question": "Is it safe to walk?"}).json()
     if elapsed == 3:
-        assert result["answer"].startswith("An obstacle or hazard is visible in the path.")
+        assert result["answer"].startswith("An obstacle or hazard is visible in the path")
         assert result["evidence_frame_ids"]
         assert not result["uncertain"]
         assert "local_detection_fallback" not in result["processing_warnings"]

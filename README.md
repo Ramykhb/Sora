@@ -96,6 +96,8 @@ Say **“route home”**, **“navigate university”**, or **“route to favori
 | “Stop speaking” | Stops current audio and suppresses a pending hands-free reply; keeps the camera and listening active. |
 | “Send my location to my SOS contact” | Submits a location email to the contact saved in Settings. |
 
+The same commands work in Arabic and French, and the wake phrase may be “يا سورا” or “Hé Sora”. Examples: “يا سورا، ابدأ البث”, “يا سورا، أوقف البث مؤقتاً”, “Hé Sora, démarre le flux”, “Hé Sora, mets le flux en pause”. Command feedback is spoken in the phone's language (English, Arabic, or French), which is also the language the speech recognizer listens in.
+
 Ordinary questions, including route requests, do **not** need the wake phrase. Every utterance beginning with “Hey Sora” is reserved for app controls; unsupported commands receive feedback instead of being sent as questions. Listening runs while the app is open, pauses in the background, and remains available during answer playback so the user can interrupt speech. SOS submission requires location permission and configured email delivery; it does not dispatch emergency services or confirm that the recipient has read the message.
 
 Repeat and stop-speaking commands also accept the “Hey Sora” prefix and remain available while ordinary questions or the stream are paused. Playback respects mute; say “Hey Sora, unmute” first if needed. Replay history is held in the current app process and cleared on sign-out, account/server changes, or provider teardown. App confirmations and obstacle alerts do not replace the remembered answer. Repeating a route replays its existing instructions; it does not refresh the route or the camera scene.

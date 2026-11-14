@@ -8,7 +8,7 @@ import numpy as np
 from app.core.config import settings
 from app.core.errors import BackendError
 from app.db.models.frame import now
-from app.services.ai import gemini, object_finder
+from app.services.ai import depth, gemini, object_finder
 from app.services.ai.retrieval import retrieve_frames
 from app.services.ai.safety import STALE, guard_answer
 from app.services.frames.ingestion import ingest_bytes
@@ -88,23 +88,32 @@ async def answer_cloud_view(session_id, request, language, *, walking=False, fin
         if "quality_override" in frame.processing_warnings or (result.uncertain and assessment == "unobstructed"):
             assessment = "unknown"
         uncertain = uncertain or assessment == "unknown"
-        prefix = {
-            "en": {
-                "unobstructed": "The visible path appears unobstructed.",
-                "blocked": "An obstacle or hazard is visible in the path.",
-                "unknown": "Not sure from this view.",
-            },
-            "fr": {
-                "unobstructed": "La partie visible du passage semble dégagée.",
-                "blocked": "Un obstacle ou un danger est visible sur le passage.",
-                "unknown": "Impossible de déterminer avec cette image.",
-            },
-            "ar": {
-                "unobstructed": "يبدو الجزء الظاهر من المسار خالياً من العوائق.",
-                "blocked": "يوجد عائق أو خطر ظاهر في المسار.",
-                "unknown": "لا يمكن التحديد من هذه الصورة.",
-            },
-        }[language][assessment]
+        distance = (depth.text(result.visible_path_distance, language, short=True)
+                    if result.visible_path_distance not in (None, "unknown") else "")
+        if assessment == "blocked":
+            prefix = {
+                "en": "An obstacle or hazard is visible in the path, {distance}." if distance
+                      else "An obstacle or hazard is visible in the path; its distance is unclear.",
+                "fr": "Un obstacle ou un danger est visible sur le passage, {distance}." if distance
+                      else "Un obstacle ou un danger est visible sur le passage ; sa distance est indéterminée.",
+                "ar": "يوجد عائق أو خطر ظاهر في المسار، {distance}." if distance
+                      else "يوجد عائق أو خطر ظاهر في المسار؛ المسافة غير واضحة.",
+            }[language].format(distance=distance)
+        else:
+            prefix = {
+                "en": {
+                    "unobstructed": "The visible path appears unobstructed.",
+                    "unknown": "Not sure from this view.",
+                },
+                "fr": {
+                    "unobstructed": "La partie visible du passage semble dégagée.",
+                    "unknown": "Impossible de déterminer avec cette image.",
+                },
+                "ar": {
+                    "unobstructed": "يبدو الجزء الظاهر من المسار خالياً من العوائق.",
+                    "unknown": "لا يمكن التحديد من هذه الصورة.",
+                },
+            }[language][assessment]
         text = prefix + " " + text
     evidence = [str(frame.id)]
     answer, uncertain = guard_answer(text, uncertain, language, evidence)

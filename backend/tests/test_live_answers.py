@@ -85,7 +85,7 @@ def test_overview_responds_while_ocr_and_generative_inference_are_busy(client, m
     assert "current_view_timeout" not in answer.processing_warnings
     if ROUTE_QUESTION.search(question):
         assert "center" in answer.answer
-        assert "Not sure about the walking path" in answer.answer
+        assert "obstructed" in answer.answer
     frames = api.get(f"/api/v1/sessions/{sid}/frames").json()
     assert frames[0]["enrichment_status"] == "skipped"
     assert frames[0]["ocr_text"] == ""
@@ -121,19 +121,38 @@ def test_no_detections_does_not_assert_an_empty_or_clear_scene():
     assert "not establish" in text and "No supported objects" in text
 
 
-@pytest.mark.parametrize("language,word", [("en", "center"), ("fr", "centre"), ("ar", "الوسط")])
-def test_walking_answer_describes_camera_positions_and_limits(language, word):
+@pytest.mark.parametrize("language,word,blocked", [
+    ("en", "center", "obstructed"), ("fr", "centre", "obstrué"), ("ar", "الوسط", "مسدود"),
+])
+def test_walking_answer_flags_a_center_detection_as_an_obstruction(language, word, blocked):
     objects = [
         {"label": "chair", "confidence": .9, "box": [40, 20, 60, 95]},
         {"label": "person", "confidence": .9, "box": [0, 10, 20, 80]},
         {"label": "bottle", "confidence": .9, "box": [80, 20, 100, 70]},
     ]
     answer = walking_observation(objects, 100, language)
-    assert word in answer
+    assert word in answer and blocked in answer
     assert not blocked_text(answer)
     empty = walking_observation([], 100, language)
     assert not blocked_text(empty)
     assert "safe" not in empty.casefold()
+
+
+def test_walking_answer_without_a_center_detection_stays_uncertain():
+    side_only = [{"label": "person", "confidence": .9, "box": [0, 10, 20, 80]}]
+    answer = walking_observation(side_only, 100, "en")
+    assert "Not sure about the walking path" in answer
+    assert "obstructed" not in answer
+
+
+def test_walking_obstruction_reports_a_coarse_distance():
+    answer = walking_observation([{"label": "chair", "confidence": .9, "box": [40, 20, 60, 95]}], 100, "en", 100)
+    assert "obstructed" in answer and "about 1 meter away" in answer
+
+
+def test_walking_obstruction_without_depth_says_distance_is_unclear():
+    answer = walking_observation([{"label": "chair", "confidence": .9, "box": [40, 20, 60, 95]}], 100, "en")
+    assert "obstructed" in answer and "distance unclear" in answer
 
 
 def test_walking_question_never_uses_old_memory_even_when_memory_scope_is_selected(client):

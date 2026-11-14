@@ -13,6 +13,40 @@ test('only a wake-prefixed start-stream command controls the app', () => {
   for (const phrase of ['start stream', 'hey sora', 'hello hey sora start stream', 'hey sora do not start stream', 'hey sora start streaming', 'hey sora start stream tomorrow', 'hey sora start stream 123']) assert.equal(voiceCommand(phrase), null);
 });
 
+test('Arabic and French wake-word commands match their English actions', () => {
+  for (const [action, phrases] of [
+    ['start-stream', ['يا سورا ابدأ البث', 'يا سورا، شغّل البث المباشر', 'هي سورا ابدأ البث', 'Hé Sora, démarre le flux', 'Hé Sora lance le direct']],
+    ['pause-stream', ['يا سورا أوقف البث مؤقتاً', 'Hé Sora, mets le flux en pause', 'Hé Sora, pause le flux']],
+    ['resume-stream', ['يا سورا استأنف البث', 'يا سورا واصل البث', 'Hé Sora, reprends le flux', 'Hé Sora continue le direct']],
+    ['stop-stream', ['يا سورا أوقف البث', 'يا سورا أغلق البث', 'Hé Sora, arrête le flux', 'Hé Sora stoppe le direct']],
+    ['stop-listening', ['يا سورا توقف عن الاستماع', "Hé Sora, arrête d'écouter", "Hé Sora, arrête l'écoute"]],
+    ['start-listening', ['يا سورا ابدأ الاستماع', 'يا سورا استأنف الاستماع', "Hé Sora, commence à écouter", "Hé Sora, reprends l'écoute"]],
+    ['mute', ['يا سورا اكتم الصوت', 'يا سورا صامت', 'Hé Sora, coupe le son', 'Hé Sora, mets le son en sourdine']],
+    ['unmute', ['يا سورا ألغِ كتم الصوت', 'يا سورا شغّل الصوت', 'Hé Sora, rétablis le son', 'Hé Sora, réactive le son']],
+  ]) {
+    for (const phrase of phrases) assert.equal(voiceCommand(phrase), action, phrase);
+  }
+  // The wake word is still required for app controls.
+  for (const phrase of ['ابدأ البث', 'démarre le flux', 'أوقف البث', 'arrête le flux']) assert.equal(voiceCommand(phrase), null);
+});
+
+test('Arabic and French playback and SOS phrases work without the wake word', () => {
+  for (const [action, phrases] of [
+    ['repeat-answer', ['أعد الإجابة', 'أعد ما قلته', 'قل ذلك مرة أخرى', 'Répète la réponse', 'Répète ça, s’il te plaît']],
+    ['repeat-directions', ['أعد الاتجاهات', 'أعد المسار', 'Répète les directions', "Répète l'itinéraire"]],
+    ['stop-speaking', ['توقف عن الكلام', 'أوقف الصوت', 'Arrête de parler', "Arrête l'audio"]],
+  ]) {
+    for (const phrase of phrases) assert.deepEqual(voiceInput(phrase), { kind: 'command', action }, phrase);
+  }
+  for (const phrase of ['أرسل موقعي إلى جهة اتصال الطوارئ', 'أرسل رسالة استغاثة', "Envoie ma position à mon contact d'urgence", 'envoie un SOS', 'يا سورا إس أو إس']) {
+    assert.deepEqual(voiceInput(phrase), { kind: 'command', action: 'send-sos-location' }, phrase);
+  }
+  // Unrelated speech in those languages stays a question.
+  for (const phrase of ['ما هو هذا', 'أوقف', 'qu’est-ce que c’est', 'répète la question de demain']) {
+    assert.equal(voiceInput(phrase)?.kind, 'question', phrase);
+  }
+});
+
 test('listening stays paused until every audio user releases it', () => {
   const gate = new VoiceAudioGate();
   const states = [];
@@ -70,6 +104,7 @@ function mount({ native = true, granted = true, permissionPromise, enabled = tru
       if (name === '@/lib/emergency') return { shareSOSLocation: async () => { sosCalls.push(true); return 'Your location email was submitted to your SOS contact.'; } };
       if (name === '@/lib/voice-level') return { voiceLevel: meter };
       if (name === '@/lib/voice-commands') return { voiceAudioGate: gate, voiceInput };
+      if (name === '@/lib/voice-language') return { ...require('../src/lib/voice-language.ts'), voiceLanguage: () => 'en' };
       if (name === '@/lib/speech') return { speech };
       if (name === 'expo-speech-recognition') { imports++; assert.equal(native, true); return { ExpoSpeechRecognitionModule: recognizer }; }
       throw new Error(`Unexpected import ${name}`);
@@ -315,6 +350,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
       if (name === '@/providers/voice-commands') return { useHandsFreeQuestions(handler) { voiceQuestion = handler; }, useVoiceStreamControls(handler) { voiceControl = handler; }, useVoiceCommands: () => ({ status: '' }) };
       if (name === '@/providers/auth') return { useAuth: () => ({ api: { async request(...args) { requests.push(args); if (args[0].endsWith('/close') && closeError) throw closeError; return args[0].endsWith('/questions') ? reply : session; } } }) };
       if (name === '@/providers/preferences') return { usePreferences: () => ({ colors: {}, preferences: { guidance: false } }) };
+      if (name === '@/lib/voice-language') return { ...require('../src/lib/voice-language.ts'), voiceLanguage: () => 'en' };
       if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() {} } };
       if (name === '@/lib/camera-feedback') return { cameraFeedback: () => null };
       return {};

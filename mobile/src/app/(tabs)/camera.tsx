@@ -16,6 +16,7 @@ import { usePreferences } from '@/providers/preferences';
 import type { StreamCommand } from '@/lib/voice-commands';
 import type { Answer, CaptureSession, Frame } from '@/lib/api';
 import { speech } from '@/lib/speech';
+import { speechLanguage, voiceLanguage, voiceText } from '@/lib/voice-language';
 import { AuthScreen } from '@/components/auth-screen';
 import { VoiceWaveform } from '@/components/voice-waveform';
 import { LiveCamera } from '@/components/live-camera';
@@ -25,6 +26,7 @@ function Capture() {
   const params = useLocalSearchParams<{ mode?: string; sessionId?: string; voiceStart?: string }>();
   const mode = params.mode === 'text' ? 'text' : params.mode === 'scene' ? 'scene' : 'live';
   const { api } = useAuth(); const { preferences, colors, update, dark } = usePreferences();
+  const language = voiceLanguage();
   const roundStyle = [cameraStyles.round, { backgroundColor: colors.cameraControl, borderColor: colors.heroEdge }];
   const controlColor = colors.cameraInk;
   const [permission, requestPermission] = useCameraPermissions();
@@ -52,15 +54,15 @@ function Capture() {
     if (starting.current) return;
     if (session) {
       if (streamPaused) setStreamPaused(false);
-      if (fromVoice) void speech.answer(streamPaused ? 'Resuming your stream.' : 'Your stream is already running.', 'en');
+      if (fromVoice) void speech.answer(voiceText(streamPaused ? 'resumingStream' : 'alreadyRunning', language), speechLanguage(language));
       return;
     }
     starting.current = true;
     setBusy(true); setError('');
-    if (fromVoice) { setConsent(true); void speech.answer('Starting your stream.', 'en'); }
+    if (fromVoice) { setConsent(true); void speech.answer(voiceText('startingStream', language), speechLanguage(language)); }
     try {
       const granted = permission?.granted ? permission : await requestPermission();
-      if (!granted.granted) throw new Error('Camera access is required. Enable it in your device settings, then try again.');
+      if (!granted.granted) throw new Error(voiceText('cameraPermission', language));
       const previous = params.sessionId ? await api.request<CaptureSession>(`/sessions/${params.sessionId}`) : null;
       const created = previous?.status === 'active' ? previous : await api.request<CaptureSession>('/sessions', 'POST', { consent: true, language: 'en', alerts_enabled: false });
       setStreamPaused(false); setSession(created);
@@ -68,9 +70,9 @@ function Capture() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to start your stream. Please try again.';
       setError(message);
-      if (fromVoice) void speech.answer(message, 'en');
+      if (fromVoice) void speech.answer(message, message === voiceText('cameraPermission', language) ? speechLanguage(language) : 'en');
     } finally { starting.current = false; setBusy(false); }
-  }, [api, params.sessionId, permission, requestPermission, preferences.guidance, session, streamPaused]);
+  }, [api, params.sessionId, permission, requestPermission, preferences.guidance, session, streamPaused, language]);
   useEffect(() => {
     if (!focused || !foreground || mode !== 'live' || !params.voiceStart || consumedVoiceStart.current === params.voiceStart) return;
     consumedVoiceStart.current = params.voiceStart;
@@ -95,13 +97,13 @@ function Capture() {
     if (!session || mode !== 'live') throw new Error('There is no live stream open. Say Hey Sora, start stream first.');
     if (command === 'pause-stream') {
       setStreamPaused(true); setConnected(false);
-      return streamPaused ? 'Your stream is already paused.' : 'Stream paused. Say Hey Sora, resume stream when you are ready.';
+      return voiceText(streamPaused ? 'alreadyPaused' : 'pausedConfirm', language);
     }
     if (command === 'resume-stream') {
       if (session.status !== 'active') throw new Error('This stream has ended. Say Hey Sora, start stream to begin a new one.');
       setStreamPaused(false);
       if (!focused) router.navigate({ pathname: '/camera', params: { mode: 'live' } });
-      return streamPaused || !focused ? 'Resuming your stream.' : 'Your stream is already running.';
+      return voiceText(streamPaused || !focused ? 'resumingStream' : 'alreadyRunning', language);
     }
     changingStream.current = true;
     // Release the camera immediately, even if closing the server session is slow.
@@ -109,7 +111,7 @@ function Capture() {
     try {
       await api.request<CaptureSession>(`/sessions/${session.id}/close`, 'POST');
       setSession(null); setVoiceAnswer(''); setViewTip(null); setStreamPaused(false);
-      return 'Stream stopped. Your saved moments are still available.';
+      return voiceText('stopConfirm', language);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Unable to end the session. Please try stop stream again.');
       throw error;
@@ -117,8 +119,8 @@ function Capture() {
   }
   useVoiceStreamControls(controlStream, !!session && mode === 'live', streamPaused);
   async function controlFromButton(command: StreamCommand) {
-    try { await speech.answer(await controlStream(command), 'en'); }
-    catch (error) { await speech.answer(error instanceof Error ? error.message : 'Unable to control your stream.', 'en'); }
+    try { await speech.answer(await controlStream(command), speechLanguage(language)); }
+    catch (error) { await speech.answer(error instanceof Error ? error.message : voiceText('controlFailed', language), error instanceof Error ? 'en' : speechLanguage(language)); }
   }
   async function run(work: () => Promise<void>) { setBusy(true); setError(''); try { await work(); } catch (e) { setError(e instanceof Error ? e.message : 'Capture failed. Please try again.'); } finally { setBusy(false); } }
   function result(frame: Frame, answerId?: string) {

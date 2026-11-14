@@ -1,30 +1,62 @@
-// Stream/listening controls require Hey Sora; explicit playback/SOS phrases work directly.
+// Stream/listening controls require the SORA wake word; explicit playback/SOS phrases work directly.
+// Commands are understood in English, Arabic and French, in every combination of script and accents.
 export type StreamCommand = 'pause-stream' | 'resume-stream' | 'stop-stream';
 export type PlaybackCommand = 'repeat-answer' | 'repeat-directions' | 'stop-speaking';
 export type VoiceCommand = 'start-stream' | StreamCommand | PlaybackCommand | 'stop-listening' | 'start-listening' | 'mute' | 'unmute' | 'send-sos-location';
+const ARABIC_MARKS = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g;
+// "Hey Sora", "Hé Sora", "يا سورا" and common recognizer spellings of them.
+const WAKE = /^(?:(?:hey|he|hay)\s+sora|(?:يا|هي|هيا|هاي)\s+سور[اىي])(?=\s|$)/;
+const PLEASE = '(?: please| s il te plait| s il vous plait| من فضلك| لو سمحت)?';
+const at = (body: string) => new RegExp(`^(?:${body})${PLEASE}$`);
+function normalize(transcript: string) {
+  return transcript
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(ARABIC_MARKS, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function parse(transcript: string) {
+  const words = normalize(transcript);
+  const wake = WAKE.test(words);
+  return { wake, words: wake ? words.replace(WAKE, '').trim() : words };
+}
+export function hasSORAWakeWord(transcript: string) { return WAKE.test(normalize(transcript)); }
 function playbackCommand(transcript: string): PlaybackCommand | null {
-  const words = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().replace(/^hey sora /, '');
-  if (/^(?:repeat (?:that|(?:the |my |your )?(?:last )?answer)|say that again)(?: please)?$/.test(words)) return 'repeat-answer';
-  if (/^repeat (?:the |my |your )?(?:last )?(?:directions|route)(?: please)?$/.test(words)) return 'repeat-directions';
-  if (/^stop (?:speaking|talking|audio)(?: please)?$/.test(words)) return 'stop-speaking';
+  const { words } = parse(transcript);
+  if (at('repeat (?:that|(?:the |my |your )?(?:last )?answer)|say that again|(?:repete|redis) (?:ca|ceci|la reponse|la derniere reponse|encore|le dernier message)|اعد (?:الاجابه|الاخيره|الجواب|ذلك|ما قلته)|اعد مره اخري|قل ذلك مره اخري').test(words)) return 'repeat-answer';
+  if (at('repeat (?:the |my |your )?(?:last )?(?:directions|route)|(?:repete|redis) (?:les |mes |tes |l )?(?:dernieres? )?(?:directions|itineraire|route|chemin)|اعد (?:ال)?(?:اتجاهات|مسار|مسارك|طريق|خط السير)').test(words)) return 'repeat-directions';
+  if (at('stop (?:speaking|talking|audio)|arrete (?:de parler|de lire|l audio|la voix)|tais toi|توقف عن (?:الكلام|التحدث)|اوقف (?:الصوت|الكلام)').test(words)) return 'stop-speaking';
   return null;
 }
 export function isSOSLocationCommand(transcript: string) {
-  const words = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (/^(?:hey sora )?(?:(?:send|share) (?:an? |my )?)?(?:sos|s o s)(?: (?:to )?(?:(?:my|the) )?(?:emergency )?contact)?(?: please)?$/.test(words)) return true;
-  return /^(?:hey sora )?(?:send|share) (?:my |the )?location (?:to|with) (?:my |the )?(?:sos|s o s|emergency) contact(?: please)?$/.test(words);
+  const { words } = parse(transcript);
+  if (at('(?:(?:send|share) (?:an? |my )?)?(?:sos|s o s)(?: (?:to )?(?:(?:my|the) )?(?:emergency )?contact)?').test(words)) return true;
+  if (at('(?:send|share) (?:my |the )?location (?:to|with) (?:my |the )?(?:sos|s o s|emergency) contact').test(words)) return true;
+  if (at('(?:envoie|lance|partage|transmets) (?:un |le )?(?:sos|signal de detresse)(?: (?:a|au) (?:mon |le )?contact(?: d urgence| urgence)?)?').test(words)) return true;
+  if (at('(?:envoie|partage|transmets) (?:ma |la )?position (?:a|au|avec) (?:mon |le |la )?contact(?: d urgence| urgence| sos)').test(words)) return true;
+  return at('(?:ارسل|ابعث|شارك) (?:(?:موقعي|الموقع) (?:الي|الى|ل|مع) (?:ال)?جهه (?:اتصال|الاتصال)(?: (?:ال)?طواري)?|(?:رساله |اشاره )?استغاثه)|اس او اس|sos').test(words);
 }
 export function voiceCommand(transcript: string): VoiceCommand | null {
   if (isSOSLocationCommand(transcript)) return 'send-sos-location';
   const playback = playbackCommand(transcript);
   if (playback) return playback;
-  const words = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (/^hey sora stop listening(?: please)?$/.test(words)) return 'stop-listening';
-  if (/^hey sora (?:start|resume) listening(?: please)?$/.test(words)) return 'start-listening';
-  const voice = /^hey sora (mute|unmute)(?: (?:your )?voice)?(?: please)?$/.exec(words);
-  if (voice) return voice[1] as 'mute' | 'unmute';
-  const match = /^hey sora (start|pause|resume|stop) (?:the )?stream(?: please)?$/.exec(words);
-  return match ? `${match[1]}-stream` as VoiceCommand : null;
+  const { wake, words } = parse(transcript);
+  if (!wake) return null;
+  if (at('stop listening|arrete (?:d ecouter|l ecoute)|توقف عن (?:ال)?استماع|(?:اوقف|ايقاف|الغ|الغي) (?:ال)?استماع').test(words)) return 'stop-listening';
+  if (at('(?:start|resume) listening|(?:commence|reprends|continue|active|demarre) (?:a |l )?(?:ecouter|ecoute)|(?:ابدا|استانف|تابع|واصل|اكمل|اعد|شغل) (?:ال)?استماع').test(words)) return 'start-listening';
+  if (at('unmute(?: (?:your )?voice)?|(?:retablis|reactive|rallume|active|remets) (?:le |la )?(?:son|audio|voix)|(?:الغ|الغي|فك) (?:ال)?كتم(?: (?:ال)?صوت)?|(?:شغل|اشغل|فعل) (?:ال)?صوت').test(words)) return 'unmute';
+  if (at('mute(?: (?:your )?voice)?|(?:coupe|mets|desactive|baisse) (?:le |la )?(?:son|audio|voix)(?: en sourdine)?|sourdine|silence|(?:اكتم|كتم) (?:ال)?صوت|صامت').test(words)) return 'mute';
+  if (at('pause (?:the )?stream|(?:mets|met) (?:le |la )?(?:flux|stream|direct) en pause|(?:pause|pauses) (?:le |la )?(?:flux|stream|direct)|(?:اوقف|ايقاف|علق) (?:ال)?بث موقتا').test(words)) return 'pause-stream';
+  if (at('resume (?:the )?stream|(?:reprends|reprend|reprendre|continue|relance) (?:le |la )?(?:flux|stream|direct)|(?:reprise) (?:du |le )?(?:flux|stream|direct)|(?:استانف|استئناف|تابع|واصل|اكمل) (?:ال)?بث(?: المباشر)?').test(words)) return 'resume-stream';
+  if (at('stop (?:the )?stream|(?:arrete|stoppe|termine) (?:le |la )?(?:flux|stream|direct)|(?:اوقف|ايقاف|انهي|انهاء|اغلق) (?:ال)?بث(?: المباشر)?').test(words)) return 'stop-stream';
+  if (at('start (?:the )?stream|(?:demarre|commence|lance) (?:le |la )?(?:flux|stream|direct)|(?:ابدا|ابدء|اشغل|شغل) (?:ال)?بث(?: المباشر)?').test(words)) return 'start-stream';
+  return null;
 }
 
 export type VoiceInput = { kind: 'command'; action: VoiceCommand | null } | { kind: 'question'; question: string };
@@ -35,7 +67,7 @@ export function voiceInput(transcript: string): VoiceInput | null {
   const playback = playbackCommand(text);
   if (playback) return { kind: 'command', action: playback };
   // Reserve the whole prefix, including commands that haven't been implemented yet.
-  if (/^hey[\s,!.:;—-]+sora\b/i.test(text)) return { kind: 'command', action: voiceCommand(text) };
+  if (hasSORAWakeWord(text)) return { kind: 'command', action: voiceCommand(text) };
   return { kind: 'question', question: text };
 }
 

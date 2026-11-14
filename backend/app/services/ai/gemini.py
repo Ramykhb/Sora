@@ -17,6 +17,7 @@ class GeminiAnswer(BaseModel):
     answer: str = Field(min_length=1, max_length=600)
     uncertain: StrictBool
     visible_path: Literal["unobstructed", "blocked", "unknown"] | None = None
+    visible_path_distance: ObjectDistance | Literal["unknown"] | None = None
     object_status: Literal["visible", "not_visible", "uncertain"] | None = None
     object_horizontal: Literal["left", "center", "right", "unknown"] | None = None
     object_vertical: Literal["top", "middle", "bottom", "unknown"] | None = None
@@ -52,6 +53,10 @@ async def ask_image(image: bytes, question: str, language: str):
         "For example, a closed door filling the forward passage is blocked even if no floor is shown; "
         "a door whose open/closed state or position across the passage is unclear is unknown. "
         "A TV, side wall, or object elsewhere in the image alone does not establish a blocked path. "
+        "Set visible_path_distance to a coarse band for the main forward blocker or nearest ground "
+        "hazard when visible_path=blocked, judging from typical object size and its position in the "
+        "image. Use unknown when blocked but depth cannot be judged, and unknown when nothing blocks "
+        "the path. Never state a precise distance. "
         "For traffic/crossing decisions always use unknown: a single frame "
         "cannot establish traffic movement. The answer must briefly explain the specific visual "
         "evidence for the assessment, without a generic route disclaimer or a yes/no permission to move. "
@@ -65,7 +70,8 @@ async def ask_image(image: bytes, question: str, language: str):
     required = ["answer", "uncertain"]
     if walking:
         properties["visible_path"] = {"type": "string", "enum": ["unobstructed", "blocked", "unknown"]}
-        required.append("visible_path")
+        properties["visible_path_distance"] = {"type": "string", "enum": [*BANDS, "unknown"]}
+        required.extend(["visible_path", "visible_path_distance"])
     if finding:
         instructions += (
             " This is an object-finding request. Inspect the image specifically for the requested object, "
@@ -120,8 +126,8 @@ async def ask_image(image: bytes, question: str, language: str):
         parts = candidates[0]["content"]["parts"]
         text = "".join(part.get("text", "") for part in parts if not part.get("thought"))
         result = GeminiAnswer.model_validate_json(text)
-        if walking and result.visible_path is None:
-            raise ValueError("Missing visible path assessment")
+        if walking and (result.visible_path is None or result.visible_path_distance is None):
+            raise ValueError("Missing visible path assessment or distance")
         if finding and any(value is None for value in (
             result.object_status, result.object_horizontal, result.object_vertical, result.object_distance,
         )):

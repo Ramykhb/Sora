@@ -86,8 +86,13 @@ questions on an image result refer to that image; the workspace uses its selecte
 session and question scope. One hands-free question is processed at a time. If no
 session is open, SORA explains how to start a stream by voice.
 
-Every utterance beginning with **“Hey Sora”** is reserved for app commands.
-Unsupported commands receive spoken feedback and are never submitted as questions.
+Every utterance beginning with **“Hey Sora”**, **“Hé Sora”**, or **“يا سورا”** is
+reserved for app commands. Every command below also works in Arabic and French,
+for example **“يا سورا، ابدأ البث”**, **“يا سورا، أوقف البث مؤقتاً”**,
+**“Hé Sora, démarre le flux”**, and **“Hé Sora, mets le flux en pause”**.
+The phone's locale selects the language the recognizer listens in and the language
+of spoken command feedback (English, Arabic, or French). Unsupported commands
+receive spoken feedback and are never submitted as questions.
 Supported stream commands:
 
 - **“Hey Sora, start stream”** starts live assistance.
