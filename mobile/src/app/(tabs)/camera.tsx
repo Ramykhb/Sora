@@ -53,7 +53,7 @@ function Capture() {
     const live = connectLive(api, `/sessions/${session.id}/events`, event => {
       if (event.type === 'alert' && event.message && event.id && event.expires_at && Date.parse(event.expires_at) > Date.now()) {
         setObstacleAlert({ message: event.message, expiresAt: event.expires_at });
-        void speech.alert(event.id, event.message, event.language || session.language, event.expires_at).catch(() => {});
+        void speech.alert(event.id, event.message, event.language || session.language, event.expires_at, event.label === 'remembered_detection').catch(() => {});
       }
     }, () => {});
     return () => { live.close(); setObstacleAlert(null); };

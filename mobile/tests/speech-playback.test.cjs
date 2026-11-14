@@ -167,3 +167,15 @@ test('an unavailable recognizer cannot leave answer playback waiting indefinitel
   assert.equal(app.spoken.length, 1);
   assert.equal(app.modes[0].allowsRecording, true);
 });
+
+test('Arabic remembered-target alerts speak the target instead of a generic obstacle recording', async () => {
+  const cloud = [];
+  let callbacks;
+  const app = setup(undefined, { async speak(text, options) { cloud.push(text); callbacks = options; return true; } });
+  const text = 'تم اكتشاف: علامة توقف.';
+  await app.speech.alert('remembered-stop', text, 'ar', new Date(Date.now() + 5000).toISOString(), true);
+  assert.deepEqual(cloud, [text]);
+  assert.equal(app.recordings.length, 0);
+  callbacks.onDone();
+  assert.equal(app.gate.playing, false);
+});

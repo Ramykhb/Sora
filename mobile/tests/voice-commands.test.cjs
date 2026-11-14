@@ -929,3 +929,11 @@ test('live camera announces fresh obstacle alerts and ignores stale or non-alert
     assert.equal(ignored.alerts.length, 0);
   }
 });
+
+
+test('remembered target notifications preserve their custom speech flag', async () => {
+  const event = { type: 'alert', id: 'watch-stop', label: 'remembered_detection', message: 'Detected: a stop sign.', language: 'en', expires_at: new Date(Date.now() + 5000).toISOString() };
+  const app = await voiceStartCamera(true, { active: true, event });
+  assert.equal(app.alerts.length, 1);
+  assert.equal(app.alerts[0][4], true);
+});

@@ -46,7 +46,7 @@ export const speech = new SpeechController({
         };
         // Urgent camera warnings use bundled recordings of the same female
         // voice. They must not wait for a cloud request or change to device TTS.
-        if (options.urgent) {
+        if (options.urgent && !options.dynamicAlert) {
           await prepareAudio();
           if (generation !== audioGeneration) { done(); return; }
           arabicRecordings.speak(arabicAlertRecording(text), callbacks);

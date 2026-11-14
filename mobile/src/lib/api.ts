@@ -8,7 +8,7 @@ export type DetectedObject = { label: string; confidence: number; box?: number[]
 export type Observation = { id: string; captured_at: string; expires_at: string; detected_objects: DetectedObject[]; latency_ms: number };
 export type Frame = { id: string; session_id: string; caption: string; ocr_text: string; captured_at: string; enrichment_status?: 'pending' | 'processing' | 'complete' | 'failed' | 'skipped'; enrichment_ms?: number | null; processing_warnings: string[]; detected_objects: DetectedObject[] };
 export type Answer = { id: string; session_id: string; question: string; answer: string; language: Language; uncertain: boolean; evidence_frame_ids: string[]; processing_warnings: string[]; created_at: string };
-export type LiveEvent = { type: string; id?: string; expires_at?: string; captured_at?: string; detected_objects?: DetectedObject[]; latency_ms?: number; message?: string; code?: string; reason?: string; language?: Language; frame?: Frame; question?: Answer; session?: CaptureSession };
+export type LiveEvent = { type: string; label?: string; id?: string; expires_at?: string; captured_at?: string; detected_objects?: DetectedObject[]; latency_ms?: number; message?: string; code?: string; reason?: string; language?: Language; frame?: Frame; question?: Answer; session?: CaptureSession };
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }

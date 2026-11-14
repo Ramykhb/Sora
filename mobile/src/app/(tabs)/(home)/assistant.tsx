@@ -121,7 +121,7 @@ function Assistant() {
       if (event.type === 'detection_error') setError('Live detection is unavailable. Check the server.');
       if (event.type === 'alert' && event.message && active && event.expires_at && Date.parse(event.expires_at) > Date.now()) {
         setNotice(event.message);
-        if (speak && alerts && event.id) void speech.alert(event.id, event.message, event.language || language, event.expires_at);
+        if (speak && (alerts || event.label === 'remembered_detection') && event.id) void speech.alert(event.id, event.message, event.language || language, event.expires_at, event.label === 'remembered_detection');
       }
     }, setConnection);
     return () => { cancelled = true; live.close(); };

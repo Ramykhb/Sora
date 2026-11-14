@@ -10,7 +10,7 @@ export type RoutePlayback = { text: string; language: string; route: NonNullable
 
 type Driver = {
   stop: () => Promise<void>;
-  speak: (text: string, options: { language: string; urgent?: boolean; onDone?: () => void; onStopped?: () => void; onError?: (error: Error) => void }) => void | Promise<void>;
+  speak: (text: string, options: { language: string; urgent?: boolean; dynamicAlert?: boolean; onDone?: () => void; onStopped?: () => void; onError?: (error: Error) => void }) => void | Promise<void>;
 };
 
 // Shared by automatic answers and obstacle alerts. No device APIs in this policy.
@@ -108,7 +108,7 @@ export class SpeechController {
     await this.driver.stop();
     if (generation === this.generation) await this.driver.speak(text, { language, ...(onDone ? { onDone, onStopped: onDone, onError: onDone } : {}) });
   }
-  async alert(id: string, text: string, language: string, expiresAt: string) {
+  async alert(id: string, text: string, language: string, expiresAt: string, dynamicAlert = false) {
     if (this.muted) return;
     const deadline = Date.parse(expiresAt);
     if (!Number.isFinite(deadline) || deadline <= Date.now() || this.seen.has(id)) return;
@@ -121,6 +121,6 @@ export class SpeechController {
     if (generation !== this.generation) return;
     if (deadline <= Date.now()) { this.urgent = false; return; }
     const done = () => { if (generation === this.generation) this.urgent = false; };
-    await this.driver.speak(text, { language, urgent: true, onDone: done, onStopped: done, onError: done });
+    await this.driver.speak(text, { language, urgent: true, ...(dynamicAlert ? { dynamicAlert: true } : {}), onDone: done, onStopped: done, onError: done });
   }
 }

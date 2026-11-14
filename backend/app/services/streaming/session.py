@@ -244,10 +244,13 @@ class Streams:
         from app.services.ai import gemini
         from app.services.ai.cloud_view import cloud_image
         from app.services.ai.safety import blocked_text
+        from app.services import detection_memory
         from app.services.sessions import get_session
 
         session = await get_session(session_id, active=True)
-        if not session.alerts_enabled or self.states.get(session_id) is not state:
+        owner_id = getattr(session, "owner_id", None)
+        watches = await detection_memory.pending(owner_id)
+        if (not session.alerts_enabled and not watches) or self.states.get(session_id) is not state:
             return
         snapshot = self.fresh_snapshot(session_id)
         if snapshot is None:
@@ -258,27 +261,45 @@ class Streams:
         image = await asyncio.to_thread(cloud_image, content, False)
         if (now() - timestamp).total_seconds() > settings.detection_max_age_seconds:
             return
-        result = await gemini.ask_obstacles(image, session.language)
+        if watches:
+            result = await gemini.ask_obstacles(image, session.language, watches=watches)
+        else:
+            result = await gemini.ask_obstacles(image, session.language)
         session = await get_session(session_id, active=True)
-        if not session.alerts_enabled or self.states.get(session_id) is not state:
+        if self.states.get(session_id) is not state:
             return
         expires = timestamp + timedelta(seconds=settings.gemini_walking_max_age_seconds)
         if now() >= expires:
             return
         state.obstacle_error = None
-        if result.visible_path != "blocked":
-            if result.visible_path == "unobstructed" and not result.uncertain:
-                state.alert_times.pop("gemini_obstacle", None)
-            return
-        if blocked_text(result.answer):
-            return
         current = monotonic()
-        if current - state.alert_times.get("gemini_obstacle", float("-inf")) < settings.alert_cooldown_seconds:
+        obstacle_message = None
+        if result.visible_path == "unobstructed" and not result.uncertain:
+            state.alert_times.pop("gemini_obstacle", None)
+        if (session.alerts_enabled and result.visible_path == "blocked" and not blocked_text(result.answer)
+                and current - state.alert_times.get("gemini_obstacle", float("-inf")) >= settings.alert_cooldown_seconds):
+            obstacle_message = result.answer
+        # Only IDs included in this exact request may consume account memory.
+        allowed = {watch["id"] for watch in watches}
+        matched = [value for value in result.matched_alert_ids if value in allowed]
+        if matched:
+            remembered_alert = await detection_memory.fulfill(
+                owner_id, session_id, matched, timestamp, expires,
+                lambda: self.states.get(session_id) is state, obstacle_message,
+            )
+            if remembered_alert:
+                if obstacle_message:
+                    state.alert_times["gemini_obstacle"] = current
+                # All matches share one announcement, so simultaneous matches
+                # and obstacle speech cannot interrupt one another.
+                events.publish(session_id, remembered_alert)
+                return
+        if not obstacle_message:
             return
         state.alert_times["gemini_obstacle"] = current
         alert = {
             "type": "alert", "id": str(uuid4()), "frame_id": None,
-            "label": "gemini_obstacle", "message": result.answer, "language": session.language,
+            "label": "gemini_obstacle", "message": obstacle_message, "language": session.language,
             "captured_at": timestamp.isoformat(), "expires_at": expires.isoformat(),
             "created_at": now().isoformat(),
             "latency_ms": round((now() - timestamp).total_seconds() * 1000, 1),

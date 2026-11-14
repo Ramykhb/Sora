@@ -15,7 +15,7 @@ from app.db.session import SessionFactory
 from app.schemas import AnswerOut
 from app.services.ai.models import ModelAnswer, models
 from app.services.ai import gemini, object_finder, places
-from app.services import saved_destinations
+from app.services import detection_memory, saved_destinations
 from app.services.ai.cloud_view import answer_cloud_view
 from app.services.ai.retrieval import resolve_scope, retrieve_frames
 from app.services.ai.live_answer import answer_overview, is_overview
@@ -209,9 +209,10 @@ async def answer_question(session_id, request, source="text", requester_id=None)
     start = perf_counter()
     session = await get_session(session_id)
     language = request.language or session.language
+    watch_target = detection_memory.request_target(request.question)
     finding = object_finder.query(request.question)
     walking = bool(ROUTE_QUESTION.search(request.question)) and not finding
-    requested_scope = "recent" if walking or finding else request.scope
+    requested_scope = "recent" if watch_target is not None or walking or finding else request.scope
     scope = resolve_scope(request.question, requested_scope)
     target = places.route_target(request.question) if not places.is_destination_reference(request.question) else None
     saved = None
@@ -222,7 +223,7 @@ async def answer_question(session_id, request, source="text", requester_id=None)
                       and places.is_place_question(request.question)
                       and not finding
                       and not IDENTITY_QUESTION.search(request.question))
-    place_question = bool(place_question or saved_request)
+    place_question = watch_target is None and bool(place_question or saved_request)
     trip_question = place_question and places.is_trip_question(request.question)
     # Only place turns participate in destination memory. Empty context records
     # an unsuccessful new search so "there" never silently reuses an older place.
@@ -236,7 +237,7 @@ async def answer_question(session_id, request, source="text", requester_id=None)
             ).order_by(QuestionAnswer.created_at.desc(), QuestionAnswer.id.desc()).limit(1))
             if previous is not None:
                 place_context = dict(previous.place_context or {})
-    use_cloud = not place_question and scope == "recent" and gemini.configured() and not IDENTITY_QUESTION.search(request.question) and (walking or not is_overview(request.question))
+    use_cloud = watch_target is None and not place_question and scope == "recent" and gemini.configured() and not IDENTITY_QUESTION.search(request.question) and (walking or not is_overview(request.question))
     cloud_answer_used = False
     budget = (settings.places_timeout_seconds + settings.groq_timeout_seconds + 1) if place_question else (settings.gemini_deadline_seconds if use_cloud else settings.current_answer_timeout_seconds)
     if trip_question:
@@ -246,7 +247,11 @@ async def answer_question(session_id, request, source="text", requester_id=None)
         # HTTP inference. Current-view questions must not wait for minutes only
         # to lose their evidence at the end.
         async with asyncio.timeout(budget if place_question or scope == "recent" else None):
-            if saved_request:
+            if watch_target is not None:
+                answer, uncertain, evidence, warnings = await detection_memory.remember(
+                    session_id, watch_target, language, requester_id,
+                )
+            elif saved_request:
                 if saved is None:
                     answer, uncertain, evidence, warnings = saved_destinations.missing_destination(target.nickname, language)
                 else:
