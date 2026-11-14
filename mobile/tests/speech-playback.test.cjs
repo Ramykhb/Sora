@@ -8,7 +8,7 @@ const { SpeechController } = require('../src/lib/speech-policy.ts');
 const { VoiceAudioGate } = require('../src/lib/voice-commands.ts');
 const source = ts.transpileModule(fs.readFileSync(require.resolve('../src/lib/speech.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
 function setup(configure = async () => {}, cloud = {}) {
-  const spoken = [], modes = [];
+  const spoken = [], modes = [], recordings = [];
   const gate = new VoiceAudioGate();
   const exports = {};
   vm.runInNewContext(source, { exports, require(name) {
@@ -23,10 +23,11 @@ function setup(configure = async () => {}, cloud = {}) {
     if (name === './speech-policy') return { SpeechController };
     if (name === './voice-commands') return { voiceAudioGate: gate };
     if (name === './voice-language') return require('../src/lib/voice-language.ts');
+    if (name === './arabic-recordings') return { arabicAlertRecording: text => /باباً مغلقاً/.test(text) ? 'closedDoor' : 'obstacle', arabicRecordings: { stop() {}, speak(key, callbacks) { recordings.push({ key, callbacks }); } } };
     if (name === './server-speech') return { serverSpeech: { stop() {}, async speak() { return false; }, ...cloud } };
     throw new Error(name);
   } });
-  return { speech: exports.speech, spoken, modes, gate };
+  return { speech: exports.speech, spoken, modes, gate, recordings };
 }
 
 test('automatic answers use the configured playback session and resume listening after speech', async () => {
@@ -42,23 +43,23 @@ test('automatic answers use the configured playback session and resume listening
   assert.equal(gate.playing, false);
 });
 
-test('Arabic playback prefers an Enhanced voice and uses a faster rate', async () => {
-  const { speech, spoken } = setup();
+test('unavailable Arabic cloud speech never falls back to the male device voice', async () => {
+  const { speech, spoken, recordings } = setup();
   await speech.answer('مرحباً، الطريق أمامك.', 'ar-SA');
-  assert.equal(spoken[0].options.voice, 'ar-eg-enhanced');
-  assert.equal(spoken[0].options.rate, 1.25);
-  assert.equal(spoken[0].options.language, 'ar-SA');
+  assert.equal(spoken.length, 0);
+  assert.equal(recordings[0].key, 'unavailable');
 });
 
 test('Arabic start prompts supply pronunciation vowels without changing other words', async () => {
-  const { speech, spoken } = setup();
+  const cloud = [];
+  const { speech, spoken } = setup(undefined, { async speak(text) { cloud.push(text); return true; } });
   const prompt = 'ابدأ البث. قل «يا سورا، ابدأ الاستماع». لا تتوقف أبداً.';
   await speech.answer(prompt, 'ar-SA');
-  assert.equal(spoken[0].text, 'اِبْدَأْ البث. قل «يا سورا، اِبْدَأْ الاستماع». لا تتوقف أبداً.');
+  assert.equal(cloud[0], 'اِبْدَأْ البث. قل «يا سورا، اِبْدَأْ الاستماع». لا تتوقف أبداً.');
   await speech.answer('اِبْدَأْ البث، ابدأنا، أبدان، أبدا، أبداً، ابدا.', 'ar');
-  assert.equal(spoken[1].text, 'اِبْدَأْ البث، ابدأنا، أبدان، أبدا، أبداً، ابدا.');
+  assert.equal(cloud[1], 'اِبْدَأْ البث، ابدأنا، أبدان، أبدا، أبداً، ابدا.');
   await speech.answer('ابدأ', 'en-US');
-  assert.equal(spoken[2].text, 'ابدأ');
+  assert.equal(spoken[0].text, 'ابدأ');
 });
 
 test('stopping while audio config is pending prevents a delayed answer from speaking', async () => {
@@ -101,10 +102,16 @@ test('stopping during a cloud request prevents both remote and fallback playback
   assert.ok(stops >= 2);
 });
 
-test('urgent Arabic obstacle alerts use the immediate local voice', async () => {
+test('Arabic stream warnings keep the female voice without making cloud requests', async () => {
   const app = setup(undefined, { async speak() { throw new Error('Alerts must not wait on cloud synthesis'); } });
-  await app.speech.alert('urgent', 'عائق أمامك', 'ar', new Date(Date.now() + 5000).toISOString());
-  assert.equal(app.spoken.length, 1);
+  await app.speech.alert('urgent', 'يوجد جسم في وسط صورة الكاميرا. لا يمكنني تقييم المسار كاملاً.', 'ar', new Date(Date.now() + 5000).toISOString());
+  assert.equal(app.spoken.length, 0);
+  assert.equal(app.recordings[0].key, 'obstacle');
+  app.recordings[0].callbacks.onDone();
+  assert.equal(app.gate.playing, false);
+  await app.speech.alert('door', 'يبدو أن هناك باباً مغلقاً في وسط صورة الكاميرا.', 'ar', new Date(Date.now() + 5000).toISOString());
+  assert.equal(app.recordings[1].key, 'closedDoor');
+  assert.equal(app.spoken.length, 0);
 });
 
 test('audio setup errors release the microphone gate', async () => {

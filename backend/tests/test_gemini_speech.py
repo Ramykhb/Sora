@@ -29,6 +29,7 @@ def cloud(monkeypatch):
     monkeypatch.setattr(settings, "gemini_tts_model", "gemini-3.8-flash-tts")
     monkeypatch.setattr(settings, "gemini_tts_voice", "Aoede")
     gemini_speech._cache.clear()
+    gemini_speech._blocked_models.clear()
 
 
 def transport(monkeypatch, handler):
@@ -92,6 +93,25 @@ def test_missing_key_does_not_return_previously_cached_audio(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", SecretStr(""))
     with pytest.raises(BackendError, match="not configured"):
         gemini_speech.synthesize_arabic("مرحبا")
+
+
+def test_rate_limited_model_uses_same_voice_on_fallback_and_cools_down(monkeypatch):
+    calls = []
+    def handle(request):
+        body = json.loads(request.content)
+        calls.append(body["model"])
+        assert body["generation_config"]["speech_config"] == [{"voice": "Aoede"}]
+        if body["model"] == settings.gemini_tts_model:
+            return httpx.Response(429, json={"error": {"code": "too_many_requests"}})
+        return httpx.Response(200, json=response())
+    transport(monkeypatch, handle)
+    assert gemini_speech.synthesize_arabic("مرحبا") == wav_bytes()
+    assert calls == [settings.gemini_tts_model, settings.gemini_tts_fallback_model]
+    assert gemini_speech.synthesize_arabic("مرحبا") == wav_bytes()
+    assert len(calls) == 2
+    gemini_speech.synthesize_arabic("ابدأ البث")
+    assert calls[-1] == settings.gemini_tts_fallback_model
+    assert len(calls) == 3
 
 
 def test_existing_speech_safety_filter_runs_before_cloud_synthesis(monkeypatch):

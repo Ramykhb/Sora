@@ -4,26 +4,15 @@ import { SpeechController } from './speech-policy';
 import { voiceAudioGate } from './voice-commands';
 import { speechText } from './voice-language';
 import { serverSpeech } from './server-speech';
+import { arabicRecordings, arabicAlertRecording } from './arabic-recordings';
 
 let audioGeneration = 0;
 let releaseAudio: (() => void) | undefined;
-let arabicVoice: Promise<string | undefined> | undefined;
-// Prefer an installed Enhanced Arabic voice; compact fallback voices are the
-// usual cause of clipped or mispronounced Arabic on iOS.
-function preferredArabicVoice() {
-  arabicVoice ??= Speech.getAvailableVoicesAsync().then(voices => {
-    const arabic = voices.filter(voice => voice.language.toLowerCase().startsWith('ar'));
-    return arabic.sort((a, b) =>
-      Number(b.quality === 'Enhanced') - Number(a.quality === 'Enhanced')
-      || Number(b.language.toLowerCase() === 'ar-sa') - Number(a.language.toLowerCase() === 'ar-sa'),
-    )[0]?.identifier;
-  }).catch(() => undefined);
-  return arabicVoice;
-}
 export const speech = new SpeechController({
   async stop() {
     audioGeneration++;
     serverSpeech.stop();
+    arabicRecordings.stop();
     const release = releaseAudio;
     releaseAudio = undefined;
     try { await Speech.stop(); } finally { release?.(); }
@@ -50,22 +39,31 @@ export const speech = new SpeechController({
         }
       })();
       const language = options.language.toLowerCase().split('-')[0];
-      if (language === 'ar' && !options.urgent) {
-        const handled = await serverSpeech.speak(speechText(text, options.language), {
+      if (language === 'ar') {
+        const callbacks = {
           onDone: () => done(options.onDone),
-          onError: error => done(() => options.onError?.(error)),
-        }, prepareAudio);
+          onError: (error: Error) => done(() => options.onError?.(error)),
+        };
+        // Urgent camera warnings use bundled recordings of the same female
+        // voice. They must not wait for a cloud request or change to device TTS.
+        if (options.urgent) {
+          await prepareAudio();
+          if (generation !== audioGeneration) { done(); return; }
+          arabicRecordings.speak(arabicAlertRecording(text), callbacks);
+          return;
+        }
+        const handled = await serverSpeech.speak(speechText(text, options.language), callbacks, prepareAudio);
         if (generation !== audioGeneration) { done(); return; }
         if (handled) return;
+        await prepareAudio();
+        if (generation !== audioGeneration) { done(); return; }
+        arabicRecordings.speak('unavailable', callbacks);
+        return;
       }
       await prepareAudio();
       if (generation !== audioGeneration) { done(); return; }
-      const voice = language === 'ar' ? await preferredArabicVoice() : undefined;
-      if (generation !== audioGeneration) { done(); return; }
       Speech.speak(speechText(text, options.language), {
         ...options, volume: 1, useApplicationAudioSession: true,
-        ...(voice ? { voice } : {}),
-        ...(language === 'ar' ? { rate: 1.25 } : {}),
         onDone: () => done(options.onDone), onStopped: () => done(options.onStopped), onError: error => done(() => options.onError?.(error)),
       });
     } catch (error) { done(); throw error; }

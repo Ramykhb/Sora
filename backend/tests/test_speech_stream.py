@@ -15,6 +15,7 @@ def cloud(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", SecretStr("test-private-key"))
     monkeypatch.setattr(settings, "gemini_tts_enabled", True)
     gemini_speech._cache.clear()
+    gemini_speech._blocked_models.clear()
 
 
 def events(pcm):
@@ -43,6 +44,27 @@ def test_pcm_stream_protocol_and_completed_prompt_cache(monkeypatch):
     assert asyncio.run(consume()) == pcm
     assert asyncio.run(consume()) == pcm
     assert len(calls) == 1
+
+
+def test_stream_falls_back_to_lite_with_the_same_voice_on_rate_limit(monkeypatch):
+    calls = []
+    pcm = b"\x00\x00" * 2400
+    def handle(request):
+        body = json.loads(request.content)
+        calls.append(body["model"])
+        assert body["generation_config"]["speech_config"] == [{"voice": settings.gemini_tts_voice}]
+        if body["model"] == settings.gemini_tts_model:
+            return httpx.Response(429, json={"error": {"code": "too_many_requests"}})
+        return httpx.Response(200, content=events(pcm))
+    original = httpx.AsyncClient
+    monkeypatch.setattr(speech_stream.httpx, "AsyncClient", lambda **kwargs: original(
+        transport=httpx.MockTransport(handle), **kwargs,
+    ))
+    async def consume():
+        return b"".join([chunk async for chunk in speech_stream.pcm_chunks("مرحبا")])
+    assert asyncio.run(consume()) == pcm
+    assert asyncio.run(consume()) == pcm
+    assert calls == [settings.gemini_tts_model, settings.gemini_tts_fallback_model]
 
 
 def test_pcm_is_yielded_before_provider_finishes(monkeypatch):
