@@ -24,6 +24,8 @@ const COMMAND_PHRASES = [
   'Hey Sora start stream', 'Hey Sora pause stream', 'Hey Sora resume stream', 'Hey Sora stop stream',
   'Hey Sora stop listening', 'Hey Sora start listening', 'Hey Sora resume listening',
   'Hey Sora mute', 'Hey Sora unmute', 'Repeat that', 'Repeat the directions', 'Stop speaking',
+  'Next step', 'Previous step', 'Show full route', 'Étape suivante', 'Étape précédente', 'Affiche l’itinéraire complet',
+  'الخطوة التالية', 'الخطوة السابقة', 'اعرض المسار كاملاً',
   'Hey Sora repeat that', 'Hey Sora repeat the directions', 'Hey Sora stop speaking', 'Describe the scene',
   'Hé Sora démarre le flux', 'Hé Sora mets le flux en pause', 'Hé Sora reprends le flux', 'Hé Sora arrête le flux',
   "Hé Sora arrête d'écouter", 'Hé Sora commence à écouter', 'Hé Sora coupe le son', 'Hé Sora rétablis le son',
@@ -267,6 +269,18 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
             cancelQuestions();
             void speech.stop().catch(() => {});
             setStatus('Speech stopped. Listening is still on.');
+          } else if (input.action === 'next-step' || input.action === 'previous-step' || input.action === 'show-full-route') {
+            cancelQuestions();
+            const action = input.action;
+            const generation = questionGeneration.current;
+            void speech.stop().then(async () => {
+              if (disposed || generation !== questionGeneration.current || AppState.currentState !== 'active') return;
+              const found = action === 'show-full-route'
+                ? await speech.showFullRoute()
+                : await speech.moveRouteStep(action === 'next-step' ? 1 : -1);
+              if (!found) await speech.answer(voiceText('noDirections', language), speechLanguage(language));
+              setStatus(found ? (speech.isMuted ? 'Route updated. Voice is muted.' : 'Route updated.') : voiceText('noDirections', language));
+            }).catch(() => setStatus('Unable to play the route. Please try again.'));
           } else if (input.action === 'repeat-answer' || input.action === 'repeat-directions') {
             void repeatReply(input.action === 'repeat-directions');
           } else if (input.action === 'send-sos-location') {

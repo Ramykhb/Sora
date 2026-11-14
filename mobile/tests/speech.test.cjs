@@ -127,3 +127,73 @@ test('mute suppresses replay without deleting the remembered response', async ()
   await speech.repeatLastAnswer();
   assert.equal(spoken[0].text, 'A chair.');
 });
+
+const route = 'Cafe is approximately 500 m away on foot. Walking directions from Google Maps:\n1. Head north (100 m).\n2. Turn right (400 m).\nWalking routes may be missing sidewalks. This overview does not track progress.';
+
+test('a route starts with its summary, first step and warnings, then moves one step at a time', async () => {
+  const { speech, spoken } = setup();
+  await speech.answer(route, 'en');
+  assert.match(spoken[0].text, /Cafe.*500 m/);
+  assert.match(spoken[0].text, /1\. Head north/);
+  assert.match(spoken[0].text, /missing sidewalks/);
+  assert.doesNotMatch(spoken[0].text, /2\. Turn right/);
+  speech.rememberAnswer(route, 'en');
+  await speech.moveRouteStep(1);
+  assert.equal(spoken.at(-1).text, '2. Turn right (400 m).');
+  speech.rememberAnswer(route, 'en'); // Duplicate live delivery must preserve progress.
+  assert.equal(speech.getRoutePlayback().index, 1);
+  await speech.moveRouteStep(1);
+  assert.equal(speech.getRoutePlayback().index, 1);
+  assert.match(spoken.at(-1).text, /last step/);
+  await speech.moveRouteStep(-1);
+  assert.equal(spoken.at(-1).text, '1. Head north (100 m).');
+  await speech.moveRouteStep(-1);
+  assert.equal(speech.getRoutePlayback().index, 0);
+  assert.match(spoken.at(-1).text, /first step/);
+});
+
+test('full route expands every step and preserves the cursor through unrelated answers and alerts', async () => {
+  const { speech, spoken } = setup();
+  speech.rememberAnswer(route, 'fr');
+  await speech.moveRouteStep(1);
+  speech.rememberAnswer('A chair is ahead.', 'en');
+  await speech.alert('route-alert', 'Obstacle.', 'en', new Date(Date.now() + 2000).toISOString());
+  await speech.stop();
+  await speech.showFullRoute();
+  assert.equal(spoken.at(-1).text, route);
+  assert.equal(spoken.at(-1).options.language, 'fr');
+  assert.equal(speech.getRoutePlayback().full, true);
+  assert.equal(speech.getRoutePlayback().index, 1);
+  await speech.moveRouteStep(-1);
+  assert.equal(speech.getRoutePlayback().full, false);
+  assert.equal(spoken.at(-1).text, '1. Head north (100 m).');
+});
+
+test('new routes reset progress and clearing history removes route controls', async () => {
+  const { speech } = setup();
+  assert.equal(await speech.moveRouteStep(1), false);
+  assert.equal(await speech.showFullRoute(), false);
+  let notifications = 0;
+  const unsubscribe = speech.subscribeRoute(() => notifications++);
+  speech.rememberAnswer(route, 'en');
+  await speech.moveRouteStep(1);
+  speech.rememberAnswer(route.replace('Cafe', 'Library'), 'en');
+  assert.equal(speech.getRoutePlayback().index, 0);
+  assert.equal(speech.getRoutePlayback().full, false);
+  speech.clearHistory();
+  assert.equal(speech.getRoutePlayback(), null);
+  assert.equal(await speech.moveRouteStep(-1), false);
+  assert.equal(notifications, 4);
+  unsubscribe();
+});
+
+test('route display and cursor controls still work when voice is muted', async () => {
+  const { speech, spoken } = setup();
+  speech.rememberAnswer(route, 'en');
+  await speech.setMuted(true);
+  await speech.moveRouteStep(1);
+  await speech.showFullRoute();
+  assert.equal(speech.getRoutePlayback().index, 1);
+  assert.equal(speech.getRoutePlayback().full, true);
+  assert.equal(spoken.length, 0);
+});

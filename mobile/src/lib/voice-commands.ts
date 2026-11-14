@@ -1,7 +1,7 @@
 // Stream/listening controls require the SORA wake word; explicit playback/SOS phrases work directly.
 // Commands are understood in English, Arabic and French, in every combination of script and accents.
 export type StreamCommand = 'pause-stream' | 'resume-stream' | 'stop-stream';
-export type PlaybackCommand = 'repeat-answer' | 'repeat-directions' | 'stop-speaking';
+export type PlaybackCommand = 'repeat-answer' | 'repeat-directions' | 'next-step' | 'previous-step' | 'show-full-route' | 'stop-speaking';
 export type VoiceCommand = 'start-stream' | StreamCommand | PlaybackCommand | 'stop-listening' | 'start-listening' | 'mute' | 'unmute' | 'send-sos-location';
 const ARABIC_MARKS = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g;
 // "Hey Sora", "Hé Sora", "يا سورا" and common recognizer spellings of them.
@@ -29,6 +29,9 @@ function parse(transcript: string) {
 export function hasSORAWakeWord(transcript: string) { return WAKE.test(normalize(transcript)); }
 function playbackCommand(transcript: string): PlaybackCommand | null {
   const { words } = parse(transcript);
+  if (at('(?:next|the next) step|(?:etape suivante|prochaine etape)|(?:الخطوه التاليه|الخطوه القادمه)').test(words)) return 'next-step';
+  if (at('(?:previous|the previous|last) step|(?:etape precedente)|الخطوه السابقه').test(words)) return 'previous-step';
+  if (at('show (?:me )?(?:the )?(?:full|entire) route|(?:affiche|montre) (?:moi )?(?:l |le )?(?:itineraire|trajet) (?:complet|entier)|(?:اعرض|اظهر) (?:المسار|الطريق) (?:كاملا|بالكامل)').test(words)) return 'show-full-route';
   if (at('repeat (?:that|(?:the |my |your )?(?:last )?answer)|say that again|(?:repete|redis) (?:ca|ceci|la reponse|la derniere reponse|encore|le dernier message)|اعد (?:الاجابه|الاخيره|الجواب|ذلك|ما قلته)|اعد مره اخري|قل ذلك مره اخري').test(words)) return 'repeat-answer';
   if (at('repeat (?:the |my |your )?(?:last )?(?:directions|route)|(?:repete|redis) (?:les |mes |tes |l )?(?:dernieres? )?(?:directions|itineraire|route|chemin)|اعد (?:ال)?(?:اتجاهات|مسار|مسارك|طريق|خط السير)').test(words)) return 'repeat-directions';
   if (at('stop (?:speaking|talking|audio)|arrete (?:de parler|de lire|l audio|la voix)|tais toi|توقف عن (?:الكلام|التحدث)|اوقف (?:الصوت|الكلام)').test(words)) return 'stop-speaking';

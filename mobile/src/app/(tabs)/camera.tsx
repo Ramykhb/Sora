@@ -1,6 +1,7 @@
+import { RouteAnswer } from '@/components/route-answer';
 import { useFullscreenTabBar } from '@/providers/tab-bar';
 import { ScreenIntro, SoraHero } from '@/components/brand';
-import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ComponentRef } from 'react';
 import { AppState, Platform, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -37,9 +38,10 @@ function Capture() {
   const [uploading, setUploading] = useState(false);
   const voice = useVoiceCommands();
   const [voiceAnswer, setVoiceAnswer] = useState('');
+  const routePlayback = useSyncExternalStore(speech.subscribeRoute, speech.getRoutePlayback, speech.getRoutePlayback);
   const [viewTip, setViewTip] = useState<string | null>(null);
   const answerScroll = useRef<ComponentRef<typeof ScrollView>>(null);
-  useEffect(() => { answerScroll.current?.scrollTo({ y: 0, animated: false }); }, [voiceAnswer]);
+  useEffect(() => { answerScroll.current?.scrollTo({ y: 0, animated: false }); }, [voiceAnswer, routePlayback]);
   const [connected, setConnected] = useState(false);
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [focused, setFocused] = useState(true); const [foreground, setForeground] = useState(AppState.currentState === 'active');
@@ -176,7 +178,8 @@ function Capture() {
         {mode === 'live' && <View style={{ flexDirection: 'row', justifyContent: 'space-around', gap: 12 }}><Tap label={streamPaused ? 'Resume stream' : 'Pause stream'} onPress={() => void controlFromButton(streamPaused ? 'resume-stream' : 'pause-stream')} style={{ alignItems: 'center', justifyContent: 'center' }}><Label bold style={{ color: controlColor }}>{streamPaused ? 'Resume stream' : 'Pause stream'}</Label></Tap><Tap label="Stop stream" onPress={() => void controlFromButton('stop-stream')} style={{ alignItems: 'center', justifyContent: 'center' }}><Label bold style={{ color: colors.danger }}>Stop stream</Label></Tap></View>}
         {!!error && <Label accessibilityRole="alert" style={{ color: colors.danger, backgroundColor: colors.surface, padding: 12, borderRadius: 12 }}>{error}</Label>}
         {preferences.voiceCommands && <Label style={{ color: controlColor, textAlign: 'center' }} size={12}>{voice.status}</Label>}
-        {!!voiceAnswer && <Label selectable style={{ color: controlColor }} size={14}>{voiceAnswer}</Label>}
+        {mode === 'live' && routePlayback && routePlayback.text !== voiceAnswer && <RouteAnswer text={routePlayback.text} language={routePlayback.language} color={controlColor} onError={setError} />}
+        {!!voiceAnswer && <RouteAnswer text={voiceAnswer} language={session?.language ?? preferences.language} color={controlColor} onError={setError} />}
         {!!viewTip && <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}><Icon name="camera-outline" size={18} color={controlColor} /><Label accessibilityLiveRegion="polite" style={{ color: controlColor, flex: 1 }} size={12}>{viewTip}</Label></View>}
         {busy && <Label accessibilityLiveRegion="polite" style={{ color: controlColor, textAlign: 'center' }}>Processing your request…</Label>}
         </ScrollView>

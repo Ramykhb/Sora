@@ -898,3 +898,19 @@ test('SOS voice command works without a camera session and suppresses duplicate 
   assert.equal(app.navigation.length, 0);
   app.cleanup();
 });
+
+test('route playback phrases are local commands with or without the wake word', () => {
+  for (const [action, phrases] of [
+    ['next-step', ['next step', 'Hey Sora next step please', 'Étape suivante', 'الخطوة التالية']],
+    ['previous-step', ['previous step', 'Hey Sora previous step', 'Étape précédente', 'الخطوة السابقة']],
+    ['show-full-route', ['show full route', 'show the full route please', 'Hey Sora show full route', 'Affiche l’itinéraire complet', 'اعرض المسار كاملاً']],
+  ]) {
+    for (const phrase of phrases) {
+      assert.equal(voiceCommand(phrase), action, phrase);
+      assert.deepEqual(voiceInput(phrase), { kind: 'command', action });
+    }
+  }
+  for (const phrase of ['What is the next step to the cafe?', 'show full route to the library', 'do not go to the previous step']) {
+    assert.equal(voiceInput(phrase).kind, 'question');
+  }
+});
