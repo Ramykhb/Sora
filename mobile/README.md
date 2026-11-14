@@ -20,7 +20,7 @@ npx eas-cli@latest device:create
 npx eas-cli@latest build --platform ios --profile preview
 ```
 
-The `preview` profile embeds the JavaScript bundle and runs without Metro. Download and install the resulting Android APK or the signed iOS build. Before signing in, use **Change server** to enter your backend origin, for example `http://192.168.0.100:8000`. The address is saved on the device. Changing it clears saved login credentials so one server's credentials never go to another. Sign out before changing servers.
+The `preview` profile embeds the JavaScript bundle and runs without Metro. After JavaScript changes, rebuild and reinstall preview/local Release builds; reopening the app cannot update an embedded bundle. Development builds connected to Metro can reload JavaScript. Download and install the resulting Android APK or the signed iOS build. Before signing in, use **Change server** to enter your backend origin, for example `http://192.168.0.100:8000`. The address is saved on the device. Changing it clears saved login credentials so one server's credentials never go to another. Sign out before changing servers.
 
 To build an Android APK locally with Java and the Android SDK installed:
 

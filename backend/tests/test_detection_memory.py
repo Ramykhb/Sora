@@ -231,7 +231,12 @@ def test_specific_watch_can_match_outside_path_with_generic_obstacles_disabled(m
                                    matched_alert_ids=[watches[0]['id']])
 
     monkeypatch.setattr(gemini, 'ask_obstacles', analyze)
-    api.portal.call(manager.check_obstacles, sid, state)
+
+    async def receive():
+        async with events.subscribe(sid):
+            await manager.check_obstacles(sid, state)
+
+    api.portal.call(receive)
     assert api.portal.call(detection_memory.pending, owner) == []
     assert 'a stop sign' in api.get(f'/api/v1/sessions/{sid}/alerts').json()[0]['message']
 
@@ -343,7 +348,12 @@ def test_new_target_added_during_inference_is_not_consumed_by_that_old_request(m
                                    matched_alert_ids=[watch['id'] for watch in all_pending])
 
     monkeypatch.setattr(gemini, 'ask_obstacles', analyze)
-    api.portal.call(manager.check_obstacles, sid, state)
+
+    async def receive():
+        async with events.subscribe(sid):
+            await manager.check_obstacles(sid, state)
+
+    api.portal.call(receive)
     remaining = api.portal.call(detection_memory.pending, owner)
     assert [watch['target'] for watch in remaining] == ['a dog']
     message = api.get(f'/api/v1/sessions/{sid}/alerts').json()[0]['message']
@@ -374,3 +384,29 @@ def test_other_accounts_pending_targets_are_never_sent_or_consumed(memory, monke
     assert len(api.portal.call(detection_memory.pending, owner)) == 1
     assert api.portal.call(detection_memory.pending, other_owner) == foreign_watches
     assert api.get(f'/api/v1/sessions/{sid}/alerts').json() == []
+
+
+def test_missing_alert_receiver_preserves_request_until_a_connected_client_can_be_alerted(memory, monkeypatch):
+    api, _, sid, owner = memory
+    ask(api, sid, 'alert me when you detect a laptop')
+    manager, state = configure_scene(memory, monkeypatch)
+
+    async def analyze(image, language, *, watches):
+        return gemini.GeminiAnswer(answer='A laptop is visible.', uncertain=False,
+                                   visible_path='unobstructed', visible_path_distance='unknown',
+                                   matched_alert_ids=[watches[0]['id']])
+
+    monkeypatch.setattr(gemini, 'ask_obstacles', analyze)
+
+    async def exercise():
+        await manager.check_obstacles(sid, state)
+        assert len(await detection_memory.pending(owner)) == 1
+        assert not events.has_subscribers(sid)
+        async with events.subscribe(sid) as queue:
+            await manager.check_obstacles(sid, state)
+            assert queue.get_nowait()['message'] == 'Detected: a laptop.'
+            assert await detection_memory.pending(owner) == []
+        assert not events.has_subscribers(sid)
+
+    api.portal.call(exercise)
+    assert len(api.get(f'/api/v1/sessions/{sid}/alerts').json()) == 1

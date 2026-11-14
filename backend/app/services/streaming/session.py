@@ -282,7 +282,9 @@ class Streams:
         # Only IDs included in this exact request may consume account memory.
         allowed = {watch["id"] for watch in watches}
         matched = [value for value in result.matched_alert_ids if value in allowed]
-        if matched:
+        # A camera publisher can be an older client with no alert listener.
+        # Keep one-shot memory until there is somewhere to deliver the result.
+        if matched and events.has_subscribers(session_id):
             remembered_alert = await detection_memory.fulfill(
                 owner_id, session_id, matched, timestamp, expires,
                 lambda: self.states.get(session_id) is state, obstacle_message,

@@ -8,6 +8,9 @@ class Events:
     def __init__(self):
         self.subscribers = defaultdict(set)
 
+    def has_subscribers(self, session_id: UUID):
+        return bool(self.subscribers.get(session_id))
+
     def publish(self, session_id: UUID, event: dict):
         for queue in tuple(self.subscribers.get(session_id, ())):
             if queue.full():
