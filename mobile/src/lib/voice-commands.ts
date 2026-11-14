@@ -69,9 +69,64 @@ export function voiceInput(transcript: string): VoiceInput | null {
   if (isSOSLocationCommand(text)) return { kind: 'command', action: 'send-sos-location' };
   const playback = playbackCommand(text);
   if (playback) return { kind: 'command', action: playback };
-  // Reserve the whole prefix, including commands that haven't been implemented yet.
-  if (hasSORAWakeWord(text)) return { kind: 'command', action: voiceCommand(text) };
+  // Alert memories are backend requests, even when addressed to Sora. Other
+  // wake-prefixed phrases still belong to the local app-command dispatcher.
+  if (hasSORAWakeWord(text)) {
+    const words = parse(text).words;
+    if (/^(?:please )?(?:(?:alert|notify|tell|warn) me|let me know) (?:when|if|whenever|once|on|upon)(?: |$)|^(?:alerte moi|previens moi|avertis moi) (?:quand|si|lorsque)(?: |$)|^(?:نبهني|اخبرني|حذرني) (?:عندما|اذا|لما)(?: |$)/.test(words)) {
+      return { kind: 'question', question: text };
+    }
+    return { kind: 'command', action: voiceCommand(text) };
+  }
   return { kind: 'question', question: text };
+}
+
+// TTS expands distances and step numbers; STT may return either their spoken
+// words or digits. Canonicalize only for echo comparison, retaining offsets so
+// a real question/command after a speaker prefix keeps its original spelling.
+const NUMBER_WORDS: Record<string, number> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
+  eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13,
+  fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18,
+  nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60,
+  seventy: 70, eighty: 80, ninety: 90,
+};
+function playbackTokens(value: string) {
+  const words = [...value.matchAll(/[\p{L}][\p{L}\p{M}]*|[\p{N}]+(?:[.,٫][\p{N}]+)*/gu)]
+    .map(match => ({ text: /^\p{N}/u.test(match[0])
+      ? match[0].replace(/[٠-٩]/g, digit => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+        .replace(/,(?=\d{3}(?:\D|$))/g, '').replace(/[,٫]/g, '.')
+      : normalize(match[0]), index: match.index }));
+  const result: { text: string; index: number }[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const start = words[i];
+    if (Object.hasOwn(NUMBER_WORDS, start.text)) {
+      let whole = 0, group = 0;
+      while (i < words.length) {
+        const word = words[i].text;
+        if (Object.hasOwn(NUMBER_WORDS, word)) group += NUMBER_WORDS[word];
+        else if (word === 'hundred') group *= 100;
+        else if (word === 'thousand') { whole += group * 1000; group = 0; }
+        else if (!(word === 'and' && Object.hasOwn(NUMBER_WORDS, words[i + 1]?.text))) break;
+        i++;
+      }
+      let number = String(whole + group);
+      if (words[i]?.text === 'point') {
+        number += '.'; i++;
+        while (i < words.length && (Object.hasOwn(NUMBER_WORDS, words[i].text)
+          ? NUMBER_WORDS[words[i].text] < 10 : /^\d+$/.test(words[i].text))) {
+          number += Object.hasOwn(NUMBER_WORDS, words[i].text) ? NUMBER_WORDS[words[i].text] : words[i].text;
+          i++;
+        }
+      }
+      result.push({ text: number, index: start.index }); i--;
+    } else {
+      const text = /^(?:kilomet(?:er|re)s?|كيلومتر|كيلومترات)$/.test(start.text) ? 'km'
+        : /^(?:met(?:er|re)s?|متر|امتار)$/.test(start.text) ? 'm' : start.text;
+      result.push({ text, index: start.index });
+    }
+  }
+  return result;
 }
 
 // Question recording owns the microphone; answer playback keeps recognition active.
@@ -133,19 +188,22 @@ export class VoiceAudioGate {
     return [...this.playbacks.values(), ...this.recentPlayback.map(value => value.text)];
   }
   userTranscript(transcript: string, utterancePlayback: readonly string[] = []) {
-    // Keep original offsets, but compare Arabic with/without spoken vowel marks
-    // identically so a vocalized prompt cannot trigger its own command.
-    const tokens = (value: string) => [...value.matchAll(/[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu)]
-      .map(match => ({ 0: normalize(match[0]), index: match.index }));
-    const heard = tokens(transcript);
+    const heard = playbackTokens(transcript);
     if (!heard.length) return '';
     const sources = [...this.playbackTexts, ...utterancePlayback];
     let prefix = 0;
     for (const text of sources) {
-      const spoken = tokens(text).map(value => value[0]);
+      const spoken = playbackTokens(text).map(value => value.text);
       for (let start = 0; start < spoken.length; start++) {
         let length = 0;
-        while (start + length < spoken.length && length < heard.length && spoken[start + length] === heard[length][0]) length++;
+        while (start + length < spoken.length && length < heard.length) {
+          const source = spoken[start + length], recognized = heard[length].text;
+          // A partial result can stop halfway through a spoken decimal.
+          const decimalPrefix = length === heard.length - 1 && /^\d+(?:\.\d*)?$/.test(recognized)
+            && source.startsWith(recognized + (recognized.includes('.') ? '' : '.'));
+          if (source !== recognized && !decimalPrefix) break;
+          length++;
+        }
         prefix = Math.max(prefix, length);
       }
     }

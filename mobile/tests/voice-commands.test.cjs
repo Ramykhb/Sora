@@ -973,3 +973,54 @@ test('detection off ignores late automatic alerts on mobile', async () => {
   const app = await voiceStartCamera(true, { active: true, detectionEnabled: false, event });
   assert.equal(app.alerts.length, 0);
 });
+
+const spokenRouteIntro = 'Burger King - Baabda is approximately 8.8 km away on foot. Walking directions from Google Maps: 1. Head south on Bmekkine (127 m).';
+
+test('route distance and instruction echoes match spoken numbers and expanded metric units', () => {
+  const gate = new VoiceAudioGate();
+  gate.playback(spokenRouteIntro);
+  for (const text of [
+    'Burger King Baabda is approximately eight point eight kilometers away on foot',
+    'approximately eight point eight kilometres',
+    'eight point eight kilometers away',
+    'Burger King Baabda is approximately eight point',
+    'Burger King Baabda is approximately eight',
+    'one head south on Bmekkine one hundred and twenty seven meters',
+    'Head south on Bmekkine 127 metres',
+  ]) assert.equal(gate.userTranscript(text), '', text);
+  assert.equal(gate.userTranscript('What is the next turn?'), 'What is the next turn?');
+  assert.equal(gate.userTranscript('next step'), 'next step');
+  assert.equal(gate.userTranscript('show full route'), 'show full route');
+  assert.equal(gate.userTranscript('Is Burger King eight kilometers away?'), 'Is Burger King eight kilometers away?');
+  assert.equal(gate.userTranscript('eight point eight kilometers away next step'), 'next step');
+});
+
+test('distance echoes cannot cut route playback off after the destination summary', async () => {
+  const app = mount(), questions = [];
+  app.view.props.value.registerQuestions(async question => { questions.push(question); return { answer: 'Unused', language: 'en' }; });
+  await flush(); app.tick();
+  const release = app.gate.playback(spokenRouteIntro);
+  for (const isFinal of [false, true]) {
+    app.emit('result', { results: [{ transcript: 'Burger King Baabda is approximately eight point eight kilometers away on foot' }], isFinal });
+  }
+  await flush();
+  assert.equal(app.speechStops, 0);
+  assert.equal(questions.length, 0);
+  release(); app.cleanup();
+});
+
+
+test('wake-prefixed alert requests reach backend memory instead of becoming unsupported app commands', async () => {
+  for (const phrase of ['Hey Sora, alert me when you detect a laptop', 'Hey Sora notify me if you see a car', 'يا سورا نبهني عندما ترى سيارة', 'Hé Sora préviens-moi quand tu vois un panneau stop']) {
+    assert.deepEqual(voiceInput(phrase), { kind: 'question', question: phrase });
+  }
+  assert.deepEqual(voiceInput('Hey Sora, do something unknown'), { kind: 'command', action: null });
+  const app = mount(), questions = [];
+  app.view.props.value.registerQuestions(async question => { questions.push(question); return { answer: "I'll alert you once when I detect a laptop.", language: 'en' }; });
+  await flush(); app.tick();
+  app.emit('result', { results: [{ transcript: 'Hey Sora alert me when you detect a laptop' }], isFinal: true });
+  await flush();
+  assert.deepEqual(questions, ['Hey Sora alert me when you detect a laptop']);
+  assert.ok(app.spoken.some(answer => answer.includes("I'll alert you once")));
+  app.cleanup();
+});

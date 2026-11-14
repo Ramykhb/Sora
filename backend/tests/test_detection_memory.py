@@ -25,6 +25,18 @@ from test_auth import account, headers
 @pytest.mark.parametrize('question,target', [
     ('alert me when you detect a stop sign', 'a stop sign'),
     ('Please alert me when you see a car!', 'a car'),
+    ('Hey so alert me when you detect a laptop', 'a laptop'),
+    ('Alert me on detected a laptop', 'a laptop'),
+    ('Hey Sora, alert me when you detect a laptop', 'a laptop'),
+    ('HeySora alert me when you detect a laptop', 'a laptop'),
+    ('Hey Sora. Alert me when you detect a laptop', 'a laptop'),
+    ('Hey sorta, notify me if you see a red car', 'a red car'),
+    ('He saw the alert me when you detect a laptop', 'a laptop'),
+    ('alert me upon detecting a car', 'a car'),
+    ('alert me on detection of a stop sign', 'a stop sign'),
+    ('What does "alert me when you detect a laptop" mean?', None),
+    ('Do not alert me when you detect a laptop', None),
+    ('Did she say alert me when you detect a laptop?', None),
     ('notify me if you spot a red car please', 'a red car'),
     ('let me know when you notice a traffic light', 'a traffic light'),
     ('alert me when a car is detected', 'a car'),
@@ -496,3 +508,22 @@ def test_switching_off_during_redaction_prevents_the_cloud_upload(memory, monkey
 
     api.portal.call(exercise)
     assert len(api.portal.call(detection_memory.pending, owner)) == 1
+
+
+@pytest.mark.parametrize('question', [
+    'Hey so alert me when you detect a laptop',
+    'Alert me on detected a laptop',
+    'Hey Sora, alert me when you detect a laptop',
+])
+def test_phone_transcript_variations_create_a_watch_instead_of_an_image_answer(memory, monkeypatch, question):
+    api, _, sid, owner = memory
+    monkeypatch.setattr(settings, 'gemini_enabled', True)
+    monkeypatch.setattr(settings, 'gemini_api_key', SecretStr('question-key'))
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError('An alert request must never be answered as a current-view image question')
+
+    monkeypatch.setattr(gemini, 'ask_image', forbidden)
+    result = ask(api, sid, question)
+    assert "I'll alert you once when I detect a laptop" in result['answer']
+    assert [watch['target'] for watch in api.portal.call(detection_memory.pending, owner)] == ['a laptop']

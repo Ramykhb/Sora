@@ -244,3 +244,5 @@ Gemini, when enabled on the backend, checks visual matches and requested attribu
 ### Automatic detection switch
 
 Live Assistance has a **Detect obstacles · On/Off** switch, also available under the assistant’s assistance preferences. It updates the current backend session’s `alerts_enabled` setting. On runs automatic key-2 checks every five seconds. Off sends no automatic Gemini requests, pauses saved detection requests without deleting them, and suppresses late results. Manual questions and one-second frame storage continue normally. The switch shows the saved state and reports an error if the update fails. Release/preview builds must be rebuilt and reinstalled to show this new control.
+
+Route playback echo matching treats spoken English numbers and metric units as their numeric equivalents (for example, “eight point eight kilometers” and “8.8 km”). This prevents distance summaries and numbered instructions from being mistaken for new questions that interrupt speech. Original transcript offsets are retained so a real command after a speaker prefix, such as “next step,” remains usable.

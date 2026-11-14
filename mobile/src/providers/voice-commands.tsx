@@ -24,6 +24,8 @@ const COMMAND_PHRASES = [
   'Hey Sora start stream', 'Hey Sora pause stream', 'Hey Sora resume stream', 'Hey Sora stop stream',
   'Hey Sora stop listening', 'Hey Sora start listening', 'Hey Sora resume listening',
   'Hey Sora mute', 'Hey Sora unmute', 'Repeat that', 'Repeat the directions', 'Stop speaking',
+  'Alert me when you detect', 'Alert me when you see', 'Hey Sora alert me when you detect a laptop',
+  'Alert me when you detect a car', 'Alert me when you detect a stop sign', 'Start route to the nearest',
   'Next step', 'Previous step', 'Show full route', 'Étape suivante', 'Étape précédente', 'Affiche l’itinéraire complet',
   'الخطوة التالية', 'الخطوة السابقة', 'اعرض المسار كاملاً',
   'Hey Sora repeat that', 'Hey Sora repeat the directions', 'Hey Sora stop speaking', 'Describe the scene',

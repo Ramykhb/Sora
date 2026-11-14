@@ -19,8 +19,15 @@ MAX_PENDING = 20
 
 def request_target(question):
     text = question.strip().rstrip(".!?؟ ")
+    # Recognizer spellings observed on the phone. Strip only a leading address;
+    # quoted commands/narrative questions must not register background watches.
+    text = re.sub(
+        r"^(?:(?:hey|hé|he|hay)\s*(?:sora|sorta|so)|he\s+saw\s+the|"
+        r"(?:يا|هاي|هي)\s+[سص]ور[ايه])(?:[\s,،:;.!?؟]+)", "", text, flags=re.I,
+    )
     patterns = [
-        r"(?:please\s+)?(?:(?:alert|notify|tell|warn)\s+me|let\s+me\s+know)\s+(?:when|if)\s+(?:you\s+)?(?:detect|see|spot|notice|find)\s*(.*)",
+        r"(?:please\s+)?(?:(?:alert|notify|tell|warn)\s+me|let\s+me\s+know)\s+(?:when|if|whenever|once)\s+(?:you\s+)?(?:detect|see|spot|notice|find)\b\s*(.*)",
+        r"(?:please\s+)?(?:(?:alert|notify|tell|warn)\s+me|let\s+me\s+know)\s+(?:on|upon)\s+(?:detected|detecting|seeing|spotting|noticing|finding|detection\s+of)\b\s*(.*)",
         r"(?:please\s+)?(?:alert|notify|tell|warn)\s+me\s+(?:when|if)\s+(.+?)\s+(?:is|are)\s+(?:detected|seen|spotted)",
         r"(?:alerte[- ]moi|préviens[- ]moi|previens[- ]moi|avertis[- ]moi)\s+(?:quand|si|lorsque)\s+(?:tu\s+)?(?:détectes?|detectes?|vois|repères?|reperes?)\s*(.*)",
         r"(?:نبهني|نبّهني|أخبرني|اخبرني|حذرني)\s+(?:عندما|إذا|اذا|لما)\s+(?:تكتشف|ترى|تري|تشوف|تلاحظ)\s*(.*)",
