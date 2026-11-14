@@ -16,6 +16,7 @@ import { usePreferences } from '@/providers/preferences';
 import type { StreamCommand } from '@/lib/voice-commands';
 import type { Answer, CaptureSession, Frame } from '@/lib/api';
 import { speech } from '@/lib/speech';
+import { questionLocation } from '@/lib/question-location';
 import { speechLanguage, voiceText } from '@/lib/voice-language';
 import { AuthScreen } from '@/components/auth-screen';
 import { VoiceWaveform } from '@/components/voice-waveform';
@@ -85,7 +86,7 @@ function Capture() {
     if (busy || starting.current) throw new Error('Please wait for the current request to finish, then ask again.');
     setBusy(true); setError('');
     try {
-      const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope: 'recent', language: session.language });
+      const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope: 'recent', language: session.language, location: await questionLocation(question) });
       setVoiceAnswer(answer.answer);
       const tip = cameraFeedback(answer.uncertain, answer.answer, answer.processing_warnings);
       setViewTip(tip);

@@ -364,6 +364,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
       if (name === '@/lib/voice-language') return { ...require('../src/lib/voice-language.ts'), voiceLanguage: () => 'en' };
       if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() {} } };
       if (name === '@/lib/camera-feedback') return { cameraFeedback: () => null };
+      if (name === '@/lib/question-location') return { questionLocation: async () => ({ latitude: 33.89, longitude: 35.5 }) };
       return {};
     },
   });
@@ -492,6 +493,13 @@ test('describe the scene uses the live session question endpoint without navigat
   assert.ok(app.updates.includes('A chair beside a table.'));
 });
 
+
+test('a hands-free route question includes the current location for saved destinations', async () => {
+  const app = await voiceStartCamera(true, { active: true, question: 'start route home' });
+  assert.equal(app.requests[0][0], '/sessions/voice-session/questions');
+  assert.deepEqual(app.requests[0][2].location, { latitude: 33.89, longitude: 35.5 });
+  assert.equal(app.requests[0][2].question, 'start route home');
+});
 
 test('stream controls require a complete Hey Sora command', () => {
   for (const action of ['pause', 'resume', 'stop']) {

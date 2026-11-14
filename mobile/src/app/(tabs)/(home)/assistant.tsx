@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Switch, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { speech } from '@/lib/speech';
+import { questionLocation } from '@/lib/question-location';
 import { useHandsFreeQuestions, useVoiceCommands, useVoiceStreamControls } from '@/providers/voice-commands';
 import { useAuth } from '@/providers/auth';
 import { ApiError, type Answer, type CaptureSession, type Frame, type Language, type Scope, type Observation } from '@/lib/api';
@@ -130,7 +131,7 @@ function Assistant() {
   }
   async function ask() {
     if (!session || !question.trim()) return;
-    const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope, language });
+    const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope, language, location: await questionLocation(question) });
     receiveAnswer(answer, true); setQuestion('');
   }
   useHandsFreeQuestions(async question => {
@@ -139,7 +140,7 @@ function Assistant() {
     if (busy) throw new Error('Please wait for the current request to finish, then ask again.');
     voicePending.current = true; setBusy(true); setError('');
     try {
-      const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope, language });
+      const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope, language, location: await questionLocation(question) });
       spoken.current.add(answer.id);
       receiveAnswer(answer);
       return answer;

@@ -115,7 +115,8 @@ def test_account_deletion_removes_saved_places(client):
     ("route home", "home"), ("Route to my home please", "my home"),
     ("navigate university", "university"), ("take me to Grandma's house", "Grandma's house"),
     ("please route to saved favorite cafe", "favorite cafe"),
-    ("start a trip to university", "university"), ("go home", "home"),
+    ("start a trip to university", "university"), ("start route home", "home"),
+    ("start a walking route to university", "university"), ("go home", "home"),
     ("itinéraire vers université", "université"), ("خذني إلى الجامعة", "الجامعة"),
 ])
 def test_saved_route_targets_are_extracted_without_ai(question, nickname):
@@ -123,7 +124,7 @@ def test_saved_route_targets_are_extracted_without_ai(question, nickname):
     assert places.is_trip_question(question)
 
 
-@pytest.mark.parametrize("question", ["route home", "route to home", "route to my home", "navigate home", "go home", "route to saved home"])
+@pytest.mark.parametrize("question", ["route home", "route to home", "route to my home", "start route home", "start a route to home", "navigate home", "go home", "route to saved home"])
 def test_saved_route_skips_places_and_groq_uses_current_origin_and_supports_followup(client, monkeypatch, question):
     api, _ = client
     home = save(api)

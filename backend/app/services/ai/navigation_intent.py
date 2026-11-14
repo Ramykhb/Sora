@@ -15,7 +15,7 @@ def route_target(question):
         r"(?:take|guide|direct)\s+me(?:\s+(?P<to>to))?\s+(?P<target>.+)",
         r"(?:go|let['’]s go)(?:\s+(?P<to>to))?\s+(?P<target>.+)",
         r"(?:(?:give|show)\s+me\s+)?(?:walking\s+)?directions(?:\s+(?P<to>to))?\s+(?P<target>.+)",
-        r"(?:start|begin|plan)\s+(?:(?:a|my|the)\s+)?(?:walking\s+)?(?:trip|route)\s+(?P<to>to|towards?|for)\s+(?P<target>.+)",
+        r"(?:start|begin|plan)\s+(?:(?:a|my|the)\s+)?(?:walking\s+)?(?:trip|route)\s+(?:(?P<to>to|towards?|for)\s+)?(?P<target>.+)",
         r"how\s+(?:do|can)\s+i\s+get\s+(?P<to>to)\s+(?P<target>.+)",
         r"(?:itin[ée]raire|trajet)\s+(?P<to>vers|pour)\s+(?P<target>.+)",
         r"(?:خذني|(?:ابدأ|ابدا)\s+(?:رحلة|مسار)|مسار|اتجاهات)\s+(?P<to>إلى|الى)\s+(?P<target>.+)",
