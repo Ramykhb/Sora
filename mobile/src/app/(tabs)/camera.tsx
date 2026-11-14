@@ -51,7 +51,8 @@ function Capture() {
   useEffect(() => {
     if (!session || mode !== 'live' || !focused || !foreground || streamPaused) return;
     const live = connectLive(api, `/sessions/${session.id}/events`, event => {
-      if (event.type === 'alert' && event.message && event.id && event.expires_at && Date.parse(event.expires_at) > Date.now()) {
+      if (event.type === 'session_updated' && event.session) setSession(event.session);
+      if (session.alerts_enabled && event.type === 'alert' && event.message && event.id && event.expires_at && Date.parse(event.expires_at) > Date.now()) {
         setObstacleAlert({ message: event.message, expiresAt: event.expires_at });
         void speech.alert(event.id, event.message, event.language || session.language, event.expires_at, event.label === 'remembered_detection').catch(() => {});
       }
@@ -138,6 +139,12 @@ function Capture() {
     } finally { changingStream.current = false; }
   }
   useVoiceStreamControls(controlStream, !!session && mode === 'live', streamPaused);
+  async function setDetectionEnabled(enabled: boolean) {
+    if (!session) return;
+    const updated = await api.request<CaptureSession>(`/sessions/${session.id}`, 'PATCH', { alerts_enabled: enabled });
+    setSession(updated);
+    if (!enabled) { setObstacleAlert(null); await speech.stop(); }
+  }
   async function controlFromButton(command: StreamCommand) {
     try { await speech.answer(await controlStream(command), speechLanguage(language)); }
     catch (error) { await speech.answer(error instanceof Error ? error.message : voiceText('controlFailed', language), error instanceof Error ? 'en' : speechLanguage(language)); }
@@ -193,6 +200,13 @@ function Capture() {
         <ScrollView ref={answerScroll} accessibilityLabel="Live assistance messages" style={{ flexGrow: 0, flexShrink: 1 }} contentContainerStyle={{ gap: 13, paddingRight: 6, paddingBottom: 4 }} showsVerticalScrollIndicator indicatorStyle={dark ? 'white' : 'black'} keyboardShouldPersistTaps="handled">
         {mode === 'live' && <><Label bold size={14} style={{ color: controlColor, textAlign: 'center' }}>Sora · live companion</Label><VoiceWaveform commandsOnly={streamPaused || !preferences.handsFreeQuestions} /></>}
         {mode === 'live' && <View style={{ flexDirection: 'row', justifyContent: 'space-around', gap: 12 }}><Tap label={streamPaused ? 'Resume stream' : 'Pause stream'} onPress={() => void controlFromButton(streamPaused ? 'resume-stream' : 'pause-stream')} style={{ alignItems: 'center', justifyContent: 'center' }}><Label bold style={{ color: controlColor }}>{streamPaused ? 'Resume stream' : 'Pause stream'}</Label></Tap><Tap label="Stop stream" onPress={() => void controlFromButton('stop-stream')} style={{ alignItems: 'center', justifyContent: 'center' }}><Label bold style={{ color: colors.danger }}>Stop stream</Label></Tap></View>}
+        {mode === 'live' && <View style={{ gap: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <Label bold size={14} style={{ color: controlColor }}>Detect obstacles · {session.alerts_enabled ? 'On' : 'Off'}</Label>
+            <Switch accessibilityLabel="Detect obstacles" value={session.alerts_enabled} disabled={busy || session.status !== 'active'} trackColor={{ false: colors.trackOff, true: colors.primary }} onValueChange={enabled => void run(() => setDetectionEnabled(enabled))} />
+          </View>
+          <Label size={11} style={{ color: controlColor }}>Checks every 5 seconds when on. Off pauses all automatic detection and saved alerts.</Label>
+        </View>}
         {!!obstacleAlert && <Label accessibilityRole="alert" style={{ color: controlColor }} size={14}>{obstacleAlert.message}</Label>}
         {!!error && <Label accessibilityRole="alert" style={{ color: colors.danger, backgroundColor: colors.surface, padding: 12, borderRadius: 12 }}>{error}</Label>}
         {preferences.voiceCommands && <Label style={{ color: controlColor, textAlign: 'center' }} size={12}>{voice.status}</Label>}

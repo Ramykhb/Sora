@@ -248,10 +248,10 @@ class Streams:
         from app.services.sessions import get_session
 
         session = await get_session(session_id, active=True)
+        if not session.alerts_enabled or self.states.get(session_id) is not state:
+            return
         owner_id = getattr(session, "owner_id", None)
         watches = await detection_memory.pending(owner_id)
-        if (not session.alerts_enabled and not watches) or self.states.get(session_id) is not state:
-            return
         snapshot = self.fresh_snapshot(session_id)
         if snapshot is None:
             return
@@ -261,12 +261,17 @@ class Streams:
         image = await asyncio.to_thread(cloud_image, content, False)
         if (now() - timestamp).total_seconds() > settings.detection_max_age_seconds:
             return
+        # Recheck after image preparation: the switch may have changed while
+        # face redaction ran on a worker thread.
+        session = await get_session(session_id, active=True)
+        if not session.alerts_enabled or self.states.get(session_id) is not state:
+            return
         if watches:
             result = await gemini.ask_obstacles(image, session.language, watches=watches)
         else:
             result = await gemini.ask_obstacles(image, session.language)
         session = await get_session(session_id, active=True)
-        if self.states.get(session_id) is not state:
+        if not session.alerts_enabled or self.states.get(session_id) is not state:
             return
         expires = timestamp + timedelta(seconds=settings.gemini_walking_max_age_seconds)
         if now() >= expires:

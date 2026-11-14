@@ -408,15 +408,15 @@ test('old native builds and disabled voice commands leave the app usable', async
 
 
 const cameraSource = ts.transpileModule(fs.readFileSync(require.resolve('../src/app/(tabs)/camera.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-async function voiceStartCamera(granted, { active = false, paused = false, question, command, closeError, language = 'en', event } = {}) {
+async function voiceStartCamera(granted, { active = false, paused = false, question, command, closeError, language = 'en', event, detectionEnabled = true, toggleDetection, detectionError } = {}) {
   const effects = [], requests = [], spoken = [], updates = [], alerts = [], sessionUpdates = [];
-  const session = { id: 'voice-session', status: 'active', language: 'en' };
+  const session = { id: 'voice-session', status: 'active', language: 'en', alerts_enabled: detectionEnabled };
   const reply = { answer: 'A chair beside a table.', language: 'en' };
   let voiceQuestion, voiceControl, liveEvent, stateIndex = 0;
   const exports = {};
   const jsx = (type, props) => ({ type, props });
   vm.runInNewContext(cameraSource + '\nexports.captureForTest = Capture;', {
-    exports, setTimeout, clearTimeout,
+    exports, setTimeout, clearTimeout, Error,
     require(name) {
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
       if (name === 'react') return {
@@ -428,7 +428,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
       if (name === 'expo-camera') return { useCameraPermissions: () => [null, async () => ({ granted })] };
       if (name === 'expo-router') return { useFocusEffect() {}, useLocalSearchParams: () => ({ mode: 'live', voiceStart: '123' }) };
       if (name === '@/providers/voice-commands') return { useHandsFreeQuestions(handler) { voiceQuestion = handler; }, useVoiceStreamControls(handler) { voiceControl = handler; }, useVoiceCommands: () => ({ status: '' }) };
-      if (name === '@/providers/auth') return { useAuth: () => ({ api: { async request(...args) { requests.push(args); if (args[0].endsWith('/close') && closeError) throw closeError; return args[0].endsWith('/questions') ? reply : session; } } }) };
+      if (name === '@/providers/auth') return { useAuth: () => ({ api: { async request(...args) { requests.push(args); if (args[0].endsWith('/close') && closeError) throw closeError; if (args[1] === 'PATCH') { if (detectionError) throw detectionError; return { ...session, ...args[2] }; } return args[0].endsWith('/questions') ? reply : session; } } }) };
       if (name === '@/providers/preferences') return { usePreferences: () => ({ colors: {}, preferences: { guidance: false, language } }) };
       if (name === '@/lib/voice-language') return { ...require('../src/lib/voice-language.ts'), voiceLanguage: () => 'en' };
       if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() {}, async alert(...args) { alerts.push(args); }, getRoutePlayback: () => null, subscribeRoute: () => () => {} } };
@@ -438,13 +438,26 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
       return {};
     },
   });
-  exports.captureForTest();
+  const view = exports.captureForTest();
   const cleanups = effects.map(fn => fn());
   await flush(); await flush();
   // React effects may run again: one voice request must create only one session.
   effects.forEach(fn => fn());
   await flush();
   if (event) liveEvent?.(event);
+  if (typeof toggleDetection === 'boolean') {
+    const findSwitch = node => {
+      if (!node || typeof node !== 'object') return null;
+      if (Array.isArray(node)) return node.map(findSwitch).find(Boolean);
+      if (node.props?.accessibilityLabel === 'Detect obstacles') return node;
+      return findSwitch(node.props?.children);
+    };
+    const toggle = findSwitch(view);
+    assert.ok(toggle, 'The live camera must expose Detect obstacles');
+    assert.equal(toggle.props.value, detectionEnabled);
+    toggle.props.onValueChange(toggleDetection);
+    await flush(); await flush();
+  }
   const askedReply = question ? await voiceQuestion(question) : null;
   let controlReply, controlError;
   try { if (command) controlReply = await voiceControl(command); } catch (error) { controlError = error; }
@@ -936,4 +949,27 @@ test('remembered target notifications preserve their custom speech flag', async 
   const app = await voiceStartCamera(true, { active: true, event });
   assert.equal(app.alerts.length, 1);
   assert.equal(app.alerts[0][4], true);
+});
+
+
+test('camera detection toggle persists both on and off to the backend session', async () => {
+  for (const enabled of [false, true]) {
+    const app = await voiceStartCamera(true, { active: true, detectionEnabled: !enabled, toggleDetection: enabled });
+    const patch = app.requests.find(request => request[1] === 'PATCH');
+    assert.equal(patch[0], '/sessions/voice-session');
+    assert.equal(patch[2].alerts_enabled, enabled);
+    assert.ok(app.sessionUpdates.some(session => session?.alerts_enabled === enabled));
+  }
+});
+
+test('failed detection updates leave the session state unchanged and show the error', async () => {
+  const app = await voiceStartCamera(true, { active: true, detectionEnabled: true, toggleDetection: false, detectionError: new Error('Detection update failed') });
+  assert.equal(app.sessionUpdates.length, 0);
+  assert.ok(app.updates.includes('Detection update failed'));
+});
+
+test('detection off ignores late automatic alerts on mobile', async () => {
+  const event = { type: 'alert', id: 'late-watch', label: 'remembered_detection', message: 'Detected: a laptop.', language: 'en', expires_at: new Date(Date.now() + 5000).toISOString() };
+  const app = await voiceStartCamera(true, { active: true, detectionEnabled: false, event });
+  assert.equal(app.alerts.length, 0);
 });

@@ -219,24 +219,39 @@ def test_non_matches_and_failed_or_late_results_keep_memory_and_stay_silent(memo
     assert api.get(f'/api/v1/sessions/{sid}/alerts').json() == []
 
 
-def test_specific_watch_can_match_outside_path_with_generic_obstacles_disabled(memory, monkeypatch):
+def test_detection_switch_pauses_all_requests_and_preserves_watches_until_reenabled(memory, monkeypatch):
     api, _, sid, owner = memory
     ask(api, sid, 'alert me when you detect a stop sign')
     api.patch(f'/api/v1/sessions/{sid}', json={'alerts_enabled': False})
     manager, state = configure_scene(memory, monkeypatch)
+    calls = []
 
     async def analyze(image, language, *, watches):
+        calls.append(watches)
         return gemini.GeminiAnswer(answer='The forward path cannot be assessed.', uncertain=True,
                                    visible_path='unknown', visible_path_distance='unknown',
                                    matched_alert_ids=[watches[0]['id']])
 
     monkeypatch.setattr(gemini, 'ask_obstacles', analyze)
 
-    async def receive():
-        async with events.subscribe(sid):
-            await manager.check_obstacles(sid, state)
+    async def paused():
+        async with events.subscribe(sid) as queue:
+            for _ in range(3):
+                await manager.check_obstacles(sid, state)
+            assert queue.empty()
 
-    api.portal.call(receive)
+    api.portal.call(paused)
+    assert calls == []
+    assert len(api.portal.call(detection_memory.pending, owner)) == 1
+    api.patch(f'/api/v1/sessions/{sid}', json={'alerts_enabled': True})
+
+    async def resumed():
+        async with events.subscribe(sid) as queue:
+            await manager.check_obstacles(sid, state)
+            assert queue.get_nowait()['label'] == 'remembered_detection'
+
+    api.portal.call(resumed)
+    assert len(calls) == 1
     assert api.portal.call(detection_memory.pending, owner) == []
     assert 'a stop sign' in api.get(f'/api/v1/sessions/{sid}/alerts').json()[0]['message']
 
@@ -410,3 +425,74 @@ def test_missing_alert_receiver_preserves_request_until_a_connected_client_can_b
 
     api.portal.call(exercise)
     assert len(api.get(f'/api/v1/sessions/{sid}/alerts').json()) == 1
+
+
+def test_registration_while_detection_is_off_saves_the_target_and_explains_it_is_paused(memory):
+    api, _, sid, owner = memory
+    api.patch(f'/api/v1/sessions/{sid}', json={'alerts_enabled': False})
+    answer = ask(api, sid, 'alert me when you detect a laptop')
+    assert 'Detection is off' in answer['answer']
+    assert len(api.portal.call(detection_memory.pending, owner)) == 1
+
+
+def test_switching_off_during_inference_discards_result_without_consuming_memory(memory, monkeypatch):
+    api, factory, sid, owner = memory
+    ask(api, sid, 'alert me when you detect a laptop')
+    manager, state = configure_scene(memory, monkeypatch)
+
+    async def analyze(image, language, *, watches):
+        async with factory() as db:
+            session = await db.get(CaptureSession, sid)
+            session.alerts_enabled = False
+            await db.commit()
+        return gemini.GeminiAnswer(answer='A laptop is visible.', uncertain=False,
+                                   visible_path='blocked', visible_path_distance='unknown',
+                                   matched_alert_ids=[watches[0]['id']])
+
+    monkeypatch.setattr(gemini, 'ask_obstacles', analyze)
+
+    async def receive():
+        async with events.subscribe(sid) as queue:
+            await manager.check_obstacles(sid, state)
+            assert queue.empty()
+
+    api.portal.call(receive)
+    assert len(api.portal.call(detection_memory.pending, owner)) == 1
+    assert api.get(f'/api/v1/sessions/{sid}/alerts').json() == []
+
+
+def test_switching_off_during_redaction_prevents_the_cloud_upload(memory, monkeypatch):
+    import threading
+    api, factory, sid, owner = memory
+    ask(api, sid, 'alert me when you detect a laptop')
+    manager, state = configure_scene(memory, monkeypatch)
+
+    async def analyze(*args, **kwargs):
+        raise AssertionError('Turning detection off must prevent an upload after redaction')
+
+    monkeypatch.setattr(gemini, 'ask_obstacles', analyze)
+
+    async def exercise():
+        entered = asyncio.Event()
+        release = threading.Event()
+        loop = asyncio.get_running_loop()
+
+        def redact(*args):
+            loop.call_soon_threadsafe(entered.set)
+            assert release.wait(2)
+            return b'redacted'
+
+        monkeypatch.setattr(cloud_view, 'cloud_image', redact)
+        pending = asyncio.create_task(manager.check_obstacles(sid, state))
+        try:
+            await asyncio.wait_for(entered.wait(), 1)
+            async with factory() as db:
+                session = await db.get(CaptureSession, sid)
+                session.alerts_enabled = False
+                await db.commit()
+        finally:
+            release.set()
+            await pending
+
+    api.portal.call(exercise)
+    assert len(api.portal.call(detection_memory.pending, owner)) == 1

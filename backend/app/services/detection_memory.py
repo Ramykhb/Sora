@@ -74,11 +74,18 @@ async def remember(session_id, target, language, requester_id=None):
                 }[language], True, [], ["alert_memory_full"]
             db.add(DetectionWatch(owner_id=session.owner_id, target=target, target_key=key))
             await db.commit()
-    return {
+    confirmation = {
         "en": f"I'll alert you once when I detect {target}, then remove that request from memory.",
         "fr": f"Je vous alerterai une fois lorsque je détecterai {target}, puis j’effacerai cette demande de la mémoire.",
         "ar": f"سأنبهك مرة واحدة عندما أكتشف {target}، ثم سأحذف هذا الطلب من الذاكرة.",
-    }[language], False, [], []
+    }[language]
+    if not session.alerts_enabled:
+        confirmation += " " + {
+            "en": "Detection is off. Turn on Detect obstacles to start checking.",
+            "fr": "La détection est désactivée. Activez Détecter les obstacles pour lancer les vérifications.",
+            "ar": "الكشف متوقف. فعّل كشف العوائق لبدء الفحص.",
+        }[language]
+    return confirmation, False, [], []
 
 
 async def pending(owner_id):
@@ -99,7 +106,8 @@ async def fulfill(owner_id, session_id, matched_ids, captured_at, expires_at, is
     async with SessionFactory() as db:
         session = await db.scalar(select(CaptureSession).where(
             CaptureSession.id == session_id, CaptureSession.owner_id == owner_id,
-            CaptureSession.status == "active", CaptureSession.expires_at > now(),
+            CaptureSession.status == "active", CaptureSession.alerts_enabled.is_(True),
+            CaptureSession.expires_at > now(),
         ).with_for_update())
         if session is None or not is_current() or now() >= expires_at:
             return None
