@@ -13,6 +13,23 @@ test('only a wake-prefixed start-stream command controls the app', () => {
   for (const phrase of ['start stream', 'hey sora', 'hello hey sora start stream', 'hey sora do not start stream', 'hey sora start streaming', 'hey sora start stream tomorrow', 'hey sora start stream 123']) assert.equal(voiceCommand(phrase), null);
 });
 
+test('obstacle detection commands require Hey Sora in English, French, and Arabic', () => {
+  for (const [phrase, action] of [
+    ['Hey Sora, turn off obstacle detection', 'disable-obstacle-detection'],
+    ['Hey Sora, turn on obstacle detection', 'enable-obstacle-detection'],
+    ['Hé Sora, désactive la détection des obstacles', 'disable-obstacle-detection'],
+    ['Hé Sora, active la détection des obstacles', 'enable-obstacle-detection'],
+    ['يا سورا أوقف كشف العوائق', 'disable-obstacle-detection'],
+    ['يا سورا شغل كشف العوائق', 'enable-obstacle-detection'],
+  ]) {
+    assert.equal(voiceCommand(phrase), action, phrase);
+    assert.deepEqual(voiceInput(phrase), { kind: 'command', action }, phrase);
+  }
+  for (const phrase of ['turn off obstacle detection', 'désactive la détection des obstacles', 'أوقف كشف العوائق', 'Hey Sora do not turn off obstacle detection', 'Hey Sora turn on obstacle detection tomorrow']) {
+    assert.equal(voiceCommand(phrase), null, phrase);
+  }
+});
+
 test('Arabic and French wake-word commands match their English actions', () => {
   for (const [action, phrases] of [
     ['start-stream', ['يا سورا ابدأ البث', 'يا سورا، شغّل البث المباشر', 'هي سورا ابدأ البث', 'Hé Sora, démarre le flux', 'Hé Sora lance le direct']],
@@ -618,6 +635,20 @@ test('stream controls give spoken guidance when no stream is open', async () => 
   app.cleanup();
 });
 
+test('obstacle detection voice commands do not pause a live stream', async () => {
+  const app = mount(), controls = [], questions = [];
+  app.view.props.value.registerStream(async command => { controls.push(command); return 'Obstacle detection is off.'; }, () => false);
+  app.view.props.value.registerQuestions(async question => { questions.push(question); return { answer: 'Unused', language: 'en' }; });
+  await flush(); app.tick();
+  app.emit('result', { results: [{ transcript: 'hey sora turn off obstacle detection' }], isFinal: true });
+  await flush();
+  assert.deepEqual(controls, ['disable-obstacle-detection']);
+  assert.deepEqual(questions, []);
+  assert.equal(app.view.props.value.status.includes('paused'), false);
+  assert.equal(app.spoken.at(-1), 'Obstacle detection is off.');
+  app.cleanup();
+});
+
 test('closing a session can unregister its controls and still receive spoken confirmation', async () => {
   const app = mount();
   const unregister = app.view.props.value.registerStream(async () => { unregister(); return 'Stream stopped.'; });
@@ -959,6 +990,21 @@ test('camera detection toggle persists both on and off to the backend session', 
     assert.equal(patch[0], '/sessions/voice-session');
     assert.equal(patch[2].alerts_enabled, enabled);
     assert.ok(app.sessionUpdates.some(session => session?.alerts_enabled === enabled));
+  }
+});
+
+test('voice detection commands update the active session without stopping the stream', async () => {
+  for (const [command, initiallyEnabled, expected] of [
+    ['disable-obstacle-detection', true, false],
+    ['enable-obstacle-detection', false, true],
+  ]) {
+    const app = await voiceStartCamera(true, { active: true, detectionEnabled: initiallyEnabled, command });
+    const patch = app.requests.find(request => request[1] === 'PATCH');
+    assert.equal(patch[0], '/sessions/voice-session');
+    assert.equal(patch[2].alerts_enabled, expected);
+    assert.ok(app.sessionUpdates.some(session => session?.alerts_enabled === expected));
+    assert.match(app.controlReply, /Obstacle detection is (on|off)/);
+    assert.equal(app.requests.some(request => request[0].endsWith('/close')), false);
   }
 });
 

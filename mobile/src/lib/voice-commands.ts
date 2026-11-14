@@ -1,6 +1,6 @@
 // Stream/listening controls require the SORA wake word; explicit playback/SOS phrases work directly.
 // Commands are understood in English, Arabic and French, in every combination of script and accents.
-export type StreamCommand = 'pause-stream' | 'resume-stream' | 'stop-stream';
+export type StreamCommand = 'pause-stream' | 'resume-stream' | 'stop-stream' | 'enable-obstacle-detection' | 'disable-obstacle-detection';
 export type PlaybackCommand = 'repeat-answer' | 'repeat-directions' | 'next-step' | 'previous-step' | 'show-full-route' | 'stop-speaking';
 export type VoiceCommand = 'start-stream' | StreamCommand | PlaybackCommand | 'stop-listening' | 'start-listening' | 'mute' | 'unmute' | 'send-sos-location';
 const ARABIC_MARKS = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g;
@@ -55,6 +55,8 @@ export function voiceCommand(transcript: string): VoiceCommand | null {
   if (at('(?:start|resume) listening|(?:commence|reprends|continue|active|demarre) (?:a |l )?(?:ecouter|ecoute)|(?:ابدا|استانف|تابع|واصل|اكمل|اعد|شغل) (?:ال)?استماع').test(words)) return 'start-listening';
   if (at('unmute(?: (?:your )?voice)?|(?:retablis|reactive|rallume|active|remets) (?:le |la )?(?:son|audio|voix)|(?:الغ|الغي|فك) (?:ال)?كتم(?: (?:ال)?صوت)?|(?:شغل|اشغل|فعل) (?:ال)?صوت').test(words)) return 'unmute';
   if (at('mute(?: (?:your )?voice)?|(?:coupe|mets|desactive|baisse) (?:le |la )?(?:son|audio|voix)(?: en sourdine)?|sourdine|silence|(?:اكتم|كتم) (?:ال)?صوت|صامت').test(words)) return 'mute';
+  if (at('turn off (?:the )?obstacle detection|(?:desactive|arrete) (?:la )?detection (?:d |des )?obstacles|(?:اوقف|عطل|الغ) (?:ال)?(?:كشف|اكتشاف) (?:ال)?عوايق').test(words)) return 'disable-obstacle-detection';
+  if (at('turn on (?:the )?obstacle detection|(?:active|reactive) (?:la )?detection (?:d |des )?obstacles|(?:شغل|اشغل|فعل) (?:ال)?(?:كشف|اكتشاف) (?:ال)?عوايق').test(words)) return 'enable-obstacle-detection';
   if (at('pause (?:the )?stream|(?:mets|met) (?:le |la )?(?:flux|stream|direct) en pause|(?:pause|pauses) (?:le |la )?(?:flux|stream|direct)|(?:اوقف|ايقاف|علق) (?:ال)?بث موقتا').test(words)) return 'pause-stream';
   if (at('resume (?:the )?stream|(?:reprends|reprend|reprendre|continue|relance) (?:le |la )?(?:flux|stream|direct)|(?:reprise) (?:du |le )?(?:flux|stream|direct)|(?:استانف|استئناف|تابع|واصل|اكمل) (?:ال)?بث(?: المباشر)?').test(words)) return 'resume-stream';
   if (at('stop (?:the )?stream|(?:arrete|stoppe|termine) (?:le |la )?(?:flux|stream|direct)|(?:اوقف|وقف|ايقاف|انهي|انهاء|اغلق) (?:ال)?بث(?: المباشر)?').test(words)) return 'stop-stream';

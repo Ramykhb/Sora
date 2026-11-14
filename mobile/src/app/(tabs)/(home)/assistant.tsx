@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Switch, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { speech } from '@/lib/speech';
+import { voiceText } from '@/lib/voice-language';
 import { questionLocation } from '@/lib/question-location';
 import { useHandsFreeQuestions, useVoiceCommands, useVoiceStreamControls } from '@/providers/voice-commands';
 import { useAuth } from '@/providers/auth';
@@ -150,6 +151,13 @@ function Assistant() {
   useVoiceStreamControls(async command => {
     if (closingStream.current) throw new Error('Your stream is stopping. Please wait.');
     if (!session || session.status !== 'active') throw new Error('There is no active stream. Say Hey Sora, start stream first.');
+    if (command === 'enable-obstacle-detection' || command === 'disable-obstacle-detection') {
+      const enabled = command === 'enable-obstacle-detection';
+      if (session.alerts_enabled === enabled) return voiceText(enabled ? 'detectionAlreadyOn' : 'detectionAlreadyOff', language);
+      await preferences(language, enabled);
+      if (!enabled) void speech.stop();
+      return voiceText(enabled ? 'detectionOn' : 'detectionOff', language);
+    }
     if (command === 'pause-stream') {
       setActive(false); setObservation(null);
       return active ? 'Stream paused. Say Hey Sora, resume stream when you are ready.' : 'Your stream is already paused.';

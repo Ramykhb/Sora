@@ -22,6 +22,7 @@ const Context = createContext<{ status: string; retry: () => void; setQuestionLi
 const COMMAND_PHRASES = [
   'Hey Sora', 'Hé Sora', 'يا سورا',
   'Hey Sora start stream', 'Hey Sora pause stream', 'Hey Sora resume stream', 'Hey Sora stop stream',
+  'Hey Sora turn off obstacle detection', 'Hey Sora turn on obstacle detection',
   'Hey Sora stop listening', 'Hey Sora start listening', 'Hey Sora resume listening',
   'Hey Sora mute', 'Hey Sora unmute', 'Repeat that', 'Repeat the directions', 'Stop speaking',
   'Alert me when you detect', 'Alert me when you see', 'Hey Sora alert me when you detect a laptop',
@@ -30,10 +31,12 @@ const COMMAND_PHRASES = [
   'الخطوة التالية', 'الخطوة السابقة', 'اعرض المسار كاملاً',
   'Hey Sora repeat that', 'Hey Sora repeat the directions', 'Hey Sora stop speaking', 'Describe the scene',
   'Hé Sora démarre le flux', 'Hé Sora mets le flux en pause', 'Hé Sora reprends le flux', 'Hé Sora arrête le flux',
+  'Hé Sora désactive la détection des obstacles', 'Hé Sora active la détection des obstacles',
   "Hé Sora arrête d'écouter", 'Hé Sora commence à écouter', 'Hé Sora coupe le son', 'Hé Sora rétablis le son',
   'Répète la réponse', 'Répète les directions', 'Arrête de parler', 'Décris la scène',
   "Envoie ma position à mon contact d'urgence",
   'يا سورا ابدأ البث', 'يا سورا أوقف البث مؤقتاً', 'يا سورا استأنف البث', 'يا سورا أوقف البث',
+  'يا سورا أوقف كشف العوائق', 'يا سورا شغل كشف العوائق',
   'يا سورا ابدأ', 'يا سورا بلش البث', 'يا سورا وقف البث', 'هاي سورا ابدأ البث',
   'يا سورا توقف عن الاستماع', 'يا سورا ابدأ الاستماع', 'يا سورا اكتم الصوت', 'يا سورا ألغ كتم الصوت',
   'أعد الإجابة', 'أعد الاتجاهات', 'توقف عن الكلام', 'صف المشهد',
@@ -168,7 +171,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
         return;
       }
       controllingStream.current = true;
-      if (command !== 'resume-stream') {
+      if (command === 'pause-stream' || command === 'stop-stream') {
         streamPaused.current = true; setCommandsOnlyForStream(true); cancelQuestions();
       }
       try {
@@ -237,7 +240,7 @@ export function VoiceCommandsProvider({ children }: { children: ReactNode }) {
           for (const result of event.results.slice(1)) {
             const candidate = voiceAudioGate.userTranscript(result.transcript, utterancePlayback);
             const input = voiceInput(candidate);
-            if (input?.kind === 'command' && input.action && /^(?:start|pause|resume|stop)-stream$/.test(input.action)) {
+            if (input?.kind === 'command' && input.action && (/^(?:start|pause|resume|stop)-stream$/.test(input.action) || /^(?:enable|disable)-obstacle-detection$/.test(input.action))) {
               transcript = candidate;
               break;
             }

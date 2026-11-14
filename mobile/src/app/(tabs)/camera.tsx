@@ -116,6 +116,12 @@ function Capture() {
   async function controlStream(command: StreamCommand) {
     if (changingStream.current || starting.current) throw new Error('Please wait for the stream to finish changing, then try again.');
     if (!session || mode !== 'live') throw new Error('There is no live stream open. Say Hey Sora, start stream first.');
+    if (command === 'enable-obstacle-detection' || command === 'disable-obstacle-detection') {
+      const enabled = command === 'enable-obstacle-detection';
+      if (session.alerts_enabled === enabled) return voiceText(enabled ? 'detectionAlreadyOn' : 'detectionAlreadyOff', language);
+      await setDetectionEnabled(enabled);
+      return voiceText(enabled ? 'detectionOn' : 'detectionOff', language);
+    }
     if (command === 'pause-stream') {
       setStreamPaused(true); setConnected(false);
       return voiceText(streamPaused ? 'alreadyPaused' : 'pausedConfirm', language);
