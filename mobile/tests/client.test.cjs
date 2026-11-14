@@ -13,6 +13,26 @@ afterEach(() => { global.fetch = originalFetch; global.WebSocket = originalSocke
 const pair = (access = 'access') => ({ access_token: access, refresh_token: `refresh-${access}`, expires_in: 300, user: { id: 'owner' } });
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 
+test('streaming transport preserves cancellation and refreshes expired credentials', async () => {
+  const api = new ApiClient('https://sora.test', async () => {});
+  await api.setTokens(pair());
+  global.fetch = async url => {
+    assert.equal(url, 'https://sora.test/api/v1/auth/refresh');
+    return json(pair('rotated'));
+  };
+  const controller = new AbortController();
+  const calls = [];
+  const response = await api.response('/speech/stream', { method: 'POST', signal: controller.signal }, async (url, options) => {
+    calls.push(options);
+    assert.equal(url, 'https://sora.test/api/v1/speech/stream');
+    assert.equal(options.signal, controller.signal);
+    return calls.length === 1 ? json({}, 401) : json({ streamed: true });
+  });
+  assert.equal(calls[0].headers.Authorization, 'Bearer access');
+  assert.equal(calls[1].headers.Authorization, 'Bearer rotated');
+  assert.deepEqual(await response.json(), { streamed: true });
+});
+
 function gatheringPeer(sdp = 'v=0\r\n') {
   const listeners = new Map();
   return {

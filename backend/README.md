@@ -18,6 +18,8 @@ The vision model and embedding model are separate tasks. This system uses text e
 
 For a female Arabic voice with Lebanese delivery, set `GEMINI_TTS_ENABLED=true` and a server-only `GEMINI_API_KEY`. The defaults are `GEMINI_TTS_MODEL=gemini-3.8-flash-tts`, `GEMINI_TTS_VOICE=Aoede`, and a 20-second provider timeout. This speech setting is independent of `GEMINI_ENABLED` for camera analysis. Gemini receives the spoken text and accent instructions; short prompts are cached in memory within an 8 MB limit. The accent is prompted and should be auditioned on your phrases. The mobile app requests this voice for Arabic answers and command feedback, falling back to its installed voice when the service is unavailable. Urgent obstacle alerts keep immediate local speech. Recreate the API container after changing its environment; reload the mobile app after updating its JavaScript.
 
+Automatic Arabic playback uses authenticated `POST /speech/stream`. Gemini PCM is packaged into quarter-second WAV frames and sent as newline-delimited JSON. The app uses `expo/fetch` to read frames incrementally and queues them with `expo-audio`, starting before generation finishes. Stop, mute, and sign-out abort the request and clear the queue and temporary files. Completed short prompts share the existing bounded cache; interrupted responses are not cached. The ordinary `/speech/synthesis` endpoint remains available for complete WAV downloads.
+
 ## Run Python natively on macOS
 
 This is the recommended development setup for WebRTC on a Mac. Start Docker Desktop first. From `backend`:

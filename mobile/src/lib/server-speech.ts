@@ -1,5 +1,6 @@
-import { createAudioPlayer } from 'expo-audio';
+import { createAudioPlaylist } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
+import { fetch as streamingFetch } from 'expo/fetch';
 import { Platform } from 'react-native';
 import type { ApiClient } from './api';
 
@@ -8,7 +9,8 @@ let client: Pick<ApiClient, 'response'> | null = null;
 let generation = 0;
 let dispose: (() => void) | undefined;
 
-// One cancellable player shared by automatic answers and spoken app feedback.
+// Queue small WAV segments as Gemini generates them. Native HTTP media players
+// otherwise buffer a complete short answer before playing it.
 export const serverSpeech = {
   configure(api: Pick<ApiClient, 'response'> | null) {
     client = api;
@@ -22,58 +24,103 @@ export const serverSpeech = {
     dispose = undefined;
     cleanup?.();
   },
-  async speak(text: string, callbacks: Callbacks): Promise<boolean> {
+  async speak(text: string, callbacks: Callbacks, beforePlay: () => Promise<void> = async () => {}): Promise<boolean> {
     if (!client) return false;
+    const api = client;
     serverSpeech.stop();
     const current = generation;
-    try {
-      const response = await client.response('/speech/synthesis', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, language: 'ar', provider: 'gemini' }),
-      });
-      if (current !== generation) return true;
-      const data = await response.arrayBuffer();
-      if (current !== generation) return true;
+    const controller = new AbortController();
+    const files: File[] = [];
+    let playlist: ReturnType<typeof createAudioPlaylist>;
+    try { playlist = createAudioPlaylist({ updateInterval: 100 }); }
+    catch { return false; }
+    let settled = false;
+    let started = false;
+    let completed = false;
+    let drained = false;
+    let queued = 0;
+    let resolveStart: (handled: boolean) => void = () => {};
+    const start = new Promise<boolean>(resolve => { resolveStart = resolve; });
+    const startupTimer = setTimeout(() => fail(new Error('Arabic speech startup timed out')), 8000);
+    const networkTimer = setTimeout(() => fail(new Error('Arabic speech stream timed out')), 22000);
+    const subscription = playlist.addListener('playlistStatusUpdate', status => {
+      if (settled) return;
+      if (status.playing) { started = true; clearTimeout(startupTimer); resolveStart(true); }
+      if (status.didJustFinish) { drained = true; if (completed) finish(); }
+    });
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      if (dispose === cancel) dispose = undefined;
+      clearTimeout(startupTimer); clearTimeout(networkTimer);
+      controller.abort(); subscription.remove();
+      try { playlist.pause(); playlist.destroy(); }
+      finally { files.forEach(file => { if (file.exists) file.delete(); }); }
+    };
+    const cancel = () => { cleanup(); resolveStart(true); };
+    const finish = () => { cleanup(); resolveStart(true); callbacks.onDone?.(); };
+    const fail = (error: Error) => {
+      if (settled) return;
+      cleanup(); resolveStart(started);
+      if (started) callbacks.onError?.(error);
+    };
+    dispose = cancel;
+    playlist.volume = 1;
+
+    async function frame(line: string) {
+      if (settled || current !== generation || !line.trim()) return;
+      const value: { type: string; data?: string } = JSON.parse(line);
+      if (value.type === 'done') { completed = true; if (drained) finish(); return; }
+      if (completed || value.type !== 'audio' || !value.data || value.data.length > 100000) throw new Error('Invalid audio frame');
       let uri: string;
-      let clearMedia: () => void;
-      if (Platform.OS === 'web') {
-        uri = URL.createObjectURL(new Blob([data], { type: 'audio/wav' }));
-        clearMedia = () => URL.revokeObjectURL(uri);
-      } else {
-        const file = new File(Paths.cache, `sora-speech-${Date.now()}-${current}.wav`);
-        clearMedia = () => { if (file.exists) file.delete(); };
-        try { await file.write(new Uint8Array(data)); }
-        catch (error) { clearMedia(); throw error; }
+      if (Platform.OS === 'web') uri = `data:audio/wav;base64,${value.data}`;
+      else {
+        const file = new File(Paths.cache, `sora-speech-${current}-${queued}.wav`);
+        files.push(file);
+        await file.write(value.data, { encoding: 'base64' });
+        if (settled || current !== generation) { if (file.exists) file.delete(); return; }
         uri = file.uri;
       }
-      if (current !== generation) { clearMedia(); return true; }
-      let player: ReturnType<typeof createAudioPlayer>;
-      try { player = createAudioPlayer({ uri }); }
-      catch (error) { clearMedia(); throw error; }
-      let settled = false;
-      const subscription = player.addListener('playbackStatusUpdate', status => {
-        if (settled || (!status.didJustFinish && !status.error)) return;
-        settled = true;
-        cleanup();
-        if (current !== generation) return;
-        if (status.error) callbacks.onError?.(new Error('Arabic audio playback failed'));
-        else callbacks.onDone?.();
-      });
-      const cleanup = () => {
-        settled = true;
-        if (dispose === cleanup) dispose = undefined;
-        subscription.remove();
-        try { player.pause(); player.remove(); } finally { clearMedia(); }
-      };
-      dispose = cleanup;
-      player.volume = 1;
-      player.play();
-      return true;
-    } catch {
-      if (current !== generation) return true;
-      dispose?.(); dispose = undefined;
-      // Network/provider failures fall back to the installed device voice.
-      return false;
+      const resume = queued === 0 || drained;
+      queued++; drained = false;
+      playlist.add({ uri });
+      if (resume) {
+        await beforePlay();
+        if (!settled && current === generation) playlist.play();
+      }
     }
+
+    async function consume() {
+      try {
+        const response = await api.response('/speech/stream', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, language: 'ar', provider: 'gemini' }), signal: controller.signal,
+        }, streamingFetch);
+        if (settled || current !== generation) return;
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('Audio streaming is unavailable');
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (!settled) {
+          const { value, done } = await reader.read();
+          buffer += decoder.decode(value, { stream: !done });
+          if (buffer.length > 256000) throw new Error('Audio frame exceeds limit');
+          let newline: number;
+          while (!settled && (newline = buffer.indexOf('\n')) >= 0) {
+            const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1);
+            await frame(line);
+          }
+          if (done) break;
+        }
+        if (settled) return;
+        if (buffer.trim()) await frame(buffer);
+        if (!completed || !queued) throw new Error('Incomplete audio stream');
+        clearTimeout(networkTimer);
+      } catch (error) {
+        if (!settled && current === generation) fail(error instanceof Error ? error : new Error('Arabic speech failed'));
+      }
+    }
+    void consume();
+    return start;
   },
 };

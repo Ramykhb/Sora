@@ -95,9 +95,9 @@ export class ApiClient {
     if (!this.tokens) throw new ApiError(401, 'Please sign in.');
     return Date.now() >= this.expiresAt - 30000 ? this.refresh() : this.tokens.access_token;
   }
-  async response(path: string, init: RequestInit = {}) {
+  async response(path: string, init: RequestInit = {}, fetchResponse: (url: string, init: RequestInit) => Promise<Response> = fetchBounded) {
     const token = await this.token();
-    const send = (value: string) => fetchBounded(this.url(path), { ...init, headers: { ...init.headers, Authorization: `Bearer ${value}` } });
+    const send = (value: string) => fetchResponse(this.url(path), { ...init, headers: { ...init.headers, Authorization: `Bearer ${value}` } });
     let response = await send(token);
     if (response.status === 401) {
       const next = this.tokens?.access_token !== token && this.tokens ? this.tokens.access_token : await this.refresh();

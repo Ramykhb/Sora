@@ -41,20 +41,25 @@ export const speech = new SpeechController({
     try {
       // Reuse the recognizer's active session. Changing its route at utterance
       // start, or speaking before a restart is ready, can soften the first words.
-      const recognitionReady = await voiceAudioGate.waitForRecognitionReady();
-      if (generation !== audioGeneration) { done(); return; }
-      if (!recognitionReady) {
-        await setAudioModeAsync({ allowsRecording: voiceAudioGate.recognitionExpected, playsInSilentMode: true });
-      }
+      let audioReady: Promise<void> | undefined;
+      const prepareAudio = () => audioReady ??= (async () => {
+        const recognitionReady = await voiceAudioGate.waitForRecognitionReady();
+        if (generation !== audioGeneration) return;
+        if (!recognitionReady) {
+          await setAudioModeAsync({ allowsRecording: voiceAudioGate.recognitionExpected, playsInSilentMode: true });
+        }
+      })();
       const language = options.language.toLowerCase().split('-')[0];
       if (language === 'ar' && !options.urgent) {
         const handled = await serverSpeech.speak(speechText(text, options.language), {
           onDone: () => done(options.onDone),
           onError: error => done(() => options.onError?.(error)),
-        });
+        }, prepareAudio);
         if (generation !== audioGeneration) { done(); return; }
         if (handled) return;
       }
+      await prepareAudio();
+      if (generation !== audioGeneration) { done(); return; }
       const voice = language === 'ar' ? await preferredArabicVoice() : undefined;
       if (generation !== audioGeneration) { done(); return; }
       Speech.speak(speechText(text, options.language), {

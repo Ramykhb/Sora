@@ -21,30 +21,52 @@ _cache_lock = threading.Lock()
 _CACHE_BYTES = 8 * 1024 * 1024
 
 
+def cached_audio(text: str) -> bytes | None:
+    cache_key = (settings.gemini_tts_model, settings.gemini_tts_voice, text)
+    with _cache_lock:
+        audio = _cache.get(cache_key)
+        if audio is not None:
+            _cache.move_to_end(cache_key)
+        return audio
+
+
+def cache_audio(text: str, audio: bytes):
+    if len(text) <= 250 and len(audio) <= _CACHE_BYTES:
+        cache_key = (settings.gemini_tts_model, settings.gemini_tts_voice, text)
+        with _cache_lock:
+            _cache[cache_key] = audio
+            _cache.move_to_end(cache_key)
+            while sum(map(len, _cache.values())) > _CACHE_BYTES:
+                _cache.popitem(last=False)
+
+
+def speech_request(text: str, *, stream: bool = False):
+    return {
+        "model": settings.gemini_tts_model,
+        "store": False,
+        "input": [{"type": "user_input", "content": [{
+            "type": "text", "text": text,
+            "annotations": [{"type": "speech_metadata", "style": STYLE}],
+        }]}],
+        "response_format": {"type": "audio", "mime_type": "audio/l16" if stream else "audio/wav"},
+        "generation_config": {"speech_config": [{"voice": settings.gemini_tts_voice}]},
+        **({"stream": True} if stream else {}),
+    }
+
+
 def synthesize_arabic(text: str) -> bytes:
     key = settings.gemini_api_key.get_secret_value()
     if not key:
         raise BackendError("Gemini speech is not configured", 503, "tts_unavailable")
-    cache_key = (settings.gemini_tts_model, settings.gemini_tts_voice, text)
-    with _cache_lock:
-        if cache_key in _cache:
-            _cache.move_to_end(cache_key)
-            return _cache[cache_key]
+    cached = cached_audio(text)
+    if cached is not None:
+        return cached
     try:
         with httpx.Client(timeout=settings.gemini_tts_timeout_seconds) as client:
             response = client.post(
                 "https://generativelanguage.googleapis.com/v1beta/interactions",
                 headers={"x-goog-api-key": key},
-                json={
-                    "model": settings.gemini_tts_model,
-                    "store": False,
-                    "input": [{"type": "user_input", "content": [{
-                        "type": "text", "text": text,
-                        "annotations": [{"type": "speech_metadata", "style": STYLE}],
-                    }]}],
-                    "response_format": {"type": "audio", "mime_type": "audio/wav"},
-                    "generation_config": {"speech_config": [{"voice": settings.gemini_tts_voice}]},
-                },
+                json=speech_request(text),
             )
             response.raise_for_status()
         payload = response.json()
@@ -63,10 +85,5 @@ def synthesize_arabic(text: str) -> bytes:
     except (httpx.HTTPError, ValueError, KeyError, TypeError, wave.Error, EOFError) as exc:
         raise BackendError("Gemini speech is unavailable. Please try again.", 503, "tts_unavailable") from exc
     # Repeated app prompts stay quick; long answers aren't retained in the cache.
-    if len(text) <= 250 and len(audio) <= _CACHE_BYTES:
-        with _cache_lock:
-            _cache[cache_key] = audio
-            _cache.move_to_end(cache_key)
-            while sum(map(len, _cache.values())) > _CACHE_BYTES:
-                _cache.popitem(last=False)
+    cache_audio(text, audio)
     return audio
