@@ -63,6 +63,79 @@ def test_enrichment_reads_durable_work_and_updates_the_same_saved_frame(client):
     assert len(api.get(f"/api/v1/sessions/{sid}/frames").json()) == 1
 
 
+def test_enrichment_uses_processed_image_without_reprocessing(client, monkeypatch):
+    import app.services.frames.processing as processing
+    import app.workers.enrichment as enrichment
+    from app.services.storage.object_store import get_image
+    from PIL import Image
+    from io import BytesIO
+
+    api, _ = client
+    result = save_fast(api, create(api))
+    keys = []
+    original_get = get_image
+
+    def read(key):
+        keys.append(key)
+        return original_get(key)
+
+    def forbidden(*_args):
+        raise AssertionError("Enrichment must not repeat image preparation")
+
+    async def describe(content):
+        image = Image.open(BytesIO(content))
+        assert max(image.size) <= 448
+        return Scene(caption="A chair", uncertain=False)
+
+    monkeypatch.setattr(enrichment, "get_image", read)
+    monkeypatch.setattr(processing, "prepare_image", forbidden)
+    monkeypatch.setattr(models, "describe", describe)
+    api.portal.call(enrich_frame, result.frame.id)
+    assert len(keys) == 1 and keys[0].endswith("/processed.jpg")
+    updated = api.get(f"/api/v1/sessions/{result.frame.session_id}/frames").json()[0]
+    assert updated["caption"] == "A chair"
+    assert updated["ocr_text"] == result.frame.ocr_text
+    assert updated["detected_objects"] == result.frame.detected_objects
+
+
+def test_enrichment_fails_closed_without_privacy_marker_or_processed_object(client, monkeypatch):
+    from app.services.storage.object_store import get_image
+    import app.workers.enrichment as enrichment
+
+    api, factory = client
+    result = save_fast(api, create(api))
+
+    async def remove_marker():
+        async with factory() as db:
+            row = await db.get(Frame, result.frame.id)
+            row.enhancements = []
+            await db.commit()
+
+    api.portal.call(remove_marker)
+    monkeypatch.setattr(enrichment, "get_image", lambda *_: (_ for _ in ()).throw(AssertionError("no read")))
+    api.portal.call(enrich_frame, result.frame.id)
+    frame = api.get(f"/api/v1/sessions/{result.frame.session_id}/frames").json()[0]
+    assert frame["enrichment_status"] == "failed"
+    assert "face_privacy_unavailable" in frame["processing_warnings"]
+
+    second = api.portal.call(partial(ingest_bytes, image_bytes(), result.frame.session_id,
+                                     defer_enrichment=True, force=True))
+
+    async def missing_image():
+        async with factory() as db:
+            row = await db.get(Frame, second.frame.id)
+            row.processed_object_key = "missing/processed.jpg"
+            await db.commit()
+
+    api.portal.call(missing_image)
+    monkeypatch.setattr(enrichment, "get_image", get_image)
+    api.portal.call(enrich_frame, second.frame.id)
+    frames = api.get(f"/api/v1/sessions/{result.frame.session_id}/frames").json()
+    failed = next(frame for frame in frames if frame["id"] == str(second.frame.id))
+    assert failed["enrichment_status"] == "failed"
+    assert "processed_image_unavailable" in failed["processing_warnings"]
+
+
 def test_enrichment_failure_keeps_saved_ocr_and_reports_the_failure(client, monkeypatch):
     api, _ = client
     sid = create(api)

@@ -1,10 +1,11 @@
 from io import BytesIO
+import cv2
 import numpy as np
 from PIL import Image
 import pytest
 from app.core.config import settings
 from app.core.errors import BackendError
-from app.services.frames.processing import prepare_image, vision_image
+from app.services.frames.processing import prepare_image, vision_image, vision_image_from_processed
 from app.services.frames.selection import rejection_reason
 
 
@@ -71,6 +72,74 @@ def test_caption_image_does_not_upscale_small_frames(monkeypatch):
     monkeypatch.setattr(settings, "vision_image_max_side", 448)
     prepared = prepare_image(encode(np.full((100, 200, 3), 80, dtype=np.uint8)))
     assert vision_image(prepared) is prepared.processed
+
+
+def test_stored_processed_image_resizes_without_upscaling(monkeypatch):
+    monkeypatch.setattr(settings, "vision_image_max_side", 448)
+    large = prepare_image(encode(np.full((600, 1200, 3), 90, dtype=np.uint8)))
+    resized = Image.open(BytesIO(vision_image_from_processed(large.processed)))
+    assert resized.size == (448, 224)
+    small = prepare_image(encode(np.full((100, 200, 3), 90, dtype=np.uint8)))
+    assert vision_image_from_processed(small.processed) is small.processed
+
+
+def test_stored_processed_image_validates_bytes_and_pixels(monkeypatch):
+    with pytest.raises(BackendError, match="unreadable"):
+        vision_image_from_processed(b"not a jpeg")
+    monkeypatch.setattr(settings, "max_image_pixels", 1000)
+    oversized = BytesIO()
+    Image.new("RGB", (100, 100), "black").save(oversized, format="JPEG")
+    with pytest.raises(BackendError) as error:
+        vision_image_from_processed(oversized.getvalue())
+    assert error.value.code == "processed_image_invalid"
+    assert error.value.status_code == 413
+
+
+def test_quality_metrics_are_unenhanced_and_non_mutating():
+    black = prepare_image(encode(np.zeros((100, 100, 3), dtype=np.uint8)))
+    white = prepare_image(encode(np.full((100, 100, 3), 255, dtype=np.uint8)))
+    assert black.quality.brightness == 0 and black.quality.shadow_fraction == 1
+    assert white.quality.brightness == 255 and white.quality.highlight_fraction == 1
+    low = np.full((100, 100, 3), 35, dtype=np.uint8)
+    before = low.copy()
+    prepared = prepare_image(encode(low))
+    assert np.array_equal(low, before)
+    assert prepared.quality.brightness == prepared.brightness == 35
+    assert prepared.quality.contrast == 0
+    assert prepared.quality.highlight_fraction == 0
+    assert "gamma" in prepared.enhancements
+    assert "gamma" not in white.enhancements
+    assert "unsharp_mask" not in black.enhancements
+
+
+def test_contrast_sharpness_and_exposure_metrics():
+    flat = prepare_image(encode(np.full((128, 128, 3), 128, dtype=np.uint8)))
+    checker = np.indices((128, 128)).sum(axis=0) % 2 * 255
+    sharp = prepare_image(encode(np.repeat(checker[:, :, None], 3, axis=2).astype(np.uint8)))
+    blurred_pattern = cv2.GaussianBlur(checker.astype(np.uint8), (9, 9), 2)
+    blurred = prepare_image(encode(np.repeat(blurred_pattern[:, :, None], 3, axis=2)))
+    near_white = prepare_image(encode(np.full((128, 128, 3), 240, dtype=np.uint8)))
+    assert sharp.quality.contrast > flat.quality.contrast
+    assert sharp.quality.sharpness > blurred.quality.sharpness
+    assert near_white.quality.highlight_fraction == 1
+    assert "clahe" not in sharp.enhancements
+
+
+@pytest.mark.parametrize("intensity", [180, 210, 240, 255])
+def test_bright_low_contrast_images_skip_unnecessary_enhancement(intensity):
+    prepared = prepare_image(encode(np.full((100, 100, 3), intensity, dtype=np.uint8)))
+    assert prepared.quality.contrast == 0
+    assert "clahe" not in prepared.enhancements
+    assert prepared.processed == prepared.original
+
+
+def test_dark_and_midtone_low_contrast_images_still_receive_clahe():
+    dark = prepare_image(encode(np.full((100, 100, 3), 70, dtype=np.uint8)))
+    low_contrast = np.tile(np.linspace(110, 130, 100, dtype=np.uint8), (100, 1))
+    midtone = prepare_image(encode(np.repeat(low_contrast[:, :, None], 3, axis=2)))
+    assert "clahe" in dark.enhancements
+    assert midtone.quality.contrast < 40
+    assert "clahe" in midtone.enhancements
 
 
 def test_actual_tesseract_reads_test_sign(monkeypatch):

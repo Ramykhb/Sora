@@ -13,6 +13,16 @@ from app.services.frames.privacy import PRIVACY_VERSION, blur_regions, face_regi
 
 
 @dataclass
+class ImageQuality:
+    """Unenhanced grayscale metrics: intensity/std in 0..255, percentages in 0..1."""
+    brightness: float
+    sharpness: float  # Variance of the grayscale Laplacian; nonnegative.
+    contrast: float  # Standard deviation of grayscale intensity.
+    shadow_fraction: float  # Pixels below intensity 40.
+    highlight_fraction: float  # Pixels above intensity 215.
+
+
+@dataclass
 class PreparedImage:
     original: bytes
     processed: bytes
@@ -23,6 +33,7 @@ class PreparedImage:
     brightness: float
     perceptual_hash: str
     enhancements: list[str]
+    quality: ImageQuality | None = None
 
 
 @dataclass
@@ -38,6 +49,17 @@ def jpeg(image):
     if not ok:
         raise BackendError("Could not encode image", 422, "invalid_image")
     return encoded.tobytes()
+
+
+def measure_quality(gray: np.ndarray) -> ImageQuality:
+    """Measure the decoded image once, before any enhancement or face blur."""
+    return ImageQuality(
+        brightness=float(gray.mean()),
+        sharpness=float(cv2.Laplacian(gray, cv2.CV_64F).var()),
+        contrast=float(gray.std()),
+        shadow_fraction=float(np.count_nonzero(gray < 40) / gray.size),
+        highlight_fraction=float(np.count_nonzero(gray > 215) / gray.size),
+    )
 
 
 def prepare_image(content: bytes) -> PreparedImage:
@@ -60,25 +82,32 @@ def prepare_image(content: bytes) -> PreparedImage:
     if min(width, height) < 32:
         raise BackendError("Image must be at least 32 by 32 pixels", 422, "invalid_image")
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-    brightness = float(gray.mean())
+    quality = measure_quality(gray)
+    sharpness, brightness = quality.sharpness, quality.brightness
     small = cv2.resize(gray, (9, 8))
     bits = (small[:, 1:] > small[:, :-1]).flatten()
     phash = f"{sum(int(bit) << index for index, bit in enumerate(bits)):016x}"
     enhanced = image.copy()
     steps = []
-    if brightness < 100 or float(gray.std()) < 40:
+    if 25 <= brightness < 100 and quality.shadow_fraction > 0.15:
+        gamma = max(0.72, min(0.95, 1 - (100 - brightness) / 300))
+        table = np.clip((np.arange(256) / 255.0) ** gamma * 255, 0, 255).astype(np.uint8)
+        enhanced = cv2.LUT(enhanced, table)
+        steps.append("gamma")
+    if brightness < 100 or (quality.contrast < 40 and brightness < 180):
         lab = cv2.cvtColor(enhanced, cv2.COLOR_BGR2LAB)
         light, a, b = cv2.split(lab)
-        light = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(light)
+        light = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8)).apply(light)
         enhanced = cv2.cvtColor(cv2.merge((light, a, b)), cv2.COLOR_LAB2BGR)
         steps.append("clahe")
+    # Bilateral filtering is edge-preserving; low light is the conservative
+    # trigger when a reliable noise estimate is unavailable.
     if brightness < 60:
         enhanced = cv2.bilateralFilter(enhanced, 5, 20, 20)
         steps.append("denoise")
-    if sharpness < 150:
+    if 15 <= sharpness < 150 and quality.contrast >= 25 and brightness >= 45:
         blur = cv2.GaussianBlur(enhanced, (0, 0), 1.2)
-        enhanced = cv2.addWeighted(enhanced, 1.35, blur, -0.35, 0)
+        enhanced = cv2.addWeighted(enhanced, 1.25, blur, -0.25, 0)
         steps.append("unsharp_mask")
     # Detect on the decoded image, then redact AFTER enhancement so sharpening
     # cannot restore facial detail. Both saved variants and downstream AI/OCR
@@ -90,7 +119,8 @@ def prepare_image(content: bytes) -> PreparedImage:
     if regions:
         steps.append("face_blur")
     return PreparedImage(
-        jpeg(image), jpeg(enhanced), enhanced, width, height, sharpness, brightness, phash, steps
+        jpeg(image), jpeg(enhanced), enhanced, width, height, sharpness, brightness, phash, steps,
+        quality,
     )
 
 
@@ -108,6 +138,33 @@ def vision_image(prepared: PreparedImage) -> bytes:
         (max(1, round(width * scale)), max(1, round(height * scale))),
         interpolation=cv2.INTER_AREA,
     )
+    return jpeg(resized)
+
+
+def vision_image_from_processed(content: bytes) -> bytes:
+    """Validate and resize a stored privacy-processed JPEG without enhancing it again."""
+    if not content or len(content) > settings.max_upload_mb * 1024 * 1024:
+        raise BackendError("Stored processed image exceeds size limit", 413, "processed_image_invalid")
+    try:
+        with open_image(BytesIO(content), formats=("JPEG",)) as source:
+            width, height = source.size
+            if width * height > settings.max_image_pixels:
+                raise BackendError("Stored processed image exceeds pixel limit", 413,
+                                   "processed_image_invalid")
+            if min(width, height) < 32:
+                raise BackendError("Stored processed image is too small", 422,
+                                   "processed_image_invalid")
+            source.load()
+            if max(width, height) <= settings.vision_image_max_side:
+                return content
+            source = source.convert("RGB")
+            image = cv2.cvtColor(np.asarray(source), cv2.COLOR_RGB2BGR)
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise BackendError("Stored processed image is unreadable", 422,
+                           "processed_image_invalid") from exc
+    scale = settings.vision_image_max_side / max(width, height)
+    resized = cv2.resize(image, (max(1, round(width * scale)), max(1, round(height * scale))),
+                         interpolation=cv2.INTER_AREA)
     return jpeg(resized)
 
 

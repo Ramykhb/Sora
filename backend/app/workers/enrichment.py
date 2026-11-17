@@ -13,7 +13,8 @@ from app.db.session import SessionFactory
 from app.schemas import FrameOut
 from app.services.ai.models import models
 from app.services.events import events
-from app.services.frames.processing import prepare_image, vision_image
+from app.services.frames.privacy import PRIVACY_VERSION
+from app.services.frames.processing import vision_image_from_processed
 from app.services.storage.object_store import get_image
 
 logger = logging.getLogger(__name__)
@@ -61,9 +62,20 @@ async def enrich_frame(frame_id):
     failed = False
     caption, flags = "", []
     try:
-        content = await asyncio.to_thread(get_image, frame.original_object_key)
-        prepared = await asyncio.to_thread(prepare_image, content)
-        scene = await models.describe(await asyncio.to_thread(vision_image, prepared))
+        if PRIVACY_VERSION not in (frame.enhancements or []):
+            raise BackendError("Stored frame lacks verified face privacy processing", 503,
+                               "face_privacy_unavailable")
+        if not frame.processed_object_key:
+            raise BackendError("Stored processed image is unavailable", 404,
+                               "processed_image_unavailable")
+        try:
+            content = await asyncio.to_thread(get_image, frame.processed_object_key)
+        except BackendError as exc:
+            if exc.code == "image_unavailable":
+                raise BackendError("Stored processed image is unavailable", 404,
+                                   "processed_image_unavailable") from exc
+            raise
+        scene = await models.describe(await asyncio.to_thread(vision_image_from_processed, content))
         caption = scene.caption
         if scene.uncertain:
             warnings.append("scene_uncertain")
