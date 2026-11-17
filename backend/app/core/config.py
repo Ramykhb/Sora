@@ -70,7 +70,17 @@ class Settings(BaseSettings):
     gemini_enabled: bool = False
     gemini_api_key: SecretStr = SecretStr("")
     gemini_api_key_2: SecretStr = SecretStr("")
-    gemini_obstacle_interval_seconds: float = Field(default=5, ge=1, le=60)
+    gemini_api_key_3: SecretStr = SecretStr("")
+    gemini_api_key_4: SecretStr = SecretStr("")
+    gemini_api_key_5: SecretStr = SecretStr("")
+    gemini_api_key_6: SecretStr = SecretStr("")
+    gemini_api_key_7: SecretStr = SecretStr("")
+    gemini_api_key_8: SecretStr = SecretStr("")
+    gemini_api_key_9: SecretStr = SecretStr("")
+    gemini_api_key_10: SecretStr = SecretStr("")
+    gemini_api_key_11: SecretStr = SecretStr("")
+    gemini_api_key_12: SecretStr = SecretStr("")
+    gemini_obstacle_interval_seconds: float = Field(default=1, ge=1, le=60)
     gemini_model: str = Field(default="gemini-3.5-flash-lite", pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]{1,100}$")
     gemini_thinking_level: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH"] = "MINIMAL"
     gemini_deadline_seconds: float = Field(default=5, ge=1, le=10)

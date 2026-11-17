@@ -58,9 +58,9 @@ async def remember(session_id, target, language, requester_id=None):
         }[language], True, [], []
     if not gemini.obstacles_configured():
         return {
-            "en": "Automatic detection is not configured. Set GEMINI_API_KEY_2 on the server first.",
-            "fr": "La détection automatique n’est pas configurée. Configurez GEMINI_API_KEY_2 sur le serveur.",
-            "ar": "الكشف التلقائي غير مهيأ. اضبط GEMINI_API_KEY_2 على الخادم أولاً.",
+            "en": "Automatic detection is not configured. Set a GEMINI_API_KEY on the server first.",
+            "fr": "La détection automatique n’est pas configurée. Configurez une clé GEMINI_API_KEY sur le serveur.",
+            "ar": "الكشف التلقائي غير مهيأ. اضبط مفتاح GEMINI_API_KEY على الخادم أولاً.",
         }[language], True, [], ["gemini_not_configured"]
     key = target_key(target)
     async with SessionFactory() as db:

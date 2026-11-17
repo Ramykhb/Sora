@@ -17,26 +17,35 @@ from app.services.streaming import session as streaming
 from app.services.streaming.session import LiveState, Streams
 
 
-def test_obstacle_settings_preserve_one_second_storage_and_accept_lowercase_key(monkeypatch):
+def test_obstacle_settings_preserve_one_second_storage_and_accept_lowercase_keys(monkeypatch):
     monkeypatch.delenv('GEMINI_API_KEY_2', raising=False)
     monkeypatch.setenv('gemini_api_key_2', 'second-test-key')
+    monkeypatch.setenv('gemini_api_key_12', 'twelfth-test-key')
     config = Settings(_env_file=None)
     assert config.gemini_api_key_2.get_secret_value() == 'second-test-key'
+    assert config.gemini_api_key_12.get_secret_value() == 'twelfth-test-key'
     assert config.sample_interval_seconds == 1
-    assert config.gemini_obstacle_interval_seconds == 5
+    assert config.gemini_obstacle_interval_seconds == 1
 
 
-def test_questions_and_automatic_obstacles_use_separate_keys(monkeypatch):
+def test_questions_and_automatic_obstacles_select_from_same_key_pool(monkeypatch):
     monkeypatch.setattr(settings, 'gemini_enabled', True)
     monkeypatch.setattr(settings, 'gemini_api_key', SecretStr('question-key'))
     monkeypatch.setattr(settings, 'gemini_api_key_2', SecretStr('obstacle-key'))
     keys = []
+    selections = iter(['obstacle-key', 'question-key'])
+
+    def select(candidates):
+        assert candidates == ('question-key', 'obstacle-key')
+        return next(selections)
+
+    monkeypatch.setattr(gemini.secrets, 'choice', select)
 
     def handle(request):
         keys.append(request.headers['x-goog-api-key'])
         assert 'key' not in str(request.url)
         body = json.loads(request.content)
-        automatic = keys[-1] == 'obstacle-key'
+        automatic = 'visible_path' in body['generationConfig']['responseJsonSchema']['required']
         if automatic:
             assert 'visible_path' in body['generationConfig']['responseJsonSchema']['required']
         answer = {'answer': 'A chair blocks the passage.', 'uncertain': False}
@@ -53,15 +62,57 @@ def test_questions_and_automatic_obstacles_use_separate_keys(monkeypatch):
 
     async def exercise():
         await gemini.ask_image(b'jpeg', 'Describe the scene', 'en')
-        # Key 2 works independently of the question feature's switch.
+        # Automatic checks work independently of the question feature's switch.
         monkeypatch.setattr(settings, 'gemini_enabled', False)
         await gemini.ask_obstacles(b'jpeg', 'en')
+        monkeypatch.setattr(settings, 'gemini_api_key', SecretStr(''))
         monkeypatch.setattr(settings, 'gemini_api_key_2', SecretStr(''))
         with pytest.raises(BackendError, match='not configured'):
             await gemini.ask_obstacles(b'jpeg', 'en')
 
     asyncio.run(exercise())
-    assert keys == ['question-key', 'obstacle-key']
+    assert keys == ['obstacle-key', 'question-key']
+
+
+def test_all_twelve_keys_are_eligible_for_each_request_type(monkeypatch):
+    monkeypatch.setattr(settings, 'gemini_enabled', True)
+    expected = tuple(f'slot-{index}' for index in range(1, 13))
+    monkeypatch.setattr(settings, 'gemini_api_key', SecretStr(expected[0]))
+    for index in range(2, 13):
+        monkeypatch.setattr(settings, f'gemini_api_key_{index}', SecretStr(expected[index - 1]))
+    selected, sent = [], []
+
+    def select(candidates):
+        assert candidates == expected
+        key = candidates[len(selected) % len(candidates)]
+        selected.append(key)
+        return key
+
+    def handle(request):
+        sent.append(request.headers['x-goog-api-key'])
+        automatic = 'visible_path' in json.loads(request.content)['generationConfig']['responseJsonSchema']['required']
+        answer = {'answer': 'A chair is visible.', 'uncertain': False}
+        if automatic:
+            answer.update(visible_path='blocked', visible_path_distance='unknown')
+        return httpx.Response(200, json={'candidates': [{'finishReason': 'STOP', 'content': {
+            'parts': [{'text': json.dumps(answer)}],
+        }}]})
+
+    original = httpx.AsyncClient
+    monkeypatch.setattr(gemini.secrets, 'choice', select)
+    monkeypatch.setattr(gemini.httpx, 'AsyncClient', lambda **kwargs: original(
+        transport=httpx.MockTransport(handle), **kwargs,
+    ))
+
+    async def exercise():
+        for _ in expected:
+            await gemini.ask_image(b'jpeg', 'Describe the scene', 'en')
+        for _ in expected:
+            await gemini.ask_obstacles(b'jpeg', 'en')
+
+    asyncio.run(exercise())
+    assert selected == list(expected) * 2
+    assert sent == selected
 
 
 @pytest.fixture
@@ -179,7 +230,7 @@ def test_disabled_or_missing_fresh_camera_does_not_upload(obstacle_scene, monkey
     asyncio.run(manager.check_obstacles(sid, state))
 
 
-def test_worker_checks_every_five_seconds_and_survives_failure(obstacle_scene, monkeypatch):
+def test_worker_checks_every_second_and_survives_failure(obstacle_scene, monkeypatch):
     manager, sid, state, _ = obstacle_scene
     clock = [0.0]
     checks, sleeps = [], []
@@ -192,7 +243,7 @@ def test_worker_checks_every_five_seconds_and_survives_failure(obstacle_scene, m
 
     async def check(*args):
         checks.append(clock[0])
-        clock[0] += 1  # One second of inference, not an extra second between uploads.
+        clock[0] += .4  # Inference time counts toward the one-second interval.
         if len(checks) == 1:
             raise BackendError('Provider unavailable', code='gemini_unavailable')
 
@@ -201,8 +252,8 @@ def test_worker_checks_every_five_seconds_and_survives_failure(obstacle_scene, m
     monkeypatch.setattr(manager, 'check_obstacles', check)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(manager.detect_obstacles(sid, state))
-    assert checks == [5, 10, 15]
-    assert sleeps == [5, 4, 4, 4]
+    assert checks == pytest.approx([1, 2, 3])
+    assert sleeps == pytest.approx([1, .6, .6, .6])
     assert state.obstacle_error == 'gemini_unavailable'
 
 
@@ -243,10 +294,11 @@ def test_slow_cloud_request_does_not_block_frame_storage_or_stop(client, monkeyp
     api.portal.call(exercise)
 
 
-def test_automatic_provider_error_never_retries_with_question_key(monkeypatch):
+def test_automatic_provider_error_does_not_retry_with_another_key(monkeypatch):
     monkeypatch.setattr(settings, 'gemini_enabled', True)
     monkeypatch.setattr(settings, 'gemini_api_key', SecretStr('question-key'))
     monkeypatch.setattr(settings, 'gemini_api_key_2', SecretStr('obstacle-key'))
+    monkeypatch.setattr(gemini.secrets, 'choice', lambda keys: keys[1])
     keys = []
 
     def handle(request):
