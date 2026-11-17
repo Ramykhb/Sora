@@ -32,7 +32,7 @@ function Assistant() {
   const [consent, setConsent] = useState(false);
   const [languageChoice, setLanguageChoice] = useState<Language | null>(null);
   const language = languageChoice ?? session?.language ?? appPreferences.language;
-  const [scope, setScope] = useState<Scope>('recent');
+  const [scope, setScope] = useState<Scope>('auto');
   const [alerts, setAlerts] = useState(true);
   const speak = appPreferences.speak;
   const setSpeak = (value: boolean) => update({ speak: value });

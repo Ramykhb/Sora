@@ -13,6 +13,20 @@ afterEach(() => { global.fetch = originalFetch; global.WebSocket = originalSocke
 const pair = (access = 'access') => ({ access_token: access, refresh_token: `refresh-${access}`, expires_in: 300, user: { id: 'owner' } });
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 
+test('question requests include the device timezone and preserve an explicit timezone', async () => {
+  const api = new ApiClient('https://sora.test', async () => {});
+  await api.setTokens(pair());
+  const payloads = [];
+  global.fetch = async (_url, options) => {
+    payloads.push(JSON.parse(options.body));
+    return json({ answer: 'Saved observation.' });
+  };
+  await api.request('/sessions/session-1/questions', 'POST', { question: 'around 2:30 PM', scope: 'auto' });
+  await api.request('/sessions/session-1/questions', 'POST', { question: 'around 2:30 PM', timezone: 'Asia/Beirut' });
+  assert.equal(payloads[0].timezone, Intl.DateTimeFormat().resolvedOptions().timeZone);
+  assert.equal(payloads[1].timezone, 'Asia/Beirut');
+});
+
 test('streaming transport preserves cancellation and refreshes expired credentials', async () => {
   const api = new ApiClient('https://sora.test', async () => {});
   await api.setTokens(pair());

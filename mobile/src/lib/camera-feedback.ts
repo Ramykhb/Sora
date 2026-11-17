@@ -27,6 +27,13 @@ const ADVICE = {
   },
 } as const;
 
+/** Recapture advice belongs to current-view questions, not saved observations. */
+export function isHistoricalQuestion(question: string): boolean {
+  return /\b(?:earlier|previous|ago|remember|last\s+\w+\s+(?:minutes?|hours?)|pass[ée]|pr[ée]c[ée]dent|dernières?|tout à l'heure)\b|il y a\s+\w+\s+(?:minutes?|heures?)|(?:^|\s)(?:قبل\s+قليل|(?:قبل|من|منذ|خلال\s+(?:آخر|اخر))\s+\S+\s*(?:دقائق|دقيقة|دقايق|ساعات|ساعة)|سابق)/i.test(question)
+    || /(?:\bdid\s+(?:i|we)\s+(?:see|pass|notice)|\b(?:saw|had seen|was|were)|\b(?:ai-je|j'ai|avons-nous)\s+(?:vu|pass[ée])|رأيت|شفت)[^?.!]{0,80}(?:\bbefore\b|\bavant\b|قبل)/i.test(question)
+    || /(?:\b(?:around|about|between|at|vers|entre|a)\s+|(?:حوالي|بين|الساعة)\s+)(?:الساعة\s+)?[0-9٠-٩۰-۹]{1,2}\s*(?::\s*[0-9٠-٩۰-۹]{1,2}|h\s*[0-9]{1,2}|\s*(?:a\.?m\.?|p\.?m\.?|صباح|مساء))/i.test(question);
+}
+
 /** Actionable recapture advice grounded in an uncertain visual answer. */
 export function cameraFeedback(uncertain: boolean, answer: string, warnings: readonly string[] = [], visualContext = true, language: VoiceLanguage = 'en'): string | null {
   if (!uncertain || !visualContext) return null;

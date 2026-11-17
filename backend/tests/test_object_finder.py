@@ -15,7 +15,7 @@ from app.db.models.frame import now
 from app.schemas import QuestionRequest
 from app.services.ai import depth, gemini, object_finder
 from app.services.ai.assistant import answer_question
-from app.services.ai.models import models
+from app.services.ai.models import ModelAnswer, models
 from app.services.streaming.session import streams
 from test_api import create, image_bytes, upload
 
@@ -154,6 +154,32 @@ def test_finder_does_not_retime_stale_memory_into_current_object_location(client
     result = api.post(f"/api/v1/sessions/{sid}/questions", json={"question": "find my backpack", "scope": "memory"}).json()
     assert result["uncertain"] and not result["evidence_frame_ids"]
     assert "recent camera view" in result["answer"]
+
+
+def test_historical_finder_uses_saved_frame_without_claiming_current_location(client, monkeypatch):
+    api, factory = client
+    sid = create(api)
+    frame = upload(api, sid)
+
+    async def age():
+        async with factory() as db:
+            await db.execute(update(Frame).where(Frame.id == UUID(frame["id"])).values(captured_at=now() - timedelta(seconds=5)))
+            await db.commit()
+
+    api.portal.call(age)
+    async def inspect(messages, _schema):
+        payload = json.loads(messages[-1]["content"])
+        assert payload["scope"] == "memory"
+        assert payload["camera_observations"][0]["frame_id"] == frame["id"]
+        return ModelAnswer(answer="The saved image shows an EXIT sign; a backpack cannot be confirmed.",
+                           uncertain=True, evidence_frame_ids=[frame["id"]])
+
+    monkeypatch.setattr(models, "chat", inspect)
+    result = api.post(f"/api/v1/sessions/{sid}/questions", json={
+        "question": "Where was my backpack earlier?", "scope": "auto",
+    }).json()
+    assert result["uncertain"] and result["evidence_frame_ids"] == [frame["id"]]
+    assert "saved image" in result["answer"]
 
 
 @pytest.mark.parametrize("status,horizontal,vertical,uncertain,prefix", [

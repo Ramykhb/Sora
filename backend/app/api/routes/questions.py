@@ -28,6 +28,7 @@ async def ask_audio(
     audio: UploadFile = File(...),
     language: Language | None = Form(None),
     scope: Literal["auto", "recent", "memory"] = Form("auto"),
+    timezone: str | None = Form(None),
     latitude: float | None = Form(None, ge=-90, le=90),
     longitude: float | None = Form(None, ge=-180, le=180),
     user: User = Depends(current_user),
@@ -38,7 +39,8 @@ async def ask_audio(
     await get_session(session_id)
     content = await read_upload(audio)
     text, detected_language = await asyncio.to_thread(transcribe, content, language)
-    request = QuestionRequest(question=text, language=language or detected_language, scope=scope, location=location)
+    request = QuestionRequest(question=text, language=language or detected_language, scope=scope,
+                              location=location, timezone=timezone)
     return await answer_question(session_id, request, source="audio", requester_id=user.id)
 
 

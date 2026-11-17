@@ -12,7 +12,7 @@ import { NavigationBar } from 'expo-navigation-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useHandsFreeQuestions, useVoiceCommands, useVoiceStreamControls } from '@/providers/voice-commands';
 import { useAuth } from '@/providers/auth';
-import { cameraFeedback } from '@/lib/camera-feedback';
+import { cameraFeedback, isHistoricalQuestion } from '@/lib/camera-feedback';
 import { usePreferences } from '@/providers/preferences';
 import type { StreamCommand } from '@/lib/voice-commands';
 import type { Answer, CaptureSession, Frame } from '@/lib/api';
@@ -106,9 +106,9 @@ function Capture() {
     if (busy || starting.current) throw new Error('Please wait for the current request to finish, then ask again.');
     setBusy(true); setError('');
     try {
-      const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope: 'recent', language: session.language, location: await questionLocation(question) });
+      const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope: 'auto', language: session.language, location: await questionLocation(question) });
       setVoiceAnswer(answer.answer);
-      const tip = cameraFeedback(answer.uncertain, answer.answer, answer.processing_warnings, true, session.language);
+      const tip = cameraFeedback(answer.uncertain, answer.answer, answer.processing_warnings, !isHistoricalQuestion(question), session.language);
       setViewTip(tip);
       return tip ? { ...answer, answer: `${answer.answer} ${tip}` } : answer;
     } finally { setBusy(false); }

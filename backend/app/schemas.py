@@ -72,6 +72,7 @@ class QuestionRequest(BaseModel):
     scope: Literal["auto", "recent", "memory"] = "auto"
     since: datetime | None = None
     until: datetime | None = None
+    timezone: str | None = Field(default=None, max_length=64)
 
     @field_validator("question")
     @classmethod

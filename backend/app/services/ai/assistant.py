@@ -18,6 +18,7 @@ from app.services.ai import gemini, object_finder, places
 from app.services import detection_memory, saved_destinations
 from app.services.ai.cloud_view import answer_cloud_view
 from app.services.ai.retrieval import resolve_scope, retrieve_frames
+from app.services.ai.time_query import TimeQuery, interpret_time
 from app.services.ai.live_answer import answer_overview, is_overview
 from app.services.ai.safety import (
     IDENTITY_QUESTION,
@@ -30,7 +31,8 @@ from app.services.ai.safety import (
 from app.services.events import events
 from app.services.sessions import get_session
 from app.services.storage.object_store import get_image
-from app.services.frames.processing import jpeg, prepare_image, vision_image
+from app.services.frames.privacy import PRIVACY_VERSION
+from app.services.frames.processing import jpeg, vision_image_from_processed
 
 TEXT_QUESTION = re.compile(
     r"\b(?:read|written|text|écrit(?:e|s|es)?|lire|texte)\b|"
@@ -38,10 +40,18 @@ TEXT_QUESTION = re.compile(
     re.I,
 )
 VISUAL_QUESTION = re.compile(r"\b(?:colou?r|couleur|shape|forme|where|où)\b|لون|أين", re.I)
-
-
-def answer_image(content):
-    return vision_image(prepare_image(content))
+TIME_CLARIFICATION = {
+    "time": {
+        "en": "Which time do you mean? Please include AM or PM, or say how many minutes ago.",
+        "fr": "De quelle heure parlez-vous ? Précisez matin ou après-midi, ou le nombre de minutes écoulées.",
+        "ar": "أي وقت تقصد؟ حدّد صباحاً أو مساءً، أو اذكر منذ كم دقيقة.",
+    },
+    "timezone": {
+        "en": "I need your device's timezone to find images from a clock time. Please check its time settings and ask again.",
+        "fr": "J’ai besoin du fuseau horaire de votre appareil pour retrouver une image à cette heure. Vérifiez ses réglages d’heure et réessayez.",
+        "ar": "أحتاج إلى المنطقة الزمنية لجهازك للعثور على صور ذلك الوقت. تحقّق من إعدادات الوقت واسأل مجدداً.",
+    },
+}
 
 
 def evidence_sheet(images):
@@ -60,6 +70,8 @@ def evidence_sheet(images):
     sheet = np.full((side, side, 3), 255, dtype=np.uint8)
     for index, content in enumerate(images):
         image = cv2.imdecode(np.frombuffer(content, np.uint8), cv2.IMREAD_COLOR)
+        if image is None:
+            raise BackendError("Stored processed image is unreadable", code="processed_image_invalid")
         height, width = image.shape[:2]
         scale = min(cell_width / width, (cell_height - 24) / height)
         width, height = max(1, int(width * scale)), max(1, int(height * scale))
@@ -69,7 +81,8 @@ def evidence_sheet(images):
     return jpeg(sheet)
 
 
-async def _answer_evidence(session_id, request, session, language, requested_scope):
+async def _answer_evidence(session_id, request, session, language, requested_scope,
+                           time_query: TimeQuery | None = None):
     snapshot_warnings = []
     if resolve_scope(request.question, requested_scope) == "recent" and not IDENTITY_QUESTION.search(request.question):
         from app.services.streaming.session import streams
@@ -93,6 +106,7 @@ async def _answer_evidence(session_id, request, session, language, requested_sco
         requested_scope,
         request.since,
         request.until,
+        target=time_query.target if time_query else None,
     )
     warnings = [*snapshot_warnings, *warnings]
     answer, uncertain, evidence = (
@@ -100,17 +114,27 @@ async def _answer_evidence(session_id, request, session, language, requested_sco
         True,
         [],
     )
+    if not frames and (time_query or request.since or request.until):
+        answer = {
+            "en": "I don't have a saved image from that time.",
+            "fr": "Je n’ai pas d’image enregistrée pour cette période.",
+            "ar": "ليس لدي صورة محفوظة من ذلك الوقت.",
+        }[language]
     reading_text = bool(TEXT_QUESTION.search(request.question)) and not (
         VISUAL_QUESTION.search(request.question) or ROUTE_QUESTION.search(request.question)
     )
     if IDENTITY_QUESTION.search(request.question):
         answer = IDENTITY_REFUSAL[language]
     elif frames and reading_text and not any(frame.ocr_text.strip() for frame in frames):
-        answer = {
+        answer = ({
+            "en": "No readable text was retained in the saved image from that time.",
+            "fr": "Aucun texte lisible n’a été conservé dans l’image enregistrée à ce moment-là.",
+            "ar": "لم يُحفَظ نصٌّ مقروء في الصورة الملتقطة في ذلك الوقت.",
+        } if scope == "memory" else {
             "en": "I cannot read the text clearly. Move closer, hold the camera steady, and avoid glare.",
             "fr": "Je ne peux pas lire clairement le texte. Rapprochez la caméra, stabilisez-la et évitez les reflets.",
             "ar": "لا أستطيع قراءة النص بوضوح. قرّب الكاميرا وثبّتها وتجنّب الانعكاسات.",
-        }[language]
+        })[language]
         warnings.append("ocr_unreadable")
     elif frames:
         images, context = [], []
@@ -122,10 +146,15 @@ async def _answer_evidence(session_id, request, session, language, requested_sco
             or ROUTE_QUESTION.search(request.question)
         ) and any(frame.ocr_text.strip() for frame in frames)
         for frame in frames:
+            if PRIVACY_VERSION not in (frame.enhancements or []):
+                warnings.append("evidence_privacy_unverified")
+                continue
             try:
                 if not text_only:
+                    if not frame.processed_object_key:
+                        raise BackendError("Stored processed image is unavailable", code="processed_image_unavailable")
                     images.append(await asyncio.to_thread(
-                        lambda key=frame.processed_object_key: answer_image(get_image(key))
+                        lambda key=frame.processed_object_key: vision_image_from_processed(get_image(key))
                     ))
                 context.append(
                     {
@@ -141,6 +170,12 @@ async def _answer_evidence(session_id, request, session, language, requested_sco
                 )
             except BackendError:
                 warnings.append("evidence_image_unavailable")
+        if not context and (time_query or request.since or request.until):
+            answer = {
+                "en": "I found a saved record from that time, but its image is unavailable.",
+                "fr": "J’ai trouvé un enregistrement de cette période, mais son image est indisponible.",
+                "ar": "وجدتُ سجلاً من ذلك الوقت، لكن صورته غير متاحة.",
+            }[language]
         if context:
             try:
                 visual_inputs = []
@@ -165,6 +200,9 @@ async def _answer_evidence(session_id, request, session, language, requested_sco
                             "When there is no image, answer text-reading questions only from supplied OCR; "
                             "do not infer missing visual attributes. OCR can be partial or incorrect: never "
                             "complete missing words or treat fragments as a complete sentence. "
+                            "Saved memory frames are past observations, never current surroundings. For a "
+                            "time-window question, use only frames in that window and briefly identify the "
+                            "capture time of cited evidence; do not imply continuous observation. "
                             "Return JSON with answer, uncertain, evidence_frame_ids. Reply in "
                             + {"en": "English", "fr": "French", "ar": "Arabic"}[language]
                             + (". Use fully diacritized Arabic." if language == "ar" else "."),
@@ -175,6 +213,11 @@ async def _answer_evidence(session_id, request, session, language, requested_sco
                                 {
                                     "question": request.question,
                                     "scope": scope,
+                                    "requested_time_window": {
+                                        "since": request.since.isoformat() if request.since else None,
+                                        "until": request.until.isoformat() if request.until else None,
+                                        "timezone": request.timezone,
+                                    },
                                     "camera_observations": context,
                                 },
                                 ensure_ascii=False,
@@ -209,17 +252,36 @@ async def answer_question(session_id, request, source="text", requester_id=None)
     start = perf_counter()
     session = await get_session(session_id)
     language = request.language or session.language
+    time_query = None if request.since or request.until else interpret_time(
+        request.question, request.timezone, now(),
+    )
+    effective_request = request
+    if time_query and time_query.since:
+        effective_request = request.model_copy(update={
+            "since": time_query.since, "until": time_query.until,
+        })
     watch_target = detection_memory.request_target(request.question)
-    finding = object_finder.query(request.question)
-    walking = bool(ROUTE_QUESTION.search(request.question)) and not finding
-    requested_scope = "recent" if watch_target is not None or walking or finding else request.scope
+    candidate_finding = object_finder.query(request.question)
+    candidate_walking = bool(ROUTE_QUESTION.search(request.question)) and not candidate_finding
+    historical_wording = resolve_scope(request.question, "auto") == "memory"
+    requested_scope = request.scope
+    if watch_target is not None or ((candidate_finding or candidate_walking) and not (
+        historical_wording or time_query or request.since or request.until
+    )):
+        # Immediate locating and walking requests must never use old frames as
+        # evidence about the present, even if Memory was selected in the UI.
+        requested_scope = "recent"
+    elif request.scope == "auto" and (time_query or request.since or request.until):
+        requested_scope = "memory"
     scope = resolve_scope(request.question, requested_scope)
+    finding = candidate_finding if scope == "recent" else None
+    walking = scope == "recent" and candidate_walking
     target = places.route_target(request.question) if not places.is_destination_reference(request.question) else None
     saved = None
     if target and (requester_id is None or requester_id == session.owner_id):
         saved = await saved_destinations.find_destination(session.owner_id, target.nickname)
     saved_request = target is not None and (saved is not None or target.saved_only)
-    place_question = (request.scope != "memory" and not (request.since or request.until)
+    place_question = (scope != "memory" and not (effective_request.since or effective_request.until)
                       and places.is_place_question(request.question)
                       and not finding
                       and not IDENTITY_QUESTION.search(request.question))
@@ -247,7 +309,10 @@ async def answer_question(session_id, request, source="text", requester_id=None)
         # HTTP inference. Current-view questions must not wait for minutes only
         # to lose their evidence at the end.
         async with asyncio.timeout(budget if place_question or scope == "recent" else None):
-            if watch_target is not None:
+            if time_query and time_query.clarification:
+                answer = TIME_CLARIFICATION[time_query.clarification][language]
+                uncertain, evidence, warnings = True, [], ["time_clarification_needed"]
+            elif watch_target is not None:
                 answer, uncertain, evidence, warnings = await detection_memory.remember(
                     session_id, watch_target, language, requester_id,
                 )
@@ -263,22 +328,22 @@ async def answer_question(session_id, request, source="text", requester_id=None)
                     # Reserve time for the local fallback within the same deadline.
                     async with asyncio.timeout(max(0.1, budget - min(0.5, budget / 2))):
                         answer, uncertain, evidence, warnings = await answer_cloud_view(
-                            session_id, request, language, walking=walking, finding=finding,
+                            session_id, effective_request, language, walking=walking, finding=finding,
                         )
                         cloud_answer_used = True
                 except (BackendError, TimeoutError) as exc:
                     reason = exc.code if isinstance(exc, BackendError) else "gemini_timeout"
                     answer, uncertain, evidence, warnings = await answer_overview(
-                        session_id, request, language, walking=walking, finding=finding,
+                        session_id, effective_request, language, walking=walking, finding=finding,
                     )
                     warnings = [*warnings, reason, "local_detection_fallback"]
             elif scope == "recent" and (walking or finding or is_overview(request.question)) and not IDENTITY_QUESTION.search(request.question):
                 answer, uncertain, evidence, warnings = await answer_overview(
-                    session_id, request, language, walking=walking, finding=finding,
+                    session_id, effective_request, language, walking=walking, finding=finding,
                 )
             else:
                 answer, uncertain, evidence, warnings = await _answer_evidence(
-                    session_id, request, session, language, requested_scope,
+                    session_id, effective_request, session, language, requested_scope, time_query,
                 )
     except TimeoutError:
         answer = {

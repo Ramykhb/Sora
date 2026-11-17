@@ -87,6 +87,8 @@ curl -H "Authorization: Bearer $SORA_ACCESS_TOKEN" -H 'Content-Type: application
 
 Current-view questions use fresh frames only; memory questions use retained images. The response includes `evidence_frame_ids`, `uncertain` and any dependency warnings. Use the returned question ID with `/questions/{id}/audio` to play the answer, or native mobile TTS. Full endpoints, media and event protocols are in [docs/api.md](docs/api.md).
 
+With `scope: "auto"`, past-tense and supported time expressions search saved frames. “Five minutes ago” searches within one minute on either side; “around 2:30 PM” searches within five minutes. “In the last fifteen minutes” and “between 3 PM and 4 PM” use their stated bounds. Clock times use the optional device IANA `timezone` (for example `Asia/Beirut`) and the most recent occurrence; missing timezone or ambiguous AM/PM asks for clarification. Explicit `since`/`until` take priority. A time window with no retained frame returns that limitation without using a current image. Immediate walking and object-finding requests continue to require fresh evidence.
+
 ## Retention and uncertainty
 
 The default retention is 24 hours. Session/frame/question reads immediately hide expired data. The background worker deletes expired metadata and queues image deletion in a durable outbox, retrying object-store failures. Explicit session/frame deletion follows the same path. An hourly reconciliation pass also removes unreferenced image objects older than ten minutes after failed uploads. Microphone uploads and continuous video are not stored. Run cleanup manually with `python -m scripts.cleanup` or the administrator-only maintenance endpoint.

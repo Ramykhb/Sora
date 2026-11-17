@@ -17,9 +17,9 @@ Do not form public S3 URLs. Images are served through the authenticated API. Inp
 
 ## Questions and speech
 
-- `POST /sessions/{id}/questions`: JSON `question`, optional `language` (en/fr/ar), `scope` (auto/recent/memory), and timezone-aware `since`/`until`. Returns persisted question/answer, uncertainty, evidence IDs, warnings and latency.
-- Auto selects recent evidence for current questions and memory for recognized past-tense phrases. Clients should send explicit scope/time bounds for precise historical requests. Recent evidence is at most `RECENT_EVIDENCE_SECONDS` old; memory must never be used as a current view.
-- `POST /sessions/{id}/questions/audio`: multipart `audio`, optional `language`, `scope`. Returns the same answer schema and saves the recognized transcript. The uploaded audio is not retained.
+- `POST /sessions/{id}/questions`: JSON `question`, optional `language` (en/fr/ar), `scope` (auto/recent/memory), timezone-aware `since`/`until`, and IANA `timezone` for natural clock-time questions. Returns persisted question/answer, uncertainty, evidence IDs, warnings and latency.
+- Auto selects recent evidence for current questions and memory for recognized historical or time-based questions. “Five minutes ago” searches a ±1-minute window; “around 2:30 PM” uses ±5 minutes in the device timezone. “Last fifteen minutes” and “between 3 PM and 4 PM” use their stated bounds. Explicit `since`/`until` override interpreted time. Ambiguous clock times ask for clarification. Recent evidence is at most `RECENT_EVIDENCE_SECONDS` old; memory must never be used as a current view.
+- `POST /sessions/{id}/questions/audio`: multipart `audio`, optional `language`, `scope`, and `timezone`. Returns the same answer schema and saves the recognized transcript. The uploaded audio is not retained.
 - `GET /sessions/{id}/questions`: paginated history. `GET /sessions/{id}/questions/{question_id}`: one record.
 - `GET /sessions/{id}/questions/{question_id}/audio`: WAV of that answer.
 - `POST /sessions/{id}/questions/{question_id}/feedback`: JSON `rating` (correct/incorrect/unsure), optional notes.

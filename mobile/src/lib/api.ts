@@ -108,8 +108,14 @@ export class ApiClient {
     return response;
   }
   async request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
-    if (method === 'POST' && /\/sessions\/[^/]+\/questions$/.test(path) && body && typeof body === 'object' && 'question' in body && !('location' in body) && this.questionLocation) {
-      body = { ...body, location: await this.questionLocation(String(body.question)) };
+    if (method === 'POST' && /\/sessions\/[^/]+\/questions$/.test(path) && body && typeof body === 'object' && 'question' in body) {
+      let timezone: string | undefined;
+      try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { /* Clock questions can ask for clarification. */ }
+      body = {
+        ...body,
+        ...(!('timezone' in body) && timezone ? { timezone } : {}),
+        ...(!('location' in body) && this.questionLocation ? { location: await this.questionLocation(String(body.question)) } : {}),
+      };
     }
     // Only replay reads. A failed POST may already have created a session or offer.
     for (let attempt = 0; ; attempt++) {

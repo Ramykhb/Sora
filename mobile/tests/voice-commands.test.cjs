@@ -450,7 +450,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
       if (name === '@/lib/voice-language') return { ...require('../src/lib/voice-language.ts'), voiceLanguage: () => 'en' };
       if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() {}, async alert(...args) { alerts.push(args); }, getRoutePlayback: () => null, subscribeRoute: () => () => {} } };
       if (name === '@/lib/live') return { connectLive: (_, path, handler) => { liveEvent = handler; return { close() {} }; } };
-      if (name === '@/lib/camera-feedback') return { cameraFeedback: () => null };
+      if (name === '@/lib/camera-feedback') return { cameraFeedback: () => null, isHistoricalQuestion: () => false };
       if (name === '@/lib/question-location') return { questionLocation: async () => ({ latitude: 33.89, longitude: 35.5 }) };
       return {};
     },
@@ -589,10 +589,16 @@ test('describe the scene uses the live session question endpoint without navigat
   assert.equal(app.requests[0][0], '/sessions/voice-session/questions');
   assert.equal(app.requests[0][1], 'POST');
   assert.equal(app.requests[0][2].question, 'describe the scene');
-  assert.equal(app.requests[0][2].scope, 'recent');
+  assert.equal(app.requests[0][2].scope, 'auto');
   assert.equal(app.requests[0][2].language, 'en');
   assert.equal(app.askedReply.answer, 'A chair beside a table.');
   assert.ok(app.updates.includes('A chair beside a table.'));
+});
+
+test('a historical hands-free question uses automatic scope without a manual Memory selection', async () => {
+  const app = await voiceStartCamera(true, { active: true, question: 'What was written on the sign five minutes ago?' });
+  assert.equal(app.requests[0][2].scope, 'auto');
+  assert.equal(app.requests[0][2].question, 'What was written on the sign five minutes ago?');
 });
 
 

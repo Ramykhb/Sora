@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import math
 import re
 from sqlalchemy import select
@@ -10,16 +10,22 @@ from app.db.session import SessionFactory
 from app.services.ai.models import models
 
 MEMORY_WORDS = re.compile(
-    r"passed|earlier|previous|before|ago|remember|just saw|pass[ée]|pr[ée]c[ée]dent|tout à l'heure|avant|مررت|قبل|السابق|سابق",
+    r"passed|earlier|previous|ago|remember|just saw|pass[ée]|pr[ée]c[ée]dent|tout à l'heure|مررت|السابق|سابق",
     re.I,
+)
+PAST_BEFORE = re.compile(
+    r"(?:\bdid\s+(?:i|we)\s+(?:see|pass|notice)|\b(?:saw|had seen|was|were)|"
+    r"\b(?:ai-je|j'ai|avons-nous)\s+(?:vu|pass[ée])|رأيت|شفت)"
+    r"[^?.!]{0,80}(?:\bbefore\b|\bavant\b|قبل)", re.I,
 )
 
 
 def resolve_scope(question, scope):
-    return ("memory" if MEMORY_WORDS.search(question) else "recent") if scope == "auto" else scope
+    return ("memory" if MEMORY_WORDS.search(question) or PAST_BEFORE.search(question) else "recent") if scope == "auto" else scope
 
 
-async def retrieve_frames(session_id, question, scope="auto", since=None, until=None, limit=None):
+async def retrieve_frames(session_id, question, scope="auto", since=None, until=None, limit=None,
+                          *, target: datetime | None = None):
     scope = resolve_scope(question, scope)
     limit = limit or settings.retrieval_top_k
     if since and until and since > until:
@@ -65,6 +71,17 @@ async def retrieve_frames(session_id, question, scope="auto", since=None, until=
                 ).all()
             )
         candidates = {str(f.id): f for f in [*recent, *semantic]}
+        if target is not None and scope != "recent":
+            # The newest 100 rows may all be after the requested moment. Use
+            # the existing session/time index to include nearby frames on both sides.
+            for comparison, direction in ((Frame.captured_at <= target, True),
+                                          (Frame.captured_at >= target, False)):
+                nearby = await db.scalars(
+                    select(Frame).where(*filters, comparison)
+                    .order_by(Frame.captured_at.desc() if direction else Frame.captured_at.asc())
+                    .limit(limit * 8)
+                )
+                candidates.update({str(frame.id): frame for frame in nearby.all()})
         # Include lexical matches beyond the recent window when semantic services are down.
         tokens = re.findall(r"\w+", question.casefold())[:12]
         if tokens:
@@ -105,5 +122,16 @@ async def retrieve_frames(session_id, question, scope="auto", since=None, until=
 
     if scope == "recent":
         return sorted(candidates.values(), key=lambda f: f.captured_at, reverse=True)[:1], warnings, scope
+    if target is not None:
+        radius = max((until - since).total_seconds() / 2, 1) if since and until else 60
+
+        def timed_score(frame):
+            captured = frame.captured_at
+            if captured.tzinfo is None:
+                captured = captured.replace(tzinfo=timezone.utc)
+            proximity = max(0, 1 - abs((captured - target).total_seconds()) / radius)
+            return (0.6 * proximity + 0.4 * score(frame), frame.captured_at)
+
+        return sorted(candidates.values(), key=timed_score, reverse=True)[:limit], warnings, scope
     ranked = sorted(candidates.values(), key=lambda f: (score(f), f.captured_at), reverse=True)
     return ranked[:limit], warnings, scope
