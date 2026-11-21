@@ -425,9 +425,9 @@ test('old native builds and disabled voice commands leave the app usable', async
 
 
 const cameraSource = ts.transpileModule(fs.readFileSync(require.resolve('../src/app/(tabs)/camera.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-async function voiceStartCamera(granted, { active = false, paused = false, question, command, closeError, language = 'en', event, detectionEnabled = true, toggleDetection, detectionError } = {}) {
+async function voiceStartCamera(granted, { active = false, sessionStatus = 'active', serverSessionStatus, paused = false, question, command, closeError, language = 'en', event, detectionEnabled = true, toggleDetection, detectionError } = {}) {
   const effects = [], requests = [], spoken = [], updates = [], alerts = [], sessionUpdates = [], obstacleStatusUpdates = [];
-  const session = { id: 'voice-session', status: 'active', language: 'en', alerts_enabled: detectionEnabled };
+  const session = { id: 'voice-session', status: sessionStatus, language: 'en', alerts_enabled: detectionEnabled };
   const reply = { answer: 'A chair beside a table.', language: 'en' };
   let voiceQuestion, voiceControl, liveEvent, stateIndex = 0;
   const exports = {};
@@ -445,7 +445,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
       if (name === 'expo-camera') return { useCameraPermissions: () => [null, async () => ({ granted })] };
       if (name === 'expo-router') return { useFocusEffect() {}, useLocalSearchParams: () => ({ mode: 'live', voiceStart: '123' }) };
       if (name === '@/providers/voice-commands') return { useHandsFreeQuestions(handler) { voiceQuestion = handler; }, useVoiceStreamControls(handler) { voiceControl = handler; }, useVoiceCommands: () => ({ status: '' }) };
-      if (name === '@/providers/auth') return { useAuth: () => ({ api: { async request(...args) { requests.push(args); if (args[0].endsWith('/close') && closeError) throw closeError; if (args[1] === 'PATCH') { if (detectionError) throw detectionError; return { ...session, ...args[2] }; } return args[0].endsWith('/questions') ? reply : session; } } }) };
+      if (name === '@/providers/auth') return { useAuth: () => ({ api: { async request(...args) { requests.push(args); if (args[0].endsWith('/close') && closeError) throw closeError; if (args[1] === 'PATCH') { if (detectionError) throw detectionError; return { ...session, ...args[2] }; } if (args[0] === '/sessions' && args[1] === 'POST') return session.status === 'active' ? session : { ...session, status: 'active' }; return args[0].endsWith('/questions') ? reply : { ...session, status: serverSessionStatus || session.status }; } } }) };
       if (name === '@/providers/preferences') return { usePreferences: () => ({ colors: {}, preferences: { guidance: false, language } }) };
       if (name === '@/lib/voice-language') return { ...require('../src/lib/voice-language.ts'), voiceLanguage: () => 'en' };
       if (name === '@/lib/speech') return { speech: { async answer(text) { spoken.push(text); }, async stop() {}, async alert(...args) { alerts.push(args); }, getRoutePlayback: () => null, subscribeRoute: () => () => {} } };
@@ -462,6 +462,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
   effects.forEach(fn => fn());
   await flush();
   if (event) for (const item of Array.isArray(event) ? event : [event]) liveEvent?.(item);
+  await flush();
   if (typeof toggleDetection === 'boolean') {
     const findSwitch = node => {
       if (!node || typeof node !== 'object') return null;
@@ -1084,4 +1085,30 @@ test('wake-prefixed alert requests reach backend memory instead of becoming unsu
   assert.deepEqual(questions, ['Hey Sora alert me when you detect a laptop']);
   assert.ok(app.spoken.some(answer => answer.includes("I'll alert you once")));
   app.cleanup();
+});
+
+
+test('voice start replaces an ended camera session', async () => {
+  const app = await voiceStartCamera(true, { active: true, sessionStatus: 'closed' });
+  assert.equal(app.requests.filter(request => request[0] === '/sessions' && request[1] === 'POST').length, 1);
+  assert.ok(app.sessionUpdates.some(session => session?.status === 'active'));
+  assert.equal(app.spoken.some(text => /already running/i.test(text)), false);
+});
+
+test('remote closure releases active and paused cameras and ignores late alerts', async () => {
+  for (const paused of [false, true]) {
+    const app = await voiceStartCamera(true, { active: true, paused, event: [
+      { type: 'session_updated', session: { id: 'voice-session', status: 'closed' } },
+      { type: 'alert', id: 'late', message: 'Late alert', expires_at: new Date(Date.now() + 5000).toISOString() },
+    ] });
+    assert.ok(app.sessionUpdates.includes(null));
+    assert.equal(app.alerts.length, 0);
+    assert.equal(app.requests.some(request => request[1] === 'POST'), false);
+  }
+});
+
+test('reconnection checks for closure missed while disconnected', async () => {
+  const app = await voiceStartCamera(true, { active: true, serverSessionStatus: 'closed', event: { type: 'ready' } });
+  assert.ok(app.requests.some(request => request[0] === '/sessions/voice-session'));
+  assert.ok(app.sessionUpdates.includes(null));
 });

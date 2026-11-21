@@ -50,14 +50,25 @@ function Capture() {
   const [streamPaused, setStreamPaused] = useState(false);
   const [obstacleUnavailable, setObstacleUnavailable] = useState(false);
   useEffect(() => {
-    if (!session || mode !== 'live' || !focused || !foreground || streamPaused) return;
+    if (!session || session.status !== 'active' || mode !== 'live' || !focused || !foreground) return;
     let cancelled = false;
+    const receiveSession = (updated: CaptureSession) => {
+      if (cancelled || updated.id !== session.id) return;
+      if (updated.status === 'active') { setSession(updated); return; }
+      cancelled = true;
+      setSession(null); setStreamPaused(false); setConnected(false);
+      setVoiceAnswer(''); setViewTip(null); setObstacleAlert(null); setObstacleUnavailable(false);
+      void speech.stop();
+    };
     const live = connectLive(api, `/sessions/${session.id}/events`, event => {
-      if (event.type === 'session_updated' && event.session) setSession(event.session);
+      if (cancelled) return;
+      if (event.type === 'session_updated' && event.session) receiveSession(event.session);
+      if (cancelled) return;
       if (event.type === 'obstacle_error') setObstacleUnavailable(true);
       if (event.type === 'obstacle_status') setObstacleUnavailable(false);
+      if (event.type === 'ready') void api.request<CaptureSession>(`/sessions/${session.id}`).then(updated => { if (updated.status !== 'active') receiveSession(updated); }).catch(() => {});
       if (event.type === 'ready') void api.request<{ obstacle_error?: string }>(`/sessions/${session.id}/stream/status`).then(status => { if (!cancelled) setObstacleUnavailable(!!status.obstacle_error); }).catch(() => {});
-      if (session.alerts_enabled && event.type === 'alert' && event.message && event.id && event.expires_at && Date.parse(event.expires_at) > Date.now()) {
+      if (!streamPaused && session.alerts_enabled && event.type === 'alert' && event.message && event.id && event.expires_at && Date.parse(event.expires_at) > Date.now()) {
         setObstacleAlert({ message: event.message, expiresAt: event.expires_at });
         void speech.alert(event.id, event.message, event.language || session.language, event.expires_at, event.label === 'remembered_detection').catch(() => {});
       }
@@ -78,7 +89,7 @@ function Capture() {
   const consumedVoiceStart = useRef<string | undefined>(undefined);
   const startCamera = useCallback(async (fromVoice = false) => {
     if (starting.current) return;
-    if (session) {
+    if (session?.status === 'active') {
       if (streamPaused) setStreamPaused(false);
       if (fromVoice) void speech.answer(voiceText(streamPaused ? 'resumingStream' : 'alreadyRunning', language), speechLanguage(language));
       return;
@@ -202,7 +213,7 @@ function Capture() {
     await upload(asset.uri, asset.mimeType || 'image/jpeg', asset.fileName || 'gallery.jpg', created.id);
   })} style={{ alignItems: 'center', justifyContent: 'center' }}><Label bold>Choose from gallery</Label></Tap></View></Page>;
   return <View style={{ flex: 1, backgroundColor: colors.background }}>{focused && <><StatusBar style="light" /><NavigationBar style={dark ? 'light' : 'dark'} /></>}
-    {focused && foreground && (mode === 'live' ? <LiveCamera sessionId={session.id} active={!streamPaused} fullscreen facing={facing} onConnectionChange={setConnected} /> : <CameraView ref={camera} style={StyleSheet.absoluteFill} facing={facing} />)}
+    {focused && foreground && (mode === 'live' ? <LiveCamera sessionId={session.id} active={session.status === 'active' && !streamPaused} fullscreen facing={facing} onConnectionChange={setConnected} /> : <CameraView ref={camera} style={StyleSheet.absoluteFill} facing={facing} />)}
     <SafeAreaView style={{ flex: 1, justifyContent: 'space-between' }} pointerEvents="box-none">
       <View style={{ flexDirection: 'row', paddingHorizontal: 18, paddingTop: 12, gap: 12, alignItems: 'center' }}><Tap label="Back to home" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} style={roundStyle}><Icon name="chevron-back" color={controlColor} /></Tap><View style={{ flex: 1, alignItems: 'center' }}><View style={{ backgroundColor: colors.cameraControl, borderColor: colors.heroEdge, borderWidth: 1, borderRadius: 30, padding: 12, flexDirection: 'row', gap: 8, alignItems: 'center' }}><View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: mode !== 'live' || connected ? colors.success : colors.primary }} /><Label bold size={12} style={{ color: controlColor }}>{mode === 'live' ? streamPaused ? 'Stream paused' : connected ? 'Live Assistance' : 'Connecting...' : mode === 'text' ? 'Read Text' : 'Describe Scene'}</Label></View></View><Tap label={preferences.speak ? 'Mute descriptions' : 'Unmute descriptions'} onPress={() => { update({ speak: !preferences.speak }); void speech.stop(); }} style={roundStyle}><Icon name={preferences.speak ? 'volume-high-outline' : 'volume-mute-outline'} color={controlColor} size={23} /></Tap></View>
       <View pointerEvents="none" style={{ height: mode === 'live' ? '30%' : '40%', flexShrink: 1, marginHorizontal: 40 }}>{[0, 1, 2, 3].map(index => <View key={index} style={{ position: 'absolute', width: 42, height: 42, borderColor: colors.cameraFrame, ...(index < 2 ? { top: 0, borderTopWidth: 4 } : { bottom: 0, borderBottomWidth: 4 }), ...(index % 2 === 0 ? { left: 0, borderLeftWidth: 4 } : { right: 0, borderRightWidth: 4 }), borderTopLeftRadius: index === 0 ? 16 : 0, borderTopRightRadius: index === 1 ? 16 : 0, borderBottomLeftRadius: index === 2 ? 16 : 0, borderBottomRightRadius: index === 3 ? 16 : 0 }} />)}</View>
