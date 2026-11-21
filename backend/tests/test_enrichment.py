@@ -8,10 +8,46 @@ from app.services.frames.ingestion import ingest_bytes
 from app.services.frames.processing import Analysis
 from app.workers.enrichment import enrich_frame
 from test_api import create, image_bytes
+import pytest
 
 
 def save_fast(api, sid):
     return api.portal.call(partial(ingest_bytes, image_bytes(), UUID(sid), defer_enrichment=True))
+
+
+@pytest.mark.parametrize("deferred", [False, True])
+@pytest.mark.parametrize("language,text", [
+    ("en", "It is safe to cross now."),
+    ("en", "The hallway is completely clear. You should proceed."),
+    ("fr", "Le couloir est dégagé."),
+    ("ar", "الطريق آمن ويمكنك العبور بأمان."),
+])
+def test_captions_are_guarded_before_storage_search_and_speech(client, monkeypatch, deferred, language, text):
+    from app.services.ai.safety import UNKNOWN
+
+    api, factory = client
+    sid = create(api)
+    api.patch(f"/api/v1/sessions/{sid}", json={"language": language})
+
+    async def unsafe(*_):
+        return Scene(caption=text, uncertain=False, central_closed_door=True)
+
+    monkeypatch.setattr(models, "describe", unsafe)
+    saved = api.portal.call(partial(ingest_bytes, image_bytes(), UUID(sid), defer_enrichment=deferred))
+    if deferred:
+        api.portal.call(enrich_frame, saved.frame.id)
+    frame = api.get(f"/api/v1/sessions/{sid}/frames/{saved.frame.id}").json()
+    assert frame["caption"] == UNKNOWN[language]
+    assert "caption_safety_filtered" in frame["processing_warnings"]
+    assert "scene_uncertain" in frame["processing_warnings"]
+    assert "central_closed_door" not in frame["scene_flags"]
+
+    async def inspect():
+        async with factory() as db:
+            row = await db.get(Frame, saved.frame.id)
+            assert text not in row.search_text
+
+    api.portal.call(inspect)
 
 
 def test_fast_capture_persists_without_waiting_for_any_model(client, monkeypatch):
@@ -380,3 +416,20 @@ def test_uninformative_assessment_keeps_images_already_used_as_answer_evidence(c
     monkeypatch.setattr(models, "describe", empty)
     api.portal.call(enrich_frame, saved.frame.id)
     assert api.get(f"/api/v1/sessions/{saved.frame.session_id}/frames/{saved.frame.id}").status_code == 200
+
+
+def test_existing_unsafe_caption_is_filtered_when_served(client):
+    from app.services.ai.safety import UNKNOWN
+    api, factory = client
+    saved = save_fast(api, create(api))
+
+    async def unsafe_legacy_caption():
+        async with factory() as db:
+            frame = await db.get(Frame, saved.frame.id)
+            frame.caption = 'It is safe to cross now.'
+            await db.commit()
+
+    api.portal.call(unsafe_legacy_caption)
+    frame = api.get(f'/api/v1/sessions/{saved.frame.session_id}/frames/{saved.frame.id}').json()
+    assert frame['caption'] == UNKNOWN['en']
+    assert 'caption_safety_filtered' in frame['processing_warnings']

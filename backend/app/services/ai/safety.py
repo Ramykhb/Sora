@@ -20,13 +20,14 @@ FORBIDDEN = re.compile(
     re.I,
 )
 ASSURANCE = re.compile(
-    r"\b(?:path|walkway|route|passage|road|way)\b.{0,30}\b(?:is|looks?|seems?|appears?)\s+"
-    r"(?:(?:completely|perfectly|entirely|totally|all)\s+)?clear\b|"
-    r"\byou\s+(?:can|may)\s+(?:proceed|walk|cross|advance|continue|go ahead)\b|"
+    r"\b(?:path|walkway|route|passage|road|way|hallway|corridor|aisle|sidewalk|pavement|crossing)\b"
+    r"[^.!?;]{0,30}\b(?:is|looks?|seems?|appears?)\s+(?:to\s+be\s+)?"
+    r"(?:(?:completely|perfectly|entirely|totally|fully|all)\s+)?clear\b|"
+    r"\byou\s+(?:can|may|should|must)\s+(?:now\s+)?(?:proceed|walk|cross|advance|continue|go ahead)\b|"
     r"\b(?:no|without any|without)\s+(?:risk|danger)\b|\brisk[ -]?free\b|"
     r"\b(?:sans|aucun)\s+risque\b|"
     r"\bvous\s+pouvez\s+(?:marcher|avancer|traverser|continuer)\b|"
-    r"\b(?:chemin|passage|trajet|voie)\b.{0,25}\best\s+(?:tout a fait\s+)?(?:sur|libre|degage)\b|"
+    r"\b(?:chemin|passage|trajet|voie|couloir)\b.{0,25}\best\s+(?:tout a fait\s+)?(?:sur|libre|degage)\b|"
     r"(?:يمكنك|بامكانك)\s+(?:المشي|العبور|التقدم)|بدون خطر|بلا خطر|"
     r"(?:الطريق|المسار|الممر)\s+(?:امن|امنة|خال(?:يا)?\s+من\s+العوائق)",
     re.I,
@@ -64,6 +65,13 @@ def guard_answer(text, uncertain, language, evidence_ids):
     if not text:
         return UNKNOWN[language], True
     return text[:700], uncertain
+
+
+def guard_caption(text, uncertain, language):
+    """Captions are also user-visible speech, including outside the Q&A path."""
+    if blocked_text(text):
+        return UNKNOWN[language], True
+    return text, uncertain
 
 
 ROUTE_QUESTION = re.compile(

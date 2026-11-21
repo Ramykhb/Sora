@@ -14,6 +14,7 @@ from app.db.models.frame import now
 from app.db.session import SessionFactory
 from app.schemas import FrameOut, IngestResult
 from app.services.ai.models import models
+from app.services.ai.safety import guard_caption
 from app.services.events import events
 from app.services.frames.processing import Analysis, analyze_image, prepare_image, read_text, vision_image
 from app.services.frames.selection import rejection_reason
@@ -95,10 +96,12 @@ async def ingest_bytes(
         if not defer_enrichment and not objects_only:
             try:
                 scene = await models.describe(await asyncio.to_thread(vision_image, prepared))
-                caption = scene.caption
-                if scene.central_closed_door and not scene.uncertain:
+                caption, scene_uncertain = guard_caption(scene.caption, scene.uncertain, session.language)
+                if caption != scene.caption:
+                    warnings.append("caption_safety_filtered")
+                if scene.central_closed_door and not scene_uncertain:
                     scene_flags.append("central_closed_door")
-                if scene.uncertain:
+                if scene_uncertain:
                     warnings.append("scene_uncertain")
             except BackendError as exc:
                 warnings.append(exc.code)

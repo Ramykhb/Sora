@@ -12,6 +12,7 @@ from app.db.models.frame import now
 from app.db.session import SessionFactory
 from app.schemas import FrameOut
 from app.services.ai.models import models
+from app.services.ai.safety import guard_caption
 from app.services.events import events
 from app.services.frames.privacy import PRIVACY_VERSION
 from app.services.frames.processing import vision_image_from_processed
@@ -97,10 +98,15 @@ async def enrich_frame(frame_id):
         )
         if frame is None:
             return
+        session = await db.get(CaptureSession, frame.session_id)
+        language = session.language if session else "en"
     start = perf_counter()
     warnings = list(frame.processing_warnings)
     failed = False
-    caption, flags = frame.caption, list(frame.scene_flags)
+    caption, previous_uncertain = guard_caption(frame.caption, False, language)
+    flags = [] if previous_uncertain else list(frame.scene_flags)
+    if previous_uncertain:
+        warnings.extend(["caption_safety_filtered", "scene_uncertain"])
     try:
         if PRIVACY_VERSION not in (frame.enhancements or []):
             raise BackendError("Stored frame lacks verified face privacy processing", 503,
@@ -118,8 +124,11 @@ async def enrich_frame(frame_id):
         scene = await models.describe(await asyncio.to_thread(vision_image_from_processed, content))
         if (not scene.informative or not scene.caption.strip()) and not scene.uncertain and await discard_uninformative(frame_id):
             return
-        caption = scene.caption
-        if scene.uncertain:
+        caption, scene_uncertain = guard_caption(scene.caption, scene.uncertain, language)
+        if caption != scene.caption:
+            warnings.append("caption_safety_filtered")
+        flags = []
+        if scene_uncertain:
             warnings.append("scene_uncertain")
         elif scene.central_closed_door:
             flags.append("central_closed_door")

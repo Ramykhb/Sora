@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Language = Literal["en", "fr", "ar"]
 
@@ -53,6 +53,19 @@ class FrameOut(ORMModel):
     enrichment_retry_at: datetime | None = None
     captured_at: datetime
     expires_at: datetime
+
+    @model_validator(mode="after")
+    def safe_legacy_caption(self):
+        from app.services.ai.safety import guard_caption
+
+        caption, filtered = guard_caption(self.caption, False, "en")
+        if filtered:
+            self.caption = caption
+            self.processing_warnings = list(dict.fromkeys([
+                *self.processing_warnings, "caption_safety_filtered", "scene_uncertain",
+            ]))
+            self.scene_flags = [flag for flag in self.scene_flags if flag != "central_closed_door"]
+        return self
 
 
 class IngestResult(BaseModel):
