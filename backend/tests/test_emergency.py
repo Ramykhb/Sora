@@ -97,3 +97,24 @@ def test_timeout_never_claims_delivery(client, monkeypatch):
     assert response.status_code == 504
     assert response.json()['error']['code'] == 'sos_delivery_unknown'
     assert 'private provider' not in response.text
+
+
+def test_browser_can_save_sos_contact_from_allowed_origin(client):
+    from app.core.config import settings
+
+    api, _ = client
+    origin = settings.cors_origins[0]
+    preflight = api.options('/api/v1/emergency/contact', headers={
+        'Origin': origin, 'Access-Control-Request-Method': 'PUT',
+        'Access-Control-Request-Headers': 'authorization,content-type',
+    })
+    assert preflight.status_code == 200
+    assert preflight.headers['access-control-allow-origin'] == origin
+    response = api.put('/api/v1/emergency/contact', json={'email': 'contact@example.com'}, headers={'Origin': origin})
+    assert response.status_code == 200
+    assert response.headers['access-control-allow-origin'] == origin
+    assert api.get('/api/v1/emergency/contact').json()['email'] == 'contact@example.com'
+    denied = api.options('/api/v1/emergency/contact', headers={
+        'Origin': 'https://untrusted.example', 'Access-Control-Request-Method': 'PUT',
+    })
+    assert denied.status_code == 400

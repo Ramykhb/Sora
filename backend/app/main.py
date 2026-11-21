@@ -81,7 +81,7 @@ app = FastAPI(title="World Out Loud Backend", version="1.0.0", lifespan=lifespan
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
     expose_headers=["X-Request-ID", "X-Response-Time-Ms"],
 )
