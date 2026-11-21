@@ -57,7 +57,7 @@ async def history(
                     .where(
                         QuestionAnswer.session_id == session_id, QuestionAnswer.expires_at > now()
                     )
-                    .order_by(QuestionAnswer.created_at.desc())
+                    .order_by(QuestionAnswer.created_at.desc(), QuestionAnswer.id.desc())
                     .limit(limit)
                     .offset(offset)
                 )

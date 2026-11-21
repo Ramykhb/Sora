@@ -38,7 +38,7 @@ async def list_sessions(
                     if user.role == "admin" and not own_only
                     else CaptureSession.owner_id == user.id,
                     )
-                    .order_by(CaptureSession.created_at.desc())
+                    .order_by(CaptureSession.created_at.desc(), CaptureSession.id.desc())
                     .limit(limit)
                     .offset(offset)
                 )

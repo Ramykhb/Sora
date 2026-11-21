@@ -1,6 +1,6 @@
 import { ScreenIntro } from '@/components/brand';
 import { BottomNav, Card, Icon, Label, Page, Tap } from '@/components/sora-ui';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Alert, Platform, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useFocusEffect } from 'expo-router';
@@ -10,6 +10,7 @@ import type { Answer, CaptureSession, Frame } from '@/lib/api';
 import { AuthScreen } from '@/components/auth-screen';
 import { AnswerCard } from '@/components/answer-card';
 import { Action, Field, useUI } from '@/components/controls';
+import { historyPage, mergeHistory } from '@/lib/history-pagination';
 
 export default function MomentsScreen() {
   const { tokens } = useAuth();
@@ -31,14 +32,26 @@ function Moments() {
   const [more, setMore] = useState(false);
   const [headers, setHeaders] = useState<Record<string, string>>({});
   const [original, setOriginal] = useState(false);
+  const [sessionMore, setSessionMore] = useState(false);
+  const [historyMore, setHistoryMore] = useState(false);
+  const sessionOffset = useRef(0);
+  const historyOffset = useRef(0);
+  const frameOffset = useRef(0);
+  const sessionLoading = useRef(false);
+  const loading = useRef(false);
   async function run(work: () => Promise<void>) {
+    if (loading.current) return;
+    loading.current = true;
     setBusy(true); setError('');
-    try { await work(); } catch (e) { setError(e instanceof Error ? e.message : 'Request failed'); } finally { setBusy(false); }
+    try { await work(); } catch (e) { setError(e instanceof Error ? e.message : 'Request failed'); } finally { loading.current = false; setBusy(false); }
   }
   useFocusEffect(useCallback(() => {
     let cancelled = false;
-    void api.request<CaptureSession[]>('/sessions?limit=200').then(value => { if (!cancelled) setSessions(value); }).catch(e => { if (!cancelled) setError(e.message); });
-    return () => { cancelled = true; };
+    sessionLoading.current = true;
+    void historyPage<CaptureSession>(api, '/sessions?own_only=true').then(page => {
+      if (!cancelled) { setSessions(page.items); sessionOffset.current = page.nextOffset; setSessionMore(page.more); }
+    }).catch(e => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) sessionLoading.current = false; });
+    return () => { cancelled = true; sessionLoading.current = false; };
   }, [api]));
   function bounds() {
     const params = new URLSearchParams();
@@ -51,19 +64,31 @@ function Moments() {
   }
   async function load(session: CaptureSession, search = false, append = false) {
     const params = bounds();
-    const offset = append ? frames.length : 0;
+    const offset = append ? frameOffset.current : 0;
     params.set('limit', search ? '10' : '50');
     params.set('offset', String(offset));
     if (search) params.set('q', query.trim());
     const path = `/sessions/${session.id}`;
     const [result, answers, token] = await Promise.all([
       search ? api.request<{ frames: Frame[]; warnings: string[] }>(`${path}/frames/search?${params}`) : api.request<Frame[]>(`${path}/frames?${params}`),
-      api.request<Answer[]>(`${path}/questions?limit=200`), api.token(),
+      append ? Promise.resolve(null) : historyPage<Answer>(api, `${path}/questions`), api.token(),
     ]);
     const values = Array.isArray(result) ? result : result.frames;
+    frameOffset.current = offset + values.length;
     if (!Array.isArray(result) && result.warnings.length) setError(result.warnings.join('\n'));
     setHeaders({ Authorization: `Bearer ${token}` });
-    setSelected(session); setFrames(previous => append ? [...previous, ...values] : values); setHistory(answers); setMore(!search && values.length === 50);
+    setSelected(session); setFrames(previous => append ? mergeHistory(previous, values) : values); setMore(!search && values.length === 50);
+    if (answers) { setHistory(answers.items); historyOffset.current = answers.nextOffset; setHistoryMore(answers.more); }
+  }
+  async function olderSessions() {
+    if (sessionLoading.current) return;
+    const page = await historyPage<CaptureSession>(api, '/sessions?own_only=true', sessionOffset.current);
+    setSessions(previous => mergeHistory(previous, page.items)); sessionOffset.current = page.nextOffset; setSessionMore(page.more);
+  }
+  async function olderAnswers() {
+    if (!selected) return;
+    const page = await historyPage<Answer>(api, `/sessions/${selected.id}/questions`, historyOffset.current);
+    setHistory(previous => mergeHistory(previous, page.items)); historyOffset.current = page.nextOffset; setHistoryMore(page.more);
   }
   function confirmDelete(title: string, work: () => Promise<void>) {
     if (Platform.OS === 'web') { if (window.confirm(title)) void run(work); }
@@ -72,6 +97,7 @@ function Moments() {
   return <Page title="Visual memory" footer={<BottomNav active="History" />}>
     <ScreenIntro eyebrow="Your timeline" title="Moments worth keeping." subtitle="Revisit captured scenes and conversations." />
     {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
+    {!selected && sessionMore && <Action title="Load older sessions" disabled={busy} onPress={() => void run(olderSessions)} />}
     {!selected ? <><Label bold size={14}>Saved sessions <Label muted size={12}> · {sessions.length}</Label></Label>{sessions.length === 0 && <Card style={{ alignItems: 'center', paddingVertical: 34 }}><Icon name="images-outline" size={32} /><Label bold size={17}>Your story starts here.</Label><Label muted size={13} style={{ textAlign: 'center' }}>Capture a scene to build your visual memory.</Label></Card>}{sessions.map(session => <Tap key={session.id} label={`Open session from ${new Date(session.created_at).toLocaleString()}, ${session.status}`} disabled={busy} onPress={() => void run(() => load(session))}><Card style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}><View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: colors.accentSurface, alignItems: 'center', justifyContent: 'center' }}><Icon name="images-outline" size={22} /></View><View style={{ flex: 1, gap: 4 }}><Label bold size={14}>{new Date(session.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</Label><Label muted size={11}>{new Date(session.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} · {session.status}</Label></View><Icon name="chevron-forward" size={18} color={colors.muted} /></Card></Tap>)}</> : <>
       <Text style={ui.subtitle}>{new Date(selected.created_at).toLocaleString()}</Text>
       <Action title="Choose another session" disabled={busy} onPress={() => { setSelected(null); setFrames([]); setHistory([]); }} />
@@ -95,6 +121,7 @@ function Moments() {
       </View>)}
       {more && <Action title="Load more images" disabled={busy} onPress={() => void run(() => load(selected, false, true))} />}
       <Label bold size={16}>Q&A history <Label muted size={12}> · {history.length}</Label></Label>{history.length === 0 && <Label muted size={13}>Questions and answers from this session will appear here.</Label>}{history.map(answer => <AnswerCard key={answer.id} answer={answer} onError={setError} />)}
+      {historyMore && <Action title="Load older conversations" disabled={busy} onPress={() => void run(olderAnswers)} />}
       <Action variant="danger" title="Delete this session and all its data" disabled={busy} onPress={() => confirmDelete('Delete this session?', async () => { await api.request(`/sessions/${selected.id}`, 'DELETE'); setSessions(previous => previous.filter(s => s.id !== selected.id)); setSelected(null); setFrames([]); setHistory([]); })} />
     </>}
   </Page>;
