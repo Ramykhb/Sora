@@ -111,6 +111,7 @@ class Alert(Base):
 
 class Feedback(Base):
     __tablename__ = "answer_feedback"
+    __table_args__ = (Index("uq_answer_feedback_question", "question_id", unique=True),)
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     question_id: Mapped[UUID] = mapped_column(
         ForeignKey("question_answers.id", ondelete="CASCADE"), index=True

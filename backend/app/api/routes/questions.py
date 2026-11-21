@@ -95,8 +95,18 @@ async def spoken_answer(session_id: UUID, question_id: UUID):
 @router.post("/{question_id}/feedback", status_code=201)
 async def feedback(session_id: UUID, question_id: UUID, request: FeedbackRequest):
     await get_question(session_id, question_id)
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
     async with SessionFactory() as db:
-        row = Feedback(question_id=question_id, **request.model_dump())
-        db.add(row)
+        insert = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
+        values = request.model_dump()
+        changes = {"rating": request.rating, "created_at": now()}
+        if "notes" in request.model_fields_set:
+            changes["notes"] = request.notes
+        row = (await db.execute(insert(Feedback).values(question_id=question_id, **values)
+                               .on_conflict_do_update(index_elements=[Feedback.question_id],
+                                                      set_=changes)
+                               .returning(Feedback.id, Feedback.rating))).one()
         await db.commit()
         return {"id": str(row.id), "rating": row.rating}
