@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, Uuid
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, Uuid, event
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.config import settings
+from app.core.search_text import normalized_search_text
 from app.db.base import Base
 
 if settings.database_url.startswith("sqlite"):
@@ -53,6 +54,7 @@ class Frame(Base):
     scene_flags: Mapped[list] = mapped_column(JSON, default=list)
     enhancements: Mapped[list] = mapped_column(JSON, default=list)
     search_text: Mapped[str] = mapped_column(Text, default="")
+    normalized_search_text: Mapped[str] = mapped_column(Text, default="")
     embedding: Mapped[list | None] = mapped_column(embedding_type, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(120), nullable=True)
     processing_warnings: Mapped[list] = mapped_column(JSON, default=list)
@@ -73,6 +75,12 @@ class Frame(Base):
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ).ddl_if(dialect="postgresql"),
     )
+
+
+@event.listens_for(Frame, "before_insert")
+@event.listens_for(Frame, "before_update")
+def sync_search_terms(_mapper, _connection, frame):
+    frame.normalized_search_text = normalized_search_text(frame.search_text or "")
 
 
 class QuestionAnswer(Base):

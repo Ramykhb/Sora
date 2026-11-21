@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta, timezone
 import math
 import re
-import unicodedata
 from sqlalchemy import select
 from app.core.config import settings
 from app.core.errors import BackendError
+from app.core.search_text import words
 from app.db.models import Frame
 from app.db.models.frame import now
 from app.db.session import SessionFactory
@@ -32,13 +32,6 @@ quel quelle quels quelles texte ecrit lire forme couleur objet objets
 ماذا ما الذي التي هل انا نحن انت رأيت رايت شفت يوجد في من على عن قبل منذ سابق السابق
 امس البارحة صورة صور المشهد نص مكتوب دقيقة دقائق دقايق ساعة ساعات خمس خمسة عشر عشرة بين الساعة مساء صباحا
 """.split())
-
-
-def words(text):
-    normalized = "".join(char for char in unicodedata.normalize("NFKD", text.casefold())
-                         if unicodedata.category(char) not in {"Mn", "Cf"})
-    return {word[:-1] if len(word) > 3 and word.endswith("s") else word
-            for word in re.findall(r"\w+", normalized)}
 
 
 def query_terms(question, timed=False):
@@ -126,7 +119,7 @@ async def retrieve_frames(session_id, question, scope="auto", since=None, until=
                     *filters,
                     or_(
                         *(
-                            Frame.search_text.ilike("%" + token.replace("%", "") + "%")
+                            Frame.normalized_search_text.contains(" " + token + " ", autoescape=True)
                             for token in tokens
                         )
                     ),
