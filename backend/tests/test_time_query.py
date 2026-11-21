@@ -101,6 +101,43 @@ def test_repeated_dst_hour_is_not_guessed():
     assert window.clarification == "time"
 
 
+@pytest.mark.parametrize("question", [
+    "What did I see yesterday?",
+    "Qu'ai-je vu hier ?",
+    "ماذا رأيت أمس؟",
+    "شو شفت البارحة؟",
+])
+def test_yesterday_uses_the_previous_local_calendar_day(question):
+    # It is already November 19 in Beirut, while UTC is still November 18.
+    reference = datetime(2026, 11, 18, 23, 30, tzinfo=timezone.utc)
+    window = interpret_time(question, "Asia/Beirut", reference)
+    assert window.since == datetime(2026, 11, 17, 22, tzinfo=timezone.utc)
+    assert window.until == datetime(2026, 11, 18, 21, 59, 59, 999999, tzinfo=timezone.utc)
+    assert window.target is None and window.clarification is None
+
+
+def test_yesterday_respects_daylight_saving_day_length():
+    reference = datetime(2026, 3, 9, 12, tzinfo=timezone.utc)
+    window = interpret_time("What did I see yesterday?", "America/New_York", reference)
+    assert window.since == datetime(2026, 3, 8, 5, tzinfo=timezone.utc)
+    assert window.until == datetime(2026, 3, 9, 3, 59, 59, 999999, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize("zone", [None, "Bad/Zone"])
+def test_yesterday_needs_a_valid_device_timezone(zone):
+    assert interpret_time("What did I see yesterday?", zone, REFERENCE).clarification == "timezone"
+
+
+@pytest.mark.parametrize("question", [
+    "What did I see yesterday at 2:30 PM?",
+    "What will I see tomorrow?",
+    "Que verrai-je demain ?",
+    "ماذا سأرى غداً؟",
+])
+def test_unsupported_day_phrases_ask_instead_of_using_current_view(question):
+    assert interpret_time(question, "Asia/Beirut", REFERENCE).clarification == "time"
+
+
 @pytest.mark.parametrize("question,expected", [
     ("What is in front of me?", "recent"),
     ("Is there an obstacle before me?", "recent"),

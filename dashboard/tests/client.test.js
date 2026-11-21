@@ -131,6 +131,32 @@ test('server dependency errors and validation messages remain visible', async ()
   await assert.rejects(api.publicRequest('/auth/login', {}), /Invalid email address/);
 });
 
+test('text and transcribed questions include browser timezone without replacing explicit values', async t => {
+  t.mock.method(Intl, 'DateTimeFormat', () => ({ resolvedOptions: () => ({ timeZone: 'Asia/Beirut' }) }));
+  const api = new ApiClient('https://backend.test'); api.setTokens(pair());
+  const sent = [];
+  globalThis.fetch = async (_url, init) => { sent.push(JSON.parse(init.body)); return json({ answer: 'Saved image' }); };
+  const question = { question: 'What did I see at 2:30 PM?', scope: 'auto' };
+  await api.request('/sessions/mobile/questions', 'POST', question);
+  await api.request('/sessions/mobile/questions', 'POST', { ...question, source: 'audio', location: { latitude: 33, longitude: 35 } });
+  await api.request('/sessions/mobile/questions', 'POST', { ...question, timezone: 'Europe/Paris' });
+  assert.equal(sent[0].timezone, 'Asia/Beirut');
+  assert.equal(sent[1].timezone, 'Asia/Beirut');
+  assert.deepEqual(sent[1].location, { latitude: 33, longitude: 35 });
+  assert.equal(sent[2].timezone, 'Europe/Paris');
+  assert.equal(question.timezone, undefined);
+});
+
+test('questions still submit when browser timezone lookup is unavailable', async t => {
+  t.mock.method(Intl, 'DateTimeFormat', () => { throw new Error('Unavailable'); });
+  const api = new ApiClient('https://backend.test'); api.setTokens(pair());
+  globalThis.fetch = async (_url, init) => {
+    assert.equal('timezone' in JSON.parse(init.body), false);
+    return json({ answer: 'Timezone needed' });
+  };
+  await api.request('/sessions/mobile/questions', 'POST', { question: 'What did I see yesterday?' });
+});
+
 function multipart(jpegs) {
   return Buffer.concat(jpegs.map(jpeg => Buffer.concat([Buffer.from(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`), jpeg, Buffer.from('\r\n')])));
 }

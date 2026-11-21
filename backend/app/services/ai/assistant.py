@@ -47,9 +47,9 @@ TIME_CLARIFICATION = {
         "ar": "أي وقت تقصد؟ حدّد صباحاً أو مساءً، أو اذكر منذ كم دقيقة.",
     },
     "timezone": {
-        "en": "I need your device's timezone to find images from a clock time. Please check its time settings and ask again.",
-        "fr": "J’ai besoin du fuseau horaire de votre appareil pour retrouver une image à cette heure. Vérifiez ses réglages d’heure et réessayez.",
-        "ar": "أحتاج إلى المنطقة الزمنية لجهازك للعثور على صور ذلك الوقت. تحقّق من إعدادات الوقت واسأل مجدداً.",
+        "en": "I need your device's timezone to find images from that local day or time. Please check its time settings and ask again.",
+        "fr": "J’ai besoin du fuseau horaire de votre appareil pour retrouver les images de ce jour ou de cette heure locale. Vérifiez ses réglages d’heure et réessayez.",
+        "ar": "أحتاج إلى المنطقة الزمنية لجهازك للعثور على صور ذلك اليوم أو الوقت المحلي. تحقّق من إعدادات الوقت واسأل مجدداً.",
     },
 }
 

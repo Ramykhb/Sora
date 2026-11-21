@@ -174,6 +174,58 @@ def test_time_question_uses_only_matching_saved_frames_and_explicit_bounds_win(c
     assert seen[1] == [current["id"]]
 
 
+@pytest.mark.parametrize("has_yesterday_frame", [True, False])
+def test_yesterday_question_uses_only_previous_day_or_reports_missing_memory(client, monkeypatch, has_yesterday_frame):
+    from sqlalchemy import update
+    import app.services.ai.assistant as assistant
+
+    api, factory = client
+    sid = create(api)
+    current = api.post(f"/api/v1/sessions/{sid}/frames", files={
+        "image": ("current.png", image_bytes(), "image/png"),
+    }, data={"force": "true"}).json()["frame"]
+    yesterday = None
+    if has_yesterday_frame:
+        yesterday = api.post(f"/api/v1/sessions/{sid}/frames", files={
+            "image": ("yesterday.png", image_bytes(), "image/png"),
+        }, data={"force": "true"}).json()["frame"]
+        captured = now().replace(hour=12, minute=0, second=0, microsecond=0) - timedelta(days=1)
+
+        async def age():
+            async with factory() as db:
+                await db.execute(update(Frame).where(Frame.id == UUID(yesterday["id"])).values(captured_at=captured))
+                await db.commit()
+
+        api.portal.call(age)
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("Yesterday must never use a live camera answer")
+
+    async def inspect(messages, _schema):
+        assert yesterday is not None, "No current frame may answer a missing historical day"
+        payload = json.loads(messages[-1]["content"])
+        assert payload["scope"] == "memory"
+        ids = [item["frame_id"] for item in payload["camera_observations"]]
+        assert ids == [yesterday["id"]]
+        return ModelAnswer(answer="Yesterday's image shows an EXIT sign.", uncertain=False,
+                           evidence_frame_ids=ids)
+
+    monkeypatch.setattr(assistant, "answer_overview", forbidden)
+    monkeypatch.setattr(assistant, "answer_cloud_view", forbidden)
+    monkeypatch.setattr(models, "chat", inspect)
+    response = api.post(f"/api/v1/sessions/{sid}/questions", json={
+        "question": "What did I see yesterday?", "scope": "auto", "timezone": "UTC",
+    })
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert current["id"] not in result["evidence_frame_ids"]
+    if yesterday:
+        assert result["evidence_frame_ids"] == [yesterday["id"]]
+    else:
+        assert result["uncertain"] and not result["evidence_frame_ids"]
+        assert "don't have a saved image" in result["answer"]
+
+
 def test_spatial_question_uses_fresh_evidence_without_time_clarification(client, monkeypatch):
     api, _ = client
     sid = create(api)

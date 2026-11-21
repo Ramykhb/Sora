@@ -41,6 +41,8 @@ AROUND = re.compile(r"\b(?:around|about|vers|aux alentours de|حوالي|نحو)
 BETWEEN = re.compile(r"\b(?:between|entre|بين)\s+(?:الساعة\s+)?")
 AT = re.compile(r"\b(?:at|a|الساعة)\s+")
 SEPARATOR = re.compile(r"\s*(?:and|et|و|الى|إلى|حتى)\s+(?:الساعة\s+)?")
+DAY_REFERENCE = re.compile(r"\b(?:yesterday|tomorrow|hier|demain|امس|البارحة|غدا)\b")
+YESTERDAY = {"yesterday", "hier", "امس", "البارحة"}
 
 
 @dataclass(frozen=True)
@@ -109,6 +111,7 @@ def interpret_time(question: str, timezone_name: str | None, reference: datetime
     """Interpret supported phrases using the server's UTC clock and the device's timezone."""
     text = _normalize(question)
     reference = reference.astimezone(timezone.utc)
+    day_reference = DAY_REFERENCE.search(text)
     match = RELATIVE.search(text)
     if match:
         duration = _duration(match["before"] or match["after"], match["before_unit"] or match["after_unit"])
@@ -132,8 +135,24 @@ def interpret_time(question: str, timezone_name: str | None, reference: datetime
         if _clock_phrase(body, consumed, kind == "between"):
             break
     else:
-        return None
-    if re.search(r"\b(?:yesterday|tomorrow|hier|demain|امس|غدا)\b", text):
+        if day_reference is None:
+            return None
+        if day_reference[0] not in YESTERDAY:
+            return TimeQuery(clarification="time")
+        if not timezone_name:
+            return TimeQuery(clarification="timezone")
+        try:
+            zone = ZoneInfo(timezone_name)
+        except (ZoneInfoNotFoundError, ValueError):
+            return TimeQuery(clarification="timezone")
+        today = reference.astimezone(zone).date()
+        since = _local_utc(today - timedelta(days=1), time.min, zone)
+        next_day = _local_utc(today, time.min, zone)
+        if since is None or next_day is None:
+            return TimeQuery(clarification="time")
+        # Retrieval bounds are inclusive; exclude the first instant of today.
+        return TimeQuery(since, next_day - timedelta(microseconds=1))
+    if day_reference:
         return TimeQuery(clarification="time")
     if start_clock is None:
         return TimeQuery(clarification="time")
