@@ -10,7 +10,7 @@ import type { Answer, CaptureSession, Frame } from '@/lib/api';
 import { AuthScreen } from '@/components/auth-screen';
 import { AnswerCard } from '@/components/answer-card';
 import { Action, Field, useUI } from '@/components/controls';
-import { historyPage, mergeHistory } from '@/lib/history-pagination';
+import { historyPage, mergeHistory, removeHistoryItem } from '@/lib/history-pagination';
 
 export default function MomentsScreen() {
   const { tokens } = useAuth();
@@ -117,12 +117,12 @@ function Moments() {
         {!!frame.ocr_text && <Text style={ui.copy}>Text: {frame.ocr_text}</Text>}
         <Text style={ui.copy}>{frame.detected_objects.map(o => `${o.label} (${Math.round(o.confidence * 100)}%)`).join(', ')}</Text>
         {frame.processing_warnings.map(w => <Text key={w} style={ui.error}>{w}</Text>)}
-        <Action variant="danger" title="Delete image" disabled={busy} onPress={() => confirmDelete('Delete this image?', async () => { await api.request(`/sessions/${selected.id}/frames/${frame.id}`, 'DELETE'); setFrames(previous => previous.filter(f => f.id !== frame.id)); })} />
+        <Action variant="danger" title="Delete image" disabled={busy} onPress={() => confirmDelete('Delete this image?', async () => { await api.request(`/sessions/${selected.id}/frames/${frame.id}`, 'DELETE'); const page = removeHistoryItem(frames, frame.id, frameOffset.current); frameOffset.current = page.nextOffset; setFrames(page.items); })} />
       </View>)}
       {more && <Action title="Load more images" disabled={busy} onPress={() => void run(() => load(selected, false, true))} />}
       <Label bold size={16}>Q&A history <Label muted size={12}> · {history.length}</Label></Label>{history.length === 0 && <Label muted size={13}>Questions and answers from this session will appear here.</Label>}{history.map(answer => <AnswerCard key={answer.id} answer={answer} onError={setError} />)}
       {historyMore && <Action title="Load older conversations" disabled={busy} onPress={() => void run(olderAnswers)} />}
-      <Action variant="danger" title="Delete this session and all its data" disabled={busy} onPress={() => confirmDelete('Delete this session?', async () => { await api.request(`/sessions/${selected.id}`, 'DELETE'); setSessions(previous => previous.filter(s => s.id !== selected.id)); setSelected(null); setFrames([]); setHistory([]); })} />
+      <Action variant="danger" title="Delete this session and all its data" disabled={busy} onPress={() => confirmDelete('Delete this session?', async () => { await api.request(`/sessions/${selected.id}`, 'DELETE'); const page = removeHistoryItem(sessions, selected.id, sessionOffset.current); sessionOffset.current = page.nextOffset; setSessions(page.items); setSelected(null); setFrames([]); setHistory([]); })} />
     </>}
   </Page>;
 }
