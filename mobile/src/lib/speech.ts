@@ -39,6 +39,7 @@ export const speech = new SpeechController({
         }
       })();
       const language = options.language.toLowerCase().split('-')[0];
+      let deviceVoice: Speech.Voice | undefined;
       if (language === 'ar') {
         const callbacks = {
           onDone: () => done(options.onDone),
@@ -52,18 +53,30 @@ export const speech = new SpeechController({
           arabicRecordings.speak(arabicAlertRecording(text), callbacks);
           return;
         }
-        const handled = await serverSpeech.speak(speechText(text, options.language), callbacks, prepareAudio);
+        let handled = false;
+        try { handled = await serverSpeech.speak(speechText(text, options.language), callbacks, prepareAudio); }
+        catch { /* A failure before playback may still use the device's Arabic voice. */ }
         if (generation !== audioGeneration) { done(); return; }
         if (handled) return;
-        await prepareAudio();
+        const voices = await Speech.getAvailableVoicesAsync().catch(() => []);
         if (generation !== audioGeneration) { done(); return; }
-        arabicRecordings.speak('unavailable', callbacks);
-        return;
+        const preferred = options.language.toLowerCase();
+        deviceVoice = voices.filter(voice => /^ar(?:[-_]|$)/i.test(voice.language)).sort((a, b) =>
+          Number(b.language.toLowerCase() === preferred) - Number(a.language.toLowerCase() === preferred)
+          || Number(b.quality === Speech.VoiceQuality.Enhanced) - Number(a.quality === Speech.VoiceQuality.Enhanced)
+        )[0];
+        if (!deviceVoice) {
+          await prepareAudio();
+          if (generation !== audioGeneration) { done(); return; }
+          arabicRecordings.speak('unavailable', callbacks);
+          return;
+        }
       }
       await prepareAudio();
       if (generation !== audioGeneration) { done(); return; }
       Speech.speak(speechText(text, options.language), {
         ...options, volume: 1, useApplicationAudioSession: true,
+        ...(deviceVoice ? { voice: deviceVoice.identifier, language: deviceVoice.language } : {}),
         onDone: () => done(options.onDone), onStopped: () => done(options.onStopped), onError: error => done(() => options.onError?.(error)),
       });
     } catch (error) { done(); throw error; }

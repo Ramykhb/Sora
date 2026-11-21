@@ -7,7 +7,10 @@ require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileMo
 const { SpeechController } = require('../src/lib/speech-policy.ts');
 const { VoiceAudioGate } = require('../src/lib/voice-commands.ts');
 const source = ts.transpileModule(fs.readFileSync(require.resolve('../src/lib/speech.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
-function setup(configure = async () => {}, cloud = {}) {
+function setup(configure = async () => {}, cloud = {}, voices = [
+  { identifier: 'ar-sa-compact', language: 'ar-SA', quality: 'Default' },
+  { identifier: 'ar-eg-enhanced', language: 'ar-EG', quality: 'Enhanced' },
+]) {
   const spoken = [], modes = [], recordings = [];
   const gate = new VoiceAudioGate();
   const exports = {};
@@ -15,10 +18,8 @@ function setup(configure = async () => {}, cloud = {}) {
     if (name === 'expo-audio') return { async setAudioModeAsync(mode) { modes.push(mode); await configure(); } };
     if (name === 'expo-speech') return {
       async stop() {}, speak(text, options) { spoken.push({ text, options }); },
-      async getAvailableVoicesAsync() { return [
-        { identifier: 'ar-sa-compact', language: 'ar-SA', quality: 'Default' },
-        { identifier: 'ar-eg-enhanced', language: 'ar-EG', quality: 'Enhanced' },
-      ]; },
+      VoiceQuality: { Default: 'Default', Enhanced: 'Enhanced' },
+      async getAvailableVoicesAsync() { return typeof voices === 'function' ? voices() : voices; },
     };
     if (name === './speech-policy') return { SpeechController };
     if (name === './voice-commands') return { voiceAudioGate: gate };
@@ -43,11 +44,41 @@ test('automatic answers use the configured playback session and resume listening
   assert.equal(gate.playing, false);
 });
 
-test('unavailable Arabic cloud speech never falls back to the male device voice', async () => {
+test('unavailable Arabic cloud speech reads the answer using an installed Arabic voice', async () => {
   const { speech, spoken, recordings } = setup();
   await speech.answer('مرحباً، الطريق أمامك.', 'ar-SA');
-  assert.equal(spoken.length, 0);
-  assert.equal(recordings[0].key, 'unavailable');
+  assert.equal(spoken.length, 1);
+  assert.equal(spoken[0].text, 'مرحباً، الطريق أمامك.');
+  assert.equal(spoken[0].options.voice, 'ar-sa-compact');
+  assert.equal(recordings.length, 0);
+});
+
+test('cloud exceptions also fall back locally and completion releases the audio gate', async () => {
+  const app = setup(undefined, { async speak() { throw new Error('Offline'); } });
+  await app.speech.answer('هذه إجابة محفوظة.', 'ar');
+  assert.equal(app.spoken[0].text, 'هذه إجابة محفوظة.');
+  assert.equal(app.spoken[0].options.voice, 'ar-eg-enhanced');
+  app.spoken[0].options.onDone();
+  assert.equal(app.gate.playing, false);
+});
+
+test('missing Arabic voices keep the unavailable clip instead of using another language', async () => {
+  const app = setup(undefined, {}, [{ identifier: 'en', language: 'en-US' }]);
+  await app.speech.answer('مرحبا', 'ar');
+  assert.equal(app.spoken.length, 0);
+  assert.equal(app.recordings[0].key, 'unavailable');
+});
+
+test('stopping during voice lookup cancels local fallback', async () => {
+  let resolve;
+  const app = setup(undefined, {}, () => new Promise(done => { resolve = done; }));
+  const pending = app.speech.answer('مرحبا', 'ar');
+  for (let i = 0; i < 30 && !resolve; i++) await Promise.resolve();
+  await app.speech.stop();
+  resolve([{ identifier: 'ar', language: 'ar-SA' }]);
+  await pending;
+  assert.equal(app.spoken.length, 0);
+  assert.equal(app.recordings.length, 0);
 });
 
 test('Arabic start prompts supply pronunciation vowels without changing other words', async () => {
