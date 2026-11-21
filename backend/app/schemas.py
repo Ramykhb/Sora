@@ -49,6 +49,8 @@ class FrameOut(ORMModel):
     processing_ms: float
     enrichment_status: Literal["pending", "processing", "complete", "failed", "skipped"]
     enrichment_ms: float | None
+    enrichment_attempts: int = 0
+    enrichment_retry_at: datetime | None = None
     captured_at: datetime
     expires_at: datetime
 

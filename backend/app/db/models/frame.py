@@ -59,6 +59,8 @@ class Frame(Base):
     processing_ms: Mapped[float] = mapped_column(Float, default=0)
     enrichment_status: Mapped[str] = mapped_column(String(20), default="complete", index=True)
     enrichment_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    enrichment_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    enrichment_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

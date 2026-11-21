@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import math
 import re
+import unicodedata
 from sqlalchemy import select
 from app.core.config import settings
 from app.core.errors import BackendError
@@ -18,6 +19,36 @@ PAST_BEFORE = re.compile(
     r"\b(?:ai-je|j'ai|avons-nous)\s+(?:vu|pass[ée])|رأيت|شفت)"
     r"[^?.!]{0,80}(?:\bbefore\b|\bavant\b|قبل)", re.I,
 )
+STOP_WORDS = set("""
+what which who did do does i we you my me the a an and or of on in at to from for
+is are was were have had can could tell show please see saw visible image images
+frame frames scene scenes object objects shape color colour written read text
+describe captured clear concise language surroundings detailed detail
+earlier previous previously before ago pass passed remember just yesterday today around about between am pm h
+last minutes minute mins hours hour five one two three four ten fifteen twenty thirty
+qu que quoi qui ai je j nous vous tu vu est sont et le la les un une des du de au
+dans il y a ce cet cette ces plus avant hier dernier dernieres dernieres minutes heures entre vers matin soir
+quel quelle quels quelles texte ecrit lire forme couleur objet objets
+ماذا ما الذي التي هل انا نحن انت رأيت رايت شفت يوجد في من على عن قبل منذ سابق السابق
+امس البارحة صورة صور المشهد نص مكتوب دقيقة دقائق دقايق ساعة ساعات خمس خمسة عشر عشرة بين الساعة مساء صباحا
+""".split())
+
+
+def words(text):
+    normalized = "".join(char for char in unicodedata.normalize("NFKD", text.casefold())
+                         if unicodedata.category(char) not in {"Mn", "Cf"})
+    return {word[:-1] if len(word) > 3 and word.endswith("s") else word
+            for word in re.findall(r"\w+", normalized)}
+
+
+def query_terms(question, timed=False):
+    terms = words(question) - words(" ".join(STOP_WORDS))
+    if timed or re.search(r"minutes?|hours?|دقائق|دقيقة|دقايق|ساعات|ساعة", question, re.I):
+        from app.services.ai.time_query import NUMBER_WORDS
+
+        terms -= words(" ".join(NUMBER_WORDS))
+        terms = {term for term in terms if not re.fullmatch(r"\d+(?:am|pm|h)?", term)}
+    return sorted(terms)[:12]
 
 
 def resolve_scope(question, scope):
@@ -83,7 +114,7 @@ async def retrieve_frames(session_id, question, scope="auto", since=None, until=
                 )
                 candidates.update({str(frame.id): frame for frame in nearby.all()})
         # Include lexical matches beyond the recent window when semantic services are down.
-        tokens = re.findall(r"\w+", question.casefold())[:12]
+        tokens = query_terms(question, timed=bool(since or until or target))
         if tokens:
             from sqlalchemy import or_
 
@@ -103,8 +134,9 @@ async def retrieve_frames(session_id, question, scope="auto", since=None, until=
             )
             candidates.update({str(f.id): f for f in matches})
 
-    def score(frame):
-        lexical = sum(token in frame.search_text.casefold() for token in tokens) / max(
+    def relevance(frame):
+        observed_words = words(frame.search_text)
+        lexical = sum(token in observed_words for token in tokens) / max(
             len(tokens), 1
         )
         cosine = 0.0
@@ -118,10 +150,21 @@ async def retrieve_frames(session_id, question, scope="auto", since=None, until=
             cosine = (
                 sum(a * b for a, b in zip(vector, query_vector)) / denominator if denominator else 0
             )
+        return cosine, lexical
+
+    def score(frame):
+        cosine, lexical = relevance(frame)
         return 0.75 * cosine + 0.25 * lexical
 
     if scope == "recent":
         return sorted(candidates.values(), key=lambda f: f.captured_at, reverse=True)[:1], warnings, scope
+    if tokens:
+        had_candidates = bool(candidates)
+        candidates = {key: frame for key, frame in candidates.items()
+                      if (relevance(frame)[0] >= settings.retrieval_min_similarity
+                          or relevance(frame)[1] >= 0.5)}
+        if had_candidates and not candidates:
+            warnings.append("no_relevant_evidence")
     if target is not None:
         radius = max((until - since).total_seconds() / 2, 1) if since and until else 60
 

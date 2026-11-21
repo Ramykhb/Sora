@@ -117,6 +117,7 @@ function Assistant() {
       if (event.type === 'observation' && active && event.expires_at && Date.parse(event.expires_at) > Date.now()) {
         setObservation(event as Observation & typeof event);
       }
+      if (event.type === 'frame_deleted') setFrame(previous => previous?.id === event.frame_id ? null : previous);
       if (event.type === 'frame_rejected') setNotice(`Frame skipped: ${event.reason}`);
       if (event.type === 'processing_error') setError(event.message || event.code || 'Frame processing failed');
       if (event.type === 'detection_error') setError('Live detection is unavailable. Check the server.');

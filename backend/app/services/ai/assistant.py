@@ -114,7 +114,7 @@ async def _answer_evidence(session_id, request, session, language, requested_sco
         True,
         [],
     )
-    if not frames and (time_query or request.since or request.until):
+    if not frames and (time_query or request.since or request.until) and "no_relevant_evidence" not in warnings:
         answer = {
             "en": "I don't have a saved image from that time.",
             "fr": "Je n’ai pas d’image enregistrée pour cette période.",

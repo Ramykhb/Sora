@@ -226,6 +226,48 @@ def test_yesterday_question_uses_only_previous_day_or_reports_missing_memory(cli
         assert "don't have a saved image" in result["answer"]
 
 
+@pytest.mark.parametrize("embeddings_available", [True, False])
+def test_unrelated_memory_abstains_instead_of_answering_from_top_ranked_frame(client, monkeypatch, embeddings_available):
+    api, _ = client
+    sid = create(api)
+    api.post(f"/api/v1/sessions/{sid}/frames", files={"image": ("chair.png", image_bytes(), "image/png")})
+
+    async def unrelated(*_args, **_kwargs):
+        if not embeddings_available:
+            from app.core.errors import BackendError
+            raise BackendError("Offline", code="embedding_unavailable")
+        return [0.0, 1.0] + [0.0] * (settings.embedding_dimensions - 2)
+
+    async def forbidden_chat(*_args):
+        raise AssertionError("Unrelated evidence must not reach answer generation")
+
+    monkeypatch.setattr(models, "embed", unrelated)
+    monkeypatch.setattr(models, "chat", forbidden_chat)
+    response = api.post(f"/api/v1/sessions/{sid}/questions", json={
+        "question": "Did I see an elephant earlier?", "scope": "memory",
+    })
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["uncertain"] and not result["evidence_frame_ids"]
+    assert "no_relevant_evidence" in result["processing_warnings"]
+    assert api.get(f"/api/v1/sessions/{sid}/frames/search", params={"q": "elephant"}).json()["frames"] == []
+
+
+def test_relevant_lexical_memory_survives_embedding_outage(client, monkeypatch):
+    from app.core.errors import BackendError
+
+    api, _ = client
+    sid = create(api)
+    frame = api.post(f"/api/v1/sessions/{sid}/frames", files={"image": ("sign.png", image_bytes(), "image/png")}).json()["frame"]
+
+    async def unavailable(*_args, **_kwargs):
+        raise BackendError("Offline", code="embedding_unavailable")
+
+    monkeypatch.setattr(models, "embed", unavailable)
+    result = api.get(f"/api/v1/sessions/{sid}/frames/search", params={"q": "What did the EXIT sign say earlier?"}).json()
+    assert [item["id"] for item in result["frames"]] == [frame["id"]]
+
+
 def test_spatial_question_uses_fresh_evidence_without_time_clarification(client, monkeypatch):
     api, _ = client
     sid = create(api)

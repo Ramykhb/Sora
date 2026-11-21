@@ -91,6 +91,7 @@ async def ingest_bytes(
         warnings.extend(analysis.warnings)
         caption = ""
         scene_flags = []
+        scene = None
         if not defer_enrichment and not objects_only:
             try:
                 scene = await models.describe(await asyncio.to_thread(vision_image, prepared))
@@ -104,8 +105,14 @@ async def ingest_bytes(
         text = " ".join(
             [caption, analysis.ocr_text, " ".join(obj["label"] for obj in analysis.objects)]
         ).strip()
-        if not text and not force and not defer_enrichment:
+        no_information = not text or (
+            scene is not None and not scene.informative and not scene.uncertain
+            and not analysis.ocr_text.strip() and not analysis.objects
+        )
+        if no_information and not force and not defer_enrichment:
             return IngestResult(status="rejected", reason="uninformative")
+        if defer_enrichment and not force and not text:
+            warnings.append("information_check_pending")
         embedding = None
         if text and not defer_enrichment and not objects_only:
             try:
@@ -169,6 +176,7 @@ async def ingest_bytes(
                     )).all())
                     for old in pending[settings.max_pending_enrichments - 1:]:
                         old.enrichment_status = "skipped"
+                        old.enrichment_retry_at = now()
                         old.processing_warnings = list(dict.fromkeys(
                             [*old.processing_warnings, "enrichment_superseded"]
                         ))

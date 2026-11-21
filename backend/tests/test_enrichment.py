@@ -186,3 +186,197 @@ def test_delayed_caption_preserves_updated_ocr_in_search(client, monkeypatch):
             assert "PLATFORM 7" in row.search_text and "EXIT" not in row.search_text
             assert row.embedding is None
     api.portal.call(verify)
+
+
+def test_superseded_frames_are_backfilled_after_pending_work(client):
+    from app.core.config import settings
+    from app.workers.enrichment import claim_enrichment
+
+    api, factory = client
+    sid = create(api)
+    for _ in range(settings.max_pending_enrichments + 2):
+        api.portal.call(partial(ingest_bytes, image_bytes(), UUID(sid), force=True, defer_enrichment=True))
+    claimed = []
+    for _ in range(settings.max_pending_enrichments + 2):
+        frame_id = api.portal.call(claim_enrichment)
+        assert frame_id is not None
+        claimed.append(frame_id)
+        api.portal.call(enrich_frame, frame_id)
+    assert len(set(claimed)) == settings.max_pending_enrichments + 2
+    assert api.portal.call(claim_enrichment) is None
+    frames = api.get(f"/api/v1/sessions/{sid}/frames").json()
+    assert all(frame["enrichment_status"] == "complete" for frame in frames)
+
+    async def check():
+        async with factory() as db:
+            for frame_id in claimed:
+                row = await db.get(Frame, frame_id)
+                assert row.embedding is not None and row.enrichment_attempts == 1
+
+    api.portal.call(check)
+
+
+def test_failures_retry_after_backoff_and_stop_at_the_attempt_limit(client, monkeypatch):
+    from datetime import timedelta
+    from app.core.config import settings
+    from app.db.models.frame import now
+    from app.workers.enrichment import claim_enrichment
+
+    api, factory = client
+    saved = save_fast(api, create(api))
+
+    async def unavailable(*_args):
+        raise BackendError("Offline", code="vision_unavailable")
+
+    monkeypatch.setattr(models, "describe", unavailable)
+    for attempt in range(1, settings.enrichment_max_attempts + 1):
+        assert api.portal.call(claim_enrichment) == saved.frame.id
+        api.portal.call(enrich_frame, saved.frame.id)
+        assert api.portal.call(claim_enrichment) is None
+
+        async def due():
+            async with factory() as db:
+                row = await db.get(Frame, saved.frame.id)
+                assert row.enrichment_attempts == attempt
+                if attempt < settings.enrichment_max_attempts:
+                    assert row.enrichment_retry_at is not None
+                    row.enrichment_retry_at = now() - timedelta(seconds=1)
+                    await db.commit()
+                else:
+                    assert row.enrichment_retry_at is None
+
+        api.portal.call(due)
+    assert api.portal.call(claim_enrichment) is None
+
+
+def test_failed_enrichment_recovers_without_stale_failure_warnings(client, monkeypatch):
+    from datetime import timedelta
+    from app.db.models.frame import now
+    from app.workers.enrichment import claim_enrichment
+
+    api, factory = client
+    saved = save_fast(api, create(api))
+    describe = models.describe
+
+    async def unavailable(*_args):
+        raise BackendError("Offline", code="vision_unavailable")
+
+    monkeypatch.setattr(models, "describe", unavailable)
+    api.portal.call(claim_enrichment)
+    api.portal.call(enrich_frame, saved.frame.id)
+
+    async def due():
+        async with factory() as db:
+            row = await db.get(Frame, saved.frame.id)
+            row.enrichment_retry_at = now() - timedelta(seconds=1)
+            await db.commit()
+
+    api.portal.call(due)
+    monkeypatch.setattr(models, "describe", describe)
+    assert api.portal.call(claim_enrichment) == saved.frame.id
+    api.portal.call(enrich_frame, saved.frame.id)
+    frame = api.get(f"/api/v1/sessions/{saved.frame.session_id}/frames").json()[0]
+    assert frame["enrichment_status"] == "complete"
+    assert "vision_unavailable" not in frame["processing_warnings"]
+
+
+def test_uninformative_provisional_frames_are_deleted_with_their_objects(client, monkeypatch):
+    import pytest
+    import app.services.frames.ingestion as ingestion
+    from app.services.storage.object_store import get_image
+
+    api, factory = client
+    monkeypatch.setattr(ingestion, "analyze_image", lambda *_: Analysis("", 0, []))
+    saved = save_fast(api, create(api))
+    assert "information_check_pending" in saved.frame.processing_warnings
+
+    async def key():
+        async with factory() as db:
+            frame = await db.get(Frame, saved.frame.id)
+            return frame.original_object_key, frame.processed_object_key
+
+    keys = api.portal.call(key)
+
+    async def empty(*_args):
+        return Scene(caption="Only texture.", informative=False, uncertain=False)
+
+    monkeypatch.setattr(models, "describe", empty)
+    api.portal.call(enrich_frame, saved.frame.id)
+    assert api.get(f"/api/v1/sessions/{saved.frame.session_id}/frames").json() == []
+    for key in keys:
+        with pytest.raises(BackendError, match="unavailable"):
+            get_image(key)
+
+
+def test_uninformative_assessment_preserves_explicit_capture_and_ocr(client, monkeypatch):
+    import app.services.frames.ingestion as ingestion
+
+    api, _ = client
+    sid = UUID(create(api))
+
+    async def empty(*_args):
+        return Scene(caption="Only texture.", informative=False, uncertain=False)
+
+    monkeypatch.setattr(models, "describe", empty)
+    # A detector or OCR observation overrides an uninformative scene assessment.
+    saved = save_fast(api, str(sid))
+    api.portal.call(enrich_frame, saved.frame.id)
+    assert api.get(f"/api/v1/sessions/{sid}/frames/{saved.frame.id}").status_code == 200
+    monkeypatch.setattr(ingestion, "analyze_image", lambda *_: Analysis("", 0, []))
+    forced = api.portal.call(partial(ingest_bytes, image_bytes(), sid, force=True, defer_enrichment=True))
+    api.portal.call(enrich_frame, forced.frame.id)
+    assert api.get(f"/api/v1/sessions/{sid}/frames/{forced.frame.id}").status_code == 200
+    other_sid = UUID(create(api))
+    rejected = api.portal.call(partial(ingest_bytes, image_bytes(), other_sid))
+    assert rejected.status == "rejected" and rejected.reason == "uninformative"
+
+
+def test_retry_migration_preserves_rows_and_only_backfills_superseded_frames(tmp_path):
+    import importlib.util
+    from pathlib import Path
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import create_engine, inspect, text
+
+    path = Path(__file__).resolve().parents[1] / "migrations/versions/0009_enrichment_retry.py"
+    spec = importlib.util.spec_from_file_location("retry_migration", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    engine = create_engine("sqlite:///" + str(tmp_path / "retry.db"))
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE stored_frames (id INTEGER PRIMARY KEY, enrichment_status TEXT, processing_warnings TEXT)"))
+        connection.execute(text("INSERT INTO stored_frames VALUES (1, 'skipped', :warnings), (2, 'skipped', '[]')"), {"warnings": '["enrichment_superseded"]'})
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        rows = connection.execute(text("SELECT enrichment_attempts, enrichment_retry_at FROM stored_frames ORDER BY id")).all()
+        assert rows[0][0] == rows[1][0] == 0
+        assert rows[0][1] is not None and rows[1][1] is None
+        migration.downgrade()
+        assert {column["name"] for column in inspect(connection).get_columns("stored_frames")} == {"id", "enrichment_status", "processing_warnings"}
+    engine.dispose()
+
+
+def test_uninformative_assessment_keeps_images_already_used_as_answer_evidence(client, monkeypatch):
+    import app.services.frames.ingestion as ingestion
+    from app.db.models import QuestionAnswer
+    from app.db.models.frame import now
+    from datetime import timedelta
+
+    api, factory = client
+    monkeypatch.setattr(ingestion, "analyze_image", lambda *_: Analysis("", 0, []))
+    saved = save_fast(api, create(api))
+
+    async def cite():
+        async with factory() as db:
+            db.add(QuestionAnswer(session_id=saved.frame.session_id, question="What did I see?",
+                                  answer="No recognizable content.", language="en", uncertain=True,
+                                  evidence_frame_ids=[str(saved.frame.id)], expires_at=now() + timedelta(hours=1)))
+            await db.commit()
+
+    async def empty(*_args):
+        return Scene(caption="Only texture.", informative=False, uncertain=False)
+
+    api.portal.call(cite)
+    monkeypatch.setattr(models, "describe", empty)
+    api.portal.call(enrich_frame, saved.frame.id)
+    assert api.get(f"/api/v1/sessions/{saved.frame.session_id}/frames/{saved.frame.id}").status_code == 200
