@@ -206,7 +206,11 @@ def test_late_results_are_discarded(obstacle_scene, monkeypatch, change):
 
     async def exercise():
         async with events.subscribe(sid) as queue:
-            await manager.check_obstacles(sid, state)
+            if change == 'stale':
+                with pytest.raises(BackendError, match='expired'):
+                    await manager.check_obstacles(sid, state)
+            else:
+                await manager.check_obstacles(sid, state)
             assert queue.empty()
             assert state.history_queue.empty()
 
@@ -339,3 +343,54 @@ def test_cloud_mode_keeps_local_observations_without_duplicate_local_alerts(clie
                 await manager.stop(sid)
 
     api.portal.call(exercise)
+
+
+@pytest.mark.parametrize('failure', ['provider', 'timeout'])
+def test_cloud_failure_enables_local_alerts_and_recovery_stops_fallback(obstacle_scene, monkeypatch, failure):
+    from app.services.frames import processing
+
+    manager, sid, state, _ = obstacle_scene
+    monkeypatch.setattr(settings, 'gemini_obstacle_interval_seconds', .01)
+    monkeypatch.setattr(processing, 'detect_live', lambda _: (
+        100, 100, [{'label': 'chair', 'confidence': .9, 'box': [20, 20, 80, 95]}],
+    ))
+    healthy = False
+
+    async def ask(*args):
+        if not healthy:
+            if failure == 'timeout':
+                raise TimeoutError()
+            raise BackendError('Provider failed', code='gemini_unavailable')
+        return gemini.GeminiAnswer(answer='The image is ambiguous.', uncertain=True, visible_path='unknown')
+
+    monkeypatch.setattr(gemini, 'ask_obstacles', ask)
+
+    async def exercise():
+        nonlocal healthy
+        async with events.subscribe(sid) as queue:
+            tasks = [asyncio.create_task(manager.detect_obstacles(sid, state)),
+                     asyncio.create_task(manager.detect(sid, state))]
+            try:
+                while (await asyncio.wait_for(queue.get(), 1))['type'] != 'obstacle_error':
+                    pass
+                manager.enqueue_detection(state, b'jpeg', now())
+                await asyncio.wait_for(state.detection_queue.join(), 1)
+                messages = []
+                while not queue.empty():
+                    messages.append(queue.get_nowait())
+                assert any(item['type'] == 'alert' and item['label'] == 'chair' for item in messages)
+                assert state.obstacle_error
+                healthy = True
+                while (await asyncio.wait_for(queue.get(), 1))['type'] != 'obstacle_status':
+                    pass
+                assert state.obstacle_error is None
+                manager.enqueue_detection(state, b'jpeg', now())
+                await asyncio.wait_for(state.detection_queue.join(), 1)
+                while not queue.empty():
+                    assert queue.get_nowait()['type'] != 'alert'
+            finally:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+    asyncio.run(exercise())

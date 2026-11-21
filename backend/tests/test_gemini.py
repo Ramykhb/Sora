@@ -123,7 +123,7 @@ def test_cloud_deadline_uses_local_fallback_instead_of_slow_local_vlm(client, cl
     assert "local_detection_fallback" in answer.processing_warnings
     assert answer.uncertain
     if question == "Is it safe to walk?":
-        assert answer.answer.startswith("The path ahead looks obstructed")
+        assert answer.answer.startswith("Not sure about the walking path")
 
 
 def test_cloud_walking_answer_cannot_declare_route_safe(client, cloud, monkeypatch):

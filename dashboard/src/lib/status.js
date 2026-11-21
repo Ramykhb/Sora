@@ -3,7 +3,8 @@ export function dashboardStatus({ selectedId, connection, status, error }) {
   const connected = Boolean(selectedId) && connection === 'Connected';
   const streaming = Boolean(status?.streaming);
   const stale = streaming && (status.last_frame_seconds_ago ?? 0) > 10;
-  const processingError = status?.processing_error || status?.detection_error;
+  const processingError = status?.processing_error || status?.detection_error || (status?.obstacle_error
+    ? 'Advanced obstacle detection unavailable. Using limited local object warnings; saved alert requests are paused.' : null);
   return {
     connected, streaming,
     healthy: connected && streaming && !stale && !processingError && !error,

@@ -164,11 +164,9 @@ def walking_observation(objects, width, language, height=0):
         center = (obj["box"][0] + obj["box"][2]) / (2 * width)
         return "left" if center < .3 else "right" if center > .7 else "center"
 
-    def describe(obj, state_unknown_distance=False):
+    def describe(obj):
         detail = places[position(obj)]
         distance = depth.phrase(obj["label"], obj.get("box", ()), width, height, language, short=True)
-        if not distance and state_unknown_distance:
-            distance = {"en": "distance unclear", "fr": "distance indéterminée", "ar": "المسافة غير واضحة"}[language]
         return f"{LABELS[obj['label']][language]} ({detail}{', ' + distance if distance else ''})"
 
     supported.sort(key=lambda obj: (position(obj) != "center", -obj["confidence"]))
@@ -177,20 +175,8 @@ def walking_observation(objects, width, language, height=0):
         "fr": {"left": "gauche", "center": "centre", "right": "droite"},
         "ar": {"left": "اليسار", "center": "الوسط", "right": "اليمين"},
     }[language]
-    # A detected object in the middle third sits in the camera's forward path.
-    # Detection cannot certify the floor, but it can establish an obstruction.
-    center = list(dict.fromkeys(
-        describe(obj, state_unknown_distance=True) for obj in supported if position(obj) == "center"
-    ))[:3]
-    if center:
-        return {
-            "en": "The path ahead looks obstructed: the camera detects " + ", ".join(center)
-                  + " directly ahead. Object detection can't confirm the ground or a way around it, so treat the path as blocked.",
-            "fr": "Le passage devant semble obstrué : la caméra détecte " + ", ".join(center)
-                  + " juste devant. La détection d’objets seule ne permet pas d’évaluer le sol ni de trouver un contournement ; considérez le passage comme bloqué.",
-            "ar": "المسار أمامك يبدو مسدوداً: تكتشف الكاميرا " + "، ".join(center)
-                  + " مباشرة أمامك. كشف الأجسام وحده لا يكفي لتقييم الأرض أو إيجاد طريق بديل؛ اعتبر المسار مسدوداً.",
-        }[language]
+    # Image position alone cannot establish intersection with a walking path.
+    # Report detections (including tiny central objects) without declaring a blocker.
     names = list(dict.fromkeys(describe(obj) for obj in supported))[:5]
     if names:
         observed = {

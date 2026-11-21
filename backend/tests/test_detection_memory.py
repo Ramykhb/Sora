@@ -219,7 +219,7 @@ def test_non_matches_and_failed_or_late_results_keep_memory_and_stay_silent(memo
 
     async def exercise():
         async with events.subscribe(sid) as queue:
-            if failure == 'provider-error':
+            if failure in {'provider-error', 'stale'}:
                 with pytest.raises(BackendError):
                     await manager.check_obstacles(sid, state)
             else:

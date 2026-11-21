@@ -125,6 +125,7 @@ export function DashboardProvider({ children }) {
       if (!['heartbeat', 'ready', 'observation'].includes(event.type)) setEvents(previous => [{ ...event, receivedAt: new Date().toISOString() }, ...previous].slice(0, 30));
       if (event.type === 'observation' && isFreshObservation(event)) setObservation(event);
       if (event.type === 'stream_stopped') setObservation(null);
+      if (event.type === 'obstacle_error' || event.type === 'obstacle_status') setStatus(previous => previous ? { ...previous, obstacle_error: event.type === 'obstacle_error' ? event.code || 'unavailable' : null } : previous);
       if (event.frame) setFrames(previous => [event.frame, ...previous.filter(item => item.id !== event.frame.id)].sort((a, b) => Date.parse(b.captured_at) - Date.parse(a.captured_at)).slice(0, Math.max(50, previous.length)));
       if (event.question) {
         setQuestions(previous => [event.question, ...previous.filter(item => item.id !== event.question.id)]);

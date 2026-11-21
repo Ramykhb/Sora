@@ -19,15 +19,37 @@ FORBIDDEN = re.compile(
     r"avancez|traversez|الطريق خال|تقدم للأمام|اعبر الآن",
     re.I,
 )
+ASSURANCE = re.compile(
+    r"\b(?:path|walkway|route|passage|road|way)\b.{0,30}\b(?:is|looks?|seems?|appears?)\s+"
+    r"(?:(?:completely|perfectly|entirely|totally|all)\s+)?clear\b|"
+    r"\byou\s+(?:can|may)\s+(?:proceed|walk|cross|advance|continue|go ahead)\b|"
+    r"\b(?:no|without any|without)\s+(?:risk|danger)\b|\brisk[ -]?free\b|"
+    r"\b(?:sans|aucun)\s+risque\b|"
+    r"\bvous\s+pouvez\s+(?:marcher|avancer|traverser|continuer)\b|"
+    r"\b(?:chemin|passage|trajet|voie)\b.{0,25}\best\s+(?:tout a fait\s+)?(?:sur|libre|degage)\b|"
+    r"(?:يمكنك|بامكانك)\s+(?:المشي|العبور|التقدم)|بدون خطر|بلا خطر|"
+    r"(?:الطريق|المسار|الممر)\s+(?:امن|امنة|خال(?:يا)?\s+من\s+العوائق)",
+    re.I,
+)
 
 
 def blocked_text(text):
     normalized = "".join(
         character
-        for character in unicodedata.normalize("NFKC", text)
-        if unicodedata.category(character) != "Mn"
+        for character in unicodedata.normalize("NFKD", text)
+        if unicodedata.category(character) not in {"Mn", "Cf"}
     )
-    return bool(FORBIDDEN.search(normalized))
+    normalized = " ".join(normalized.replace("ـ", "").split())
+    if FORBIDDEN.search(text) or FORBIDDEN.search(normalized):
+        return True
+    for match in ASSURANCE.finditer(normalized):
+        # A specific inability to confirm clearance is not an assurance. Only
+        # exempt that claim, never a later "you can proceed" in the same answer.
+        prefix = normalized[max(0, match.start() - 60):match.start()]
+        if re.search(r"(?:cannot|can't|can not)\s+(?:confirm|establish|say|determine)\s+(?:that\s+)?(?:the\s+)?$", prefix, re.I):
+            continue
+        return True
+    return False
 
 
 def guard_answer(text, uncertain, language, evidence_ids):

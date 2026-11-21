@@ -9,6 +9,13 @@ from app.services.ai.safety import UNKNOWN, guard_answer
         ("en", "The path is clear. Go ahead."),
         ("fr", "Vous pouvez avancer sans danger."),
         ("ar", "الطريق آمن ويمكنك العبور بأمان."),
+        ("en", "The walkway is completely clear. You can proceed."),
+        ("en", "The route looks perfectly clear."),
+        ("en", "You may cross now without risk."),
+        ("en", "The path is cl\u200bear."),
+        ("fr", "Vous pouvez marcher sans risque."),
+        ("fr", "Le passage est dégagé."),
+        ("ar", "الْمَسَارُ خَالٍ مِنَ الْعَوَائِقِ، يُمْكِنُكَ الْمَشْيُ."),
     ],
 )
 def test_assurances_replaced_with_uncertainty(language, text):
@@ -21,6 +28,17 @@ def test_assurances_replaced_with_uncertainty(language, text):
 def test_no_evidence_never_yields_confident_answer(language):
     answer, uncertain = guard_answer("A chair is in front of you.", False, language, [])
     assert answer == UNKNOWN[language] and uncertain
+
+
+@pytest.mark.parametrize("language,text", [
+    ("en", "I can't confirm the walkway is clear from this image."),
+    ("en", "A chair is visible in the center; I cannot judge the whole route."),
+    ("fr", "Une chaise est visible ; je ne peux pas évaluer tout le trajet."),
+    ("ar", "يوجد كرسي في وسط الصورة ولا يمكنني تقييم المسار كاملاً."),
+])
+def test_grounded_observations_and_specific_limits_are_preserved(language, text):
+    answer, uncertain = guard_answer(text, True, language, ["frame-1"])
+    assert answer == text and uncertain
 
 
 def test_weak_evidence_retains_uncertainty_without_repetitive_preface():

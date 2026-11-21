@@ -19,3 +19,12 @@ test('missing or invalid latency is not converted into a fabricated measurement'
   assert.equal(latencyLabel(142.4), '142 ms');
   assert.equal(latencyLabel(1800), '1.8 s');
 });
+
+test('cloud obstacle failure is degraded even while local detection and video work', () => {
+  const live = { selectedId: 's', connection: 'Connected', status: { streaming: true, last_frame_seconds_ago: 0, obstacle_error: 'gemini_unavailable' } };
+  const failed = dashboardStatus(live);
+  assert.equal(failed.healthy, false);
+  assert.equal(failed.label, 'Needs attention');
+  assert.match(failed.detail, /local object warnings/);
+  assert.equal(dashboardStatus({ ...live, status: { ...live.status, obstacle_error: null } }).healthy, true);
+});

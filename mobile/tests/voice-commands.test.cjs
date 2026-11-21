@@ -426,7 +426,7 @@ test('old native builds and disabled voice commands leave the app usable', async
 
 const cameraSource = ts.transpileModule(fs.readFileSync(require.resolve('../src/app/(tabs)/camera.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 async function voiceStartCamera(granted, { active = false, paused = false, question, command, closeError, language = 'en', event, detectionEnabled = true, toggleDetection, detectionError } = {}) {
-  const effects = [], requests = [], spoken = [], updates = [], alerts = [], sessionUpdates = [];
+  const effects = [], requests = [], spoken = [], updates = [], alerts = [], sessionUpdates = [], obstacleStatusUpdates = [];
   const session = { id: 'voice-session', status: 'active', language: 'en', alerts_enabled: detectionEnabled };
   const reply = { answer: 'A chair beside a table.', language: 'en' };
   let voiceQuestion, voiceControl, liveEvent, stateIndex = 0;
@@ -437,7 +437,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
     require(name) {
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
       if (name === 'react') return {
-        useState: initial => { const index = stateIndex++; return [active && index === 0 ? session : active && index === 8 ? true : index === 12 ? paused : initial, value => { updates.push(value); if (index === 0) sessionUpdates.push(value); }]; }, useRef: current => ({ current }),
+        useState: initial => { const index = stateIndex++; return [active && index === 0 ? session : active && index === 8 ? true : index === 12 ? paused : initial, value => { updates.push(value); if (index === 0) sessionUpdates.push(value); if (index === 13) obstacleStatusUpdates.push(value); }]; }, useRef: current => ({ current }),
         useCallback: fn => fn, useEffect: fn => effects.push(fn), useSyncExternalStore: (_, snapshot) => snapshot(),
       };
       if (name === 'react-native') return { AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) }, StyleSheet: { create: value => value }, Platform: { OS: 'ios' } };
@@ -461,7 +461,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
   // React effects may run again: one voice request must create only one session.
   effects.forEach(fn => fn());
   await flush();
-  if (event) liveEvent?.(event);
+  if (event) for (const item of Array.isArray(event) ? event : [event]) liveEvent?.(item);
   if (typeof toggleDetection === 'boolean') {
     const findSwitch = node => {
       if (!node || typeof node !== 'object') return null;
@@ -479,7 +479,7 @@ async function voiceStartCamera(granted, { active = false, paused = false, quest
   let controlReply, controlError;
   try { if (command) controlReply = await voiceControl(command); } catch (error) { controlError = error; }
   cleanups.forEach(fn => { if (typeof fn === 'function') fn(); });
-  return { requests, spoken, updates, alerts, sessionUpdates, session, askedReply, controlReply, controlError };
+  return { requests, spoken, updates, alerts, sessionUpdates, obstacleStatusUpdates, session, askedReply, controlReply, controlError };
 }
 
 test('a voice start requests camera permission and creates exactly one streaming session without taps', async () => {
@@ -978,6 +978,15 @@ test('live camera announces fresh obstacle alerts and ignores stale or non-alert
     const ignored = await voiceStartCamera(true, { active: true, event });
     assert.equal(ignored.alerts.length, 0);
   }
+});
+
+test('live camera shows cloud degradation and clears it on provider recovery', async () => {
+  const app = await voiceStartCamera(true, { active: true, event: [
+    { type: 'obstacle_error', code: 'gemini_unavailable' },
+    { type: 'obstacle_status', code: null },
+  ] });
+  assert.deepEqual(app.obstacleStatusUpdates, [true, false]);
+  assert.equal(app.alerts.length, 0);
 });
 
 

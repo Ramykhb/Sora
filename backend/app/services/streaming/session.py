@@ -174,7 +174,7 @@ class Streams:
                 state.observation = observation
                 state.observation_content = content
                 events.publish(session_id, observation)
-                if session.alerts_enabled and not gemini.obstacles_configured():
+                if session.alerts_enabled and (not gemini.obstacles_configured() or state.obstacle_error):
                     view = SimpleNamespace(
                         width=width, height=height, detected_objects=objects, scene_flags=[],
                     )
@@ -185,7 +185,9 @@ class Streams:
                     visible = {label for label, _ in candidates}
                     state.alert_times = {
                         key: value for key, value in state.alert_times.items()
-                        if key in visible and current - value < settings.alert_cooldown_seconds
+                        if key == "gemini_obstacle" or (
+                            key in visible and current - value < settings.alert_cooldown_seconds
+                        )
                     }
                     for label, message in candidates:
                         if label in state.alert_times:
@@ -275,8 +277,13 @@ class Streams:
             return
         expires = timestamp + timedelta(seconds=settings.gemini_walking_max_age_seconds)
         if now() >= expires:
-            return
+            raise BackendError("Automatic assessment expired", 503, "gemini_obstacle_stale")
+        if blocked_text(result.answer):
+            raise BackendError("Automatic assessment rejected", 503, "gemini_obstacle_invalid")
+        recovered = state.obstacle_error is not None
         state.obstacle_error = None
+        if recovered:
+            events.publish(session_id, {"type": "obstacle_status", "code": None})
         current = monotonic()
         obstacle_message = None
         if result.visible_path == "unobstructed" and not result.uncertain:

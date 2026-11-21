@@ -48,16 +48,21 @@ function Capture() {
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [focused, setFocused] = useState(true); const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [streamPaused, setStreamPaused] = useState(false);
+  const [obstacleUnavailable, setObstacleUnavailable] = useState(false);
   useEffect(() => {
     if (!session || mode !== 'live' || !focused || !foreground || streamPaused) return;
+    let cancelled = false;
     const live = connectLive(api, `/sessions/${session.id}/events`, event => {
       if (event.type === 'session_updated' && event.session) setSession(event.session);
+      if (event.type === 'obstacle_error') setObstacleUnavailable(true);
+      if (event.type === 'obstacle_status') setObstacleUnavailable(false);
+      if (event.type === 'ready') void api.request<{ obstacle_error?: string }>(`/sessions/${session.id}/stream/status`).then(status => { if (!cancelled) setObstacleUnavailable(!!status.obstacle_error); }).catch(() => {});
       if (session.alerts_enabled && event.type === 'alert' && event.message && event.id && event.expires_at && Date.parse(event.expires_at) > Date.now()) {
         setObstacleAlert({ message: event.message, expiresAt: event.expires_at });
         void speech.alert(event.id, event.message, event.language || session.language, event.expires_at, event.label === 'remembered_detection').catch(() => {});
       }
     }, () => {});
-    return () => { live.close(); setObstacleAlert(null); };
+    return () => { cancelled = true; live.close(); setObstacleAlert(null); };
   }, [api, session, mode, focused, foreground, streamPaused]);
   useEffect(() => {
     if (!obstacleAlert) return;
@@ -214,6 +219,7 @@ function Capture() {
           <Label size={11} style={{ color: controlColor }}>Checks every 5 seconds when on. Off pauses all automatic detection and saved alerts.</Label>
         </View>}
         {!!obstacleAlert && <Label accessibilityRole="alert" style={{ color: controlColor }} size={14}>{obstacleAlert.message}</Label>}
+        {session.alerts_enabled && obstacleUnavailable && <Label accessibilityRole="alert" style={{ color: colors.danger }} size={14}>Advanced obstacle detection unavailable. Using limited local object warnings; saved alert requests are paused.</Label>}
         {!!error && <Label accessibilityRole="alert" style={{ color: colors.danger, backgroundColor: colors.surface, padding: 12, borderRadius: 12 }}>{error}</Label>}
         {preferences.voiceCommands && <Label style={{ color: controlColor, textAlign: 'center' }} size={12}>{voice.status}</Label>}
         {mode === 'live' && routePlayback && routePlayback.text !== voiceAnswer && <RouteAnswer text={routePlayback.text} language={routePlayback.language} color={controlColor} onError={setError} />}
