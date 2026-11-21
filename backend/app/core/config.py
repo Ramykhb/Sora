@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     depth_vertical_fov_degrees: float = Field(default=50, ge=20, le=100)
     max_pending_enrichments: int = Field(default=2, ge=1, le=10)
     enrichment_max_attempts: int = Field(default=3, ge=1, le=10)
+    detection_watch_retention_days: int = Field(default=7, ge=1, le=30)
     enrichment_retry_seconds: float = Field(default=30, ge=1, le=3600)
     retrieval_min_similarity: float = Field(default=0.45, ge=0, le=1)
     recent_evidence_seconds: int = Field(default=15, ge=1)

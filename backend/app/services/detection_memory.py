@@ -1,5 +1,6 @@
 """Durable account-owned targets, consumed only alongside a persisted alert."""
 import hashlib
+from datetime import timedelta
 import re
 import unicodedata
 from uuid import uuid4
@@ -7,6 +8,7 @@ from uuid import uuid4
 from sqlalchemy import delete, func, select
 
 from app.core.errors import BackendError
+from app.core.config import settings
 from app.db.auth_models import User
 from app.db.models import Alert, CaptureSession, DetectionWatch
 from app.db.models.frame import now
@@ -15,6 +17,10 @@ from app.services.ai import gemini
 from app.services.sessions import get_session
 
 MAX_PENDING = 20
+
+
+def oldest_active():
+    return now() - timedelta(days=settings.detection_watch_retention_days)
 
 
 def request_target(question):
@@ -66,6 +72,9 @@ async def remember(session_id, target, language, requester_id=None):
     async with SessionFactory() as db:
         # Serialize registration per account, including the pending-target limit.
         await db.scalar(select(User.id).where(User.id == session.owner_id).with_for_update())
+        await db.execute(delete(DetectionWatch).where(
+            DetectionWatch.owner_id == session.owner_id, DetectionWatch.created_at < oldest_active(),
+        ))
         existing = await db.scalar(select(DetectionWatch).where(
             DetectionWatch.owner_id == session.owner_id, DetectionWatch.target_key == key,
         ))
@@ -75,9 +84,9 @@ async def remember(session_id, target, language, requester_id=None):
             ))
             if count >= MAX_PENDING:
                 return {
-                    "en": "You already have 20 pending alerts. Wait for a target to be detected before adding another.",
-                    "fr": "Vous avez déjà 20 alertes en attente. Attendez une détection avant d’en ajouter une autre.",
-                    "ar": "لديك بالفعل 20 تنبيهاً معلقاً. انتظر اكتشاف أحد الأهداف قبل إضافة آخر.",
+                    "en": "You already have 20 pending alerts. Cancel an unwanted request in Settings before adding another.",
+                    "fr": "Vous avez déjà 20 alertes en attente. Annulez une demande dans les réglages avant d’en ajouter une autre.",
+                    "ar": "لديك 20 تنبيهاً معلقاً. ألغ طلباً غير مرغوب فيه من الإعدادات قبل إضافة آخر.",
                 }[language], True, [], ["alert_memory_full"]
             db.add(DetectionWatch(owner_id=session.owner_id, target=target, target_key=key))
             await db.commit()
@@ -92,6 +101,11 @@ async def remember(session_id, target, language, requester_id=None):
             "fr": "La détection est désactivée. Activez Détecter les obstacles pour lancer les vérifications.",
             "ar": "الكشف متوقف. فعّل كشف العوائق لبدء الفحص.",
         }[language]
+    confirmation += " " + {
+        "en": f"Manage requests in Settings. Unmatched requests expire after {settings.detection_watch_retention_days} days.",
+        "fr": f"Gérez les demandes dans les réglages. Elles expirent après {settings.detection_watch_retention_days} jours sans détection.",
+        "ar": f"أدر الطلبات من الإعدادات. تنتهي الطلبات غير المطابقة بعد {settings.detection_watch_retention_days} أيام.",
+    }[language]
     return confirmation, False, [], []
 
 
@@ -101,6 +115,7 @@ async def pending(owner_id):
     async with SessionFactory() as db:
         rows = (await db.scalars(select(DetectionWatch).where(
             DetectionWatch.owner_id == owner_id,
+            DetectionWatch.created_at >= oldest_active(),
         ).order_by(DetectionWatch.created_at, DetectionWatch.id).limit(MAX_PENDING))).all()
         return [{"id": str(row.id), "target": row.target} for row in rows]
 
@@ -122,6 +137,7 @@ async def fulfill(owner_id, session_id, matched_ids, captured_at, expires_at, is
         # Rollback preserves requests if alert persistence fails.
         rows = (await db.execute(delete(DetectionWatch).where(
             DetectionWatch.owner_id == owner_id,
+            DetectionWatch.created_at >= oldest_active(),
             DetectionWatch.id.in_([UUID(value) for value in matched_ids]),
         ).returning(DetectionWatch.id, DetectionWatch.target))).all()
         if not rows or not is_current() or now() >= expires_at:

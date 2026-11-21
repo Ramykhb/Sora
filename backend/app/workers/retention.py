@@ -5,7 +5,7 @@ from time import monotonic
 from sqlalchemy import delete, select
 from app.core.config import settings
 from app.db.auth_models import AccountToken, AuthRateLimit, AuthSession
-from app.db.models import CaptureSession, Frame, ObjectDeletion, QuestionAnswer
+from app.db.models import CaptureSession, DetectionWatch, Frame, ObjectDeletion, QuestionAnswer
 from app.db.models.frame import now
 from app.db.session import SessionFactory
 from app.services.storage.object_store import delete_image
@@ -64,6 +64,9 @@ async def cleanup_once():
             if frames:
                 await db.execute(delete(Frame).where(Frame.id.in_([frame.id for frame in frames])))
             await db.execute(delete(QuestionAnswer).where(QuestionAnswer.expires_at <= now()))
+            await db.execute(delete(DetectionWatch).where(
+                DetectionWatch.created_at < now() - timedelta(days=settings.detection_watch_retention_days),
+            ))
             if expired_sessions:
                 await db.execute(
                     delete(CaptureSession).where(CaptureSession.id.in_(expired_sessions))

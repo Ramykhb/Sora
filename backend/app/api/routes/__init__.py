@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from app.core.auth import current_user, owned_session
-from app.api.routes import dashboard, destinations, emergency, frames, live, questions, sessions, speech
+from app.api.routes import dashboard, destinations, detection_watches, emergency, frames, live, questions, sessions, speech
 
 router = APIRouter(dependencies=[Depends(current_user)])
 router.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
@@ -24,5 +24,6 @@ router.include_router(
 )
 router.include_router(emergency.router, prefix="/emergency", tags=["emergency"])
 router.include_router(destinations.router, prefix="/destinations", tags=["destinations"])
+router.include_router(detection_watches.router, prefix="/detection-watches", tags=["detection-watches"])
 router.include_router(speech.router, prefix="/speech", tags=["speech"])
 router.include_router(dashboard.router, tags=["dashboard"])

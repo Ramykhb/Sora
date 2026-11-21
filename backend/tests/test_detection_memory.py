@@ -527,3 +527,49 @@ def test_phone_transcript_variations_create_a_watch_instead_of_an_image_answer(m
     result = ask(api, sid, question)
     assert "I'll alert you once when I detect a laptop" in result['answer']
     assert [watch['target'] for watch in api.portal.call(detection_memory.pending, owner)] == ['a laptop']
+
+
+def test_watch_management_edits_cancel_and_clear_are_account_scoped(memory):
+    from test_auth import account, headers
+    api, _, sid, owner = memory
+    ask(api, sid, 'alert me when you detect a car')
+    ask(api, sid, 'alert me when you detect a dog')
+    rows = api.get('/api/v1/detection-watches').json()
+    assert len(rows) == 2 and all(row['expires_at'] for row in rows)
+    watch = rows[0]
+    other = headers(account(api, 'other-watch-owner@example.com'))
+    assert api.get('/api/v1/detection-watches', headers=other).json() == []
+    assert api.put('/api/v1/detection-watches/' + watch['id'], json={'target': 'a bus'}, headers=other).status_code == 404
+    assert api.delete('/api/v1/detection-watches/' + watch['id'], headers=other).status_code == 404
+    assert api.delete('/api/v1/detection-watches', headers=other).status_code == 204
+    assert len(api.portal.call(detection_memory.pending, owner)) == 2
+    assert api.put('/api/v1/detection-watches/' + watch['id'], json={'target': '   '}).status_code == 422
+    assert api.put('/api/v1/detection-watches/' + watch['id'], json={'target': 'a bus'}).status_code == 204
+    edited = next(row for row in api.get('/api/v1/detection-watches').json() if row['target'] == 'a bus')
+    assert edited['id'] != watch['id']
+    assert edited['expires_at'] == watch['expires_at']
+    assert api.delete('/api/v1/detection-watches/' + edited['id']).status_code == 204
+    assert len(api.portal.call(detection_memory.pending, owner)) == 1
+    assert api.delete('/api/v1/detection-watches').status_code == 204
+    assert api.portal.call(detection_memory.pending, owner) == []
+
+
+def test_expired_watches_do_not_block_registration(memory):
+    from app.core.config import settings
+    from app.workers.retention import cleanup_once
+    api, factory, sid, owner = memory
+
+    async def expire():
+        async with factory() as db:
+            db.add_all([DetectionWatch(owner_id=owner, target=f'expired {i}', target_key=f'expired-{i}',
+                        created_at=now() - timedelta(days=settings.detection_watch_retention_days + 1)) for i in range(20)])
+            await db.commit()
+
+    api.portal.call(expire)
+    assert api.portal.call(detection_memory.pending, owner) == []
+    assert api.get('/api/v1/detection-watches').json() == []
+    result = ask(api, sid, 'alert me when you detect a car')
+    assert 'alert_memory_full' not in result['processing_warnings']
+    assert len(api.portal.call(detection_memory.pending, owner)) == 1
+    api.portal.call(cleanup_once)
+    assert len(api.portal.call(detection_memory.pending, owner)) == 1
