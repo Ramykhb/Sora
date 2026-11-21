@@ -47,6 +47,8 @@ def query_terms(question, timed=False):
         from app.services.ai.time_query import NUMBER_WORDS
 
         terms -= words(" ".join(NUMBER_WORDS))
+        if timed:
+            terms -= words("day days jour jours يوم يوما أيام ايام")
         terms = {term for term in terms if not re.fullmatch(r"\d+(?:am|pm|h)?", term)}
     return sorted(terms)[:12]
 

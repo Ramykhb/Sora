@@ -175,7 +175,13 @@ def test_time_question_uses_only_matching_saved_frames_and_explicit_bounds_win(c
 
 
 @pytest.mark.parametrize("has_yesterday_frame", [True, False])
-def test_yesterday_question_uses_only_previous_day_or_reports_missing_memory(client, monkeypatch, has_yesterday_frame):
+@pytest.mark.parametrize("embedding_offline", [True, False])
+@pytest.mark.parametrize("question,days", [
+    ("What did I see yesterday?", 1),
+    ("What did I see the day before yesterday?", 2),
+    ("What did I see two days ago?", 2),
+])
+def test_yesterday_question_uses_only_previous_day_or_reports_missing_memory(client, monkeypatch, has_yesterday_frame, question, days, embedding_offline):
     from sqlalchemy import update
     import app.services.ai.assistant as assistant
 
@@ -189,7 +195,7 @@ def test_yesterday_question_uses_only_previous_day_or_reports_missing_memory(cli
         yesterday = api.post(f"/api/v1/sessions/{sid}/frames", files={
             "image": ("yesterday.png", image_bytes(), "image/png"),
         }, data={"force": "true"}).json()["frame"]
-        captured = now().replace(hour=12, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        captured = now().replace(hour=12, minute=0, second=0, microsecond=0) - timedelta(days=days)
 
         async def age():
             async with factory() as db:
@@ -213,8 +219,15 @@ def test_yesterday_question_uses_only_previous_day_or_reports_missing_memory(cli
     monkeypatch.setattr(assistant, "answer_overview", forbidden)
     monkeypatch.setattr(assistant, "answer_cloud_view", forbidden)
     monkeypatch.setattr(models, "chat", inspect)
+    if embedding_offline:
+        from app.core.errors import BackendError
+
+        async def unavailable(*_args, **_kwargs):
+            raise BackendError("Offline", code="embedding_unavailable")
+
+        monkeypatch.setattr(models, "embed", unavailable)
     response = api.post(f"/api/v1/sessions/{sid}/questions", json={
-        "question": "What did I see yesterday?", "scope": "auto", "timezone": "UTC",
+        "question": question, "scope": "auto", "timezone": "UTC",
     })
     assert response.status_code == 200, response.text
     result = response.json()

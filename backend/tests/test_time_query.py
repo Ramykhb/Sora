@@ -123,6 +123,33 @@ def test_yesterday_respects_daylight_saving_day_length():
     assert window.until == datetime(2026, 3, 9, 3, 59, 59, 999999, tzinfo=timezone.utc)
 
 
+@pytest.mark.parametrize("question", [
+    "What did I see the day before yesterday?",
+    "Qu’ai-je vu avant-hier ?",
+    "ماذا رأيت قبل أمس؟",
+    "What did I see two days ago?",
+    "Qu'ai-je vu il y a deux jours ?",
+    "ماذا رأيت قبل ٢ أيام؟",
+])
+def test_compound_days_select_the_correct_calendar_day(question):
+    window = interpret_time(question, "Asia/Beirut", REFERENCE)
+    assert window.since == datetime(2026, 11, 15, 22, tzinfo=timezone.utc)
+    assert window.until == datetime(2026, 11, 16, 21, 59, 59, 999999, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize("question", [
+    "What did I see yesterday five minutes ago?",
+    "What did I see yesterday or tomorrow?",
+    "What did I see three weeks ago?",
+    "What did I see twenty five days ago?",
+    "What did I see a hundred and two days ago?",
+    "What did I see between yesterday and today?",
+    "ماذا رأيت قبل ثلاثة أيام؟",
+])
+def test_unsupported_or_conflicting_days_do_not_silently_select_another_period(question):
+    assert interpret_time(question, "Asia/Beirut", REFERENCE).clarification == "time"
+
+
 @pytest.mark.parametrize("zone", [None, "Bad/Zone"])
 def test_yesterday_needs_a_valid_device_timezone(zone):
     assert interpret_time("What did I see yesterday?", zone, REFERENCE).clarification == "timezone"

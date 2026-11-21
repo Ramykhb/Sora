@@ -43,6 +43,15 @@ AT = re.compile(r"\b(?:at|a|الساعة)\s+")
 SEPARATOR = re.compile(r"\s*(?:and|et|و|الى|إلى|حتى)\s+(?:الساعة\s+)?")
 DAY_REFERENCE = re.compile(r"\b(?:yesterday|tomorrow|hier|demain|امس|البارحة|غدا)\b")
 YESTERDAY = {"yesterday", "hier", "امس", "البارحة"}
+DAY_BEFORE_YESTERDAY = re.compile(r"\bday\s+before\s+yesterday\b|\bavant[- ]hier\b|قبل\s+(?:امس|البارحة)")
+DAYS_AGO = re.compile(
+    rf"(?<!\w)(?P<after>{NUMBER})\s+(?:days?|jours?)\s+(?:ago|plus tot)\b|"
+    rf"(?:il y a|قبل|منذ)\s+(?P<before>{NUMBER})\s+(?:jours?|ايام|يوما?)\b"
+)
+UNSUPPORTED_DAY_RANGE = re.compile(
+    r"\b(?:days?|weeks?|months?|years?)\s+ago\b|"
+    r"il y a.{0,50}\b(?:jours?|semaines?|mois|ans?)\b|(?:قبل|منذ).{0,40}(?:ايام|يومين|يوما?|اسابيع|اشهر|سنوات)"
+)
 
 
 @dataclass(frozen=True)
@@ -112,6 +121,25 @@ def interpret_time(question: str, timezone_name: str | None, reference: datetime
     text = _normalize(question)
     reference = reference.astimezone(timezone.utc)
     day_reference = DAY_REFERENCE.search(text)
+    compound_day = DAY_BEFORE_YESTERDAY.search(text)
+    relative_day = DAYS_AGO.search(text)
+    unsupported_day = UNSUPPORTED_DAY_RANGE.search(text)
+    day_offset = 2 if compound_day else 1 if day_reference and day_reference[0] in YESTERDAY else None
+    if relative_day:
+        raw = relative_day["after"] or relative_day["before"]
+        day_offset = int(raw) if raw.isdecimal() else NUMBER_WORDS[raw]
+        # Do not interpret the tail of an unsupported compound number as the whole number.
+        prefix_words = text[:relative_day.start()].rstrip(" -").split()
+        if prefix_words and prefix_words[-1] in (set(NUMBER_WORDS) | {"and", "et", "hundred", "thousand", "cent", "cents"}):
+            return TimeQuery(clarification="time")
+        if not 1 <= day_offset <= 3660:
+            return TimeQuery(clarification="time")
+    has_day = bool(day_reference or compound_day or relative_day or unsupported_day)
+    if has_day and (RELATIVE.search(text) or RECENT.search(text)
+                    or len(DAY_REFERENCE.findall(text)) > 1
+                    or (day_reference and relative_day)
+                    or BETWEEN.search(text)):
+        return TimeQuery(clarification="time")
     match = RELATIVE.search(text)
     if match:
         duration = _duration(match["before"] or match["after"], match["before_unit"] or match["after_unit"])
@@ -135,9 +163,9 @@ def interpret_time(question: str, timezone_name: str | None, reference: datetime
         if _clock_phrase(body, consumed, kind == "between"):
             break
     else:
-        if day_reference is None:
+        if not has_day:
             return None
-        if day_reference[0] not in YESTERDAY:
+        if day_offset is None or (day_reference and day_reference[0] not in YESTERDAY):
             return TimeQuery(clarification="time")
         if not timezone_name:
             return TimeQuery(clarification="timezone")
@@ -146,13 +174,14 @@ def interpret_time(question: str, timezone_name: str | None, reference: datetime
         except (ZoneInfoNotFoundError, ValueError):
             return TimeQuery(clarification="timezone")
         today = reference.astimezone(zone).date()
-        since = _local_utc(today - timedelta(days=1), time.min, zone)
-        next_day = _local_utc(today, time.min, zone)
+        day = today - timedelta(days=day_offset)
+        since = _local_utc(day, time.min, zone)
+        next_day = _local_utc(day + timedelta(days=1), time.min, zone)
         if since is None or next_day is None:
             return TimeQuery(clarification="time")
         # Retrieval bounds are inclusive; exclude the first instant of today.
         return TimeQuery(since, next_day - timedelta(microseconds=1))
-    if day_reference:
+    if has_day:
         return TimeQuery(clarification="time")
     if start_clock is None:
         return TimeQuery(clarification="time")
