@@ -115,11 +115,11 @@ def _frame(content: bytes, rate: int) -> bytes:
     return (json.dumps({"type": "audio", "data": data}) + "\n").encode()
 
 
-async def local_frames(text: str, language: str):
+async def local_frames(text: str, language: str, owner: str = ""):
     """Generate one sentence at a time so the first can play while the next is made."""
     parts = supertonic_speech.segments(text) or [text]
     for index, part in enumerate(parts):
-        audio = await asyncio.to_thread(supertonic_speech.synthesize, part, language)
+        audio = await asyncio.to_thread(supertonic_speech.synthesize, part, language, owner)
         with wave.open(BytesIO(audio), "rb") as wav:
             rate = wav.getframerate()
             pcm = wav.readframes(wav.getnframes())

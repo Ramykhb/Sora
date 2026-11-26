@@ -86,9 +86,11 @@ async def detail(session_id: UUID, question_id: UUID):
 
 
 @router.get("/{question_id}/audio")
-async def spoken_answer(session_id: UUID, question_id: UUID):
+async def spoken_answer(
+    session_id: UUID, question_id: UUID, user: User = Depends(current_user)
+):
     row = await get_question(session_id, question_id)
-    audio = await asyncio.to_thread(synthesize, row.answer, row.language)
+    audio = await asyncio.to_thread(synthesize, row.answer, row.language, False, str(user.id))
     return Response(audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
 

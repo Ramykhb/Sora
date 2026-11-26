@@ -80,13 +80,42 @@ def test_arabic_prefers_supertonic_over_gemini(engine, monkeypatch):
 
 
 def test_short_prompts_are_cached_per_voice_and_language(engine, monkeypatch):
-    speech.synthesize("Stream paused.", "en")
-    speech.synthesize("Stream paused.", "en")
+    speech.synthesize("Stream paused.", "en", owner="first")
+    speech.synthesize("Stream paused.", "en", owner="first")
     assert len(engine.calls) == 1
-    speech.synthesize("Stream paused.", "fr")
+    speech.synthesize("Stream paused.", "fr", owner="first")
     monkeypatch.setattr(settings, "supertonic_voice", "F3")
-    speech.synthesize("Stream paused.", "en")
+    speech.synthesize("Stream paused.", "en", owner="first")
     assert len(engine.calls) == 3
+
+
+def test_one_account_never_reuses_audio_cached_for_another(engine):
+    for owner in ("first", "second", "first", "second"):
+        speech.synthesize("The pharmacy is on your left.", "en", owner=owner)
+    assert len(engine.calls) == 2
+
+
+def test_speech_without_a_known_owner_is_not_cached(engine):
+    speech.synthesize("Stream paused.", "en")
+    speech.synthesize("Stream paused.", "en")
+    assert len(engine.calls) == 2
+    assert not supertonic_speech._cache
+
+
+@pytest.mark.parametrize("path", ["/api/v1/speech/stream", "/api/v1/speech/synthesis"])
+def test_speech_routes_cache_per_signed_in_account(client, engine, path):
+    api, _ = client
+    body = {"text": "Stream paused.", "language": "en"}
+    for _ in range(2):
+        assert api.post(path, json=body).status_code == 200
+    assert len(engine.calls) == 1
+    account = {"email": "other@example.com", "password": "another-valid-password"}
+    registered = api.post("/api/v1/auth/register", json={**account, "display_name": "Other"})
+    assert registered.status_code == 201, registered.text
+    token = api.post("/api/v1/auth/login", json=account).json()["access_token"]
+    other = api.post(path, json=body, headers={"Authorization": "Bearer " + token})
+    assert other.status_code == 200
+    assert len(engine.calls) == 2
 
 
 def test_unsupported_characters_are_removed_instead_of_failing(engine):

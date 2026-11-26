@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 _FIRST_LIMIT = 80  # A short opening segment lets playback start sooner.
 _SEGMENT_LIMIT = 160
 _CACHE_BYTES = 16 * 1024 * 1024
-_cache: OrderedDict[tuple[str, int, str, str], bytes] = OrderedDict()
+_cache: OrderedDict[tuple[str, str, int, str, str], bytes] = OrderedDict()
 _cache_lock = threading.Lock()
 _engine_lock = threading.Lock()
 
@@ -56,12 +56,16 @@ def prepare():
     TTS(model_dir=directory, auto_download=True)
 
 
-def synthesize(text: str, language: str) -> bytes:
-    """Return a mono 16-bit WAV, or raise so that another voice can be used."""
+def synthesize(text: str, language: str, owner: str = "") -> bytes:
+    """Return a mono 16-bit WAV, or raise so that another voice can be used.
+
+    Audio is cached only for the owning account: a shared cache would let reply times
+    reveal what someone else had asked to hear.
+    """
     voice, steps = settings.supertonic_voice, settings.supertonic_steps
-    key = (voice, steps, language, text)
+    key = (owner, voice, steps, language, text)
     with _cache_lock:
-        if (cached := _cache.get(key)) is not None:
+        if owner and (cached := _cache.get(key)) is not None:
             _cache.move_to_end(key)
             return cached
     try:
@@ -86,7 +90,7 @@ def synthesize(text: str, language: str) -> bytes:
     except Exception as exc:
         logger.warning("Supertonic speech failed: reason=%s", type(exc).__name__)
         raise BackendError("Speech synthesis failed", 503, "tts_unavailable") from exc
-    if len(text) <= 250 and len(audio) <= _CACHE_BYTES:
+    if owner and len(text) <= 250 and len(audio) <= _CACHE_BYTES:
         with _cache_lock:
             _cache[key] = audio
             while sum(map(len, _cache.values())) > _CACHE_BYTES:
