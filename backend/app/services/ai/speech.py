@@ -76,13 +76,21 @@ def transcribe(content: bytes, language: str | None = None) -> tuple[str, str]:
         ) from exc
 
 
-def synthesize(text: str, language: str) -> bytes:
+def synthesize(text: str, language: str, fast: bool = False) -> bytes:
+    """Speak with Supertonic; urgent warnings pass fast=True to skip its generation time."""
     if language not in {"en", "fr", "ar"}:
         raise BackendError("Unsupported speech language", 422, "language_unsupported")
     from app.services.ai.safety import UNKNOWN, blocked_text
 
     if blocked_text(text):
         text = UNKNOWN[language]
+    if settings.supertonic_enabled and not fast:
+        from app.services.ai import supertonic_speech
+
+        try:
+            return supertonic_speech.synthesize(text, language)
+        except BackendError:
+            pass  # Already logged; continue with the previous voices.
     if language == "ar" and settings.gemini_tts_enabled:
         from app.services.ai.gemini_speech import synthesize_arabic
 

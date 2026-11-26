@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     gemini_walking_max_age_seconds: float = Field(default=6, ge=1, le=10)
     object_finder_max_age_seconds: float = Field(default=6, ge=1, le=15)
     gemini_image_max_side: int = Field(default=1024, ge=320, le=2048)
+    supertonic_enabled: bool = True
+    supertonic_model_dir: Path = BACKEND_ROOT / "models" / "supertonic"
+    supertonic_voice: str = Field(default="F1", pattern=r"^[FM][1-5]$")
+    supertonic_steps: int = Field(default=8, ge=5, le=12)
+    supertonic_threads: int = Field(default=0, ge=0, le=64)  # 0: up to six CPU threads.
     gemini_tts_enabled: bool = False
     gemini_tts_model: str = "gemini-3.8-flash-lite-tts"
     gemini_tts_fallback_model: str = "gemini-3.8-flash-tts"

@@ -8,7 +8,7 @@
 | OCR signs and labels | Tesseract with English/French/Arabic language packs, text and confidence |
 | Detect objects | YOLO11 nano, labels/confidences/boxes; generic person detection without identification |
 | Store and search images, text, objects, time | PostgreSQL + pgvector, S3-compatible object storage or local files, timestamps, semantic/lexical/time search |
-| Spoken question to answer | Multilingual Whisper transcription, evidence retrieval, Qwen vision answer, persisted history, eSpeak NG WAV synthesis |
+| Spoken question to answer | Multilingual Whisper transcription, evidence retrieval, Qwen vision answer, persisted history, Supertonic 3 WAV synthesis with eSpeak NG backup |
 | Answer from camera evidence and admit uncertainty | Images plus timestamps and OCR sent to VLM, validated evidence IDs, stale-view rejection, localized uncertainty and safety filter |
 | At least two languages | English, French and Arabic request validation, OCR, STT, answer generation and TTS |
 | Live dashboard status | Session overview, live status, frame timeline, question history, metrics and live events APIs |

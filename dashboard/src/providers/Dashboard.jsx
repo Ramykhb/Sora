@@ -134,7 +134,7 @@ export function DashboardProvider({ children }) {
       }
       if (event.type === 'alert') {
         setAlerts(previous => [{ ...event, created_at: new Date().toISOString() }, ...previous].slice(0, 50));
-        if (spokenRef.current && event.message && isFreshObservation(event)) void play('/speech/synthesis', { text: event.message, language: event.language || 'en' }, { priority: true, expires_at: event.expires_at }).catch(e => setMediaError(e.message));
+        if (spokenRef.current && event.message && isFreshObservation(event)) void play('/speech/synthesis', { text: event.message, language: event.language || 'en', provider: 'fast' }, { priority: true, expires_at: event.expires_at }).catch(e => setMediaError(e.message));
       }
       if (event.type === 'processing_error') setError(event.message || event.code || 'Frame processing failed.');
       if (event.type.startsWith('stream_')) {

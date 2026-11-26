@@ -21,6 +21,7 @@ os.environ["GEMINI_API_KEY_10"] = ""
 os.environ["GEMINI_API_KEY_11"] = ""
 os.environ["GEMINI_API_KEY_12"] = ""
 os.environ["GEMINI_TTS_ENABLED"] = "false"
+os.environ["SUPERTONIC_ENABLED"] = "false"  # Dedicated tests use a fake engine.
 os.environ["BREVO_API_KEY"] = ""
 os.environ["BREVO_SENDER_EMAIL"] = ""
 os.environ["OCR_ENGINE"] = "tesseract"  # Paddle behavior/worker protocol have dedicated tests.

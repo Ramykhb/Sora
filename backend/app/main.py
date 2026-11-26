@@ -182,7 +182,12 @@ async def ready():
             )
         except Exception:
             components["ocr"] = "unavailable"
-    components["tts"] = "ready" if shutil.which(settings.espeak_binary) else "binary_missing"
+    if settings.supertonic_enabled:
+        from app.services.ai import supertonic_speech
+
+        components["tts"] = "ready" if supertonic_speech.ready() else "weights_or_runtime_missing"
+    else:
+        components["tts"] = "ready" if shutil.which(settings.espeak_binary) else "binary_missing"
     from pathlib import Path
 
     components["detector"] = "ready" if Path(settings.yolo_model).is_file() else "weights_missing"

@@ -17,6 +17,11 @@ def main():
     detector()
     print("Downloading/loading multilingual Whisper weights...")
     whisper()
+    if settings.supertonic_enabled:
+        from app.services.ai.supertonic_speech import prepare as prepare_speech
+
+        print("Downloading/loading Supertonic speech weights (about 400 MB)...", flush=True)
+        prepare_speech()
     if settings.ocr_engine == "paddleocr":
         from scripts.prepare_ocr import prepare, install_runtime
 
