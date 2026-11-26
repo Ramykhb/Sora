@@ -6,6 +6,8 @@ Expo SDK 58 client for the World Out Loud FastAPI backend. Auth, camera capture,
 
 The native app publishes continuous camera video using WebRTC on Android and iOS. Install a build containing the native WebRTC module; Expo Go cannot publish this stream.
 
+For a physical iPhone from Windows, see [Build and sideload Sora on iPhone](docs/ios-sideload.md). GitHub Actions builds the unsigned IPA and Sideloadly signs it on Windows with a free Apple Account.
+
 iOS builds Expo modules from source to avoid an ABI mismatch between the bundled ExpoCamera and ExpoModulesCore frameworks. `npm install` also applies a small Swift compiler workaround in `scripts/patch-expo-swift.cjs`, removing an unnecessary cast in Expo's consuming result switch ([Swift issue #93625](https://github.com/swiftlang/swift/issues/93625)). Postinstall also applies the speech-recognition ducking adjustment described below. If dependencies are installed with scripts disabled, run `npm run postinstall` before building iOS.
 
 For cloud builds without local Xcode or Android Studio, sign in to Expo and configure this project once:

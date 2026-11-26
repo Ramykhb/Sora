@@ -1,0 +1,103 @@
+name: Build unsigned Sora iOS IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: mobile
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      EXPO_NO_DOTENV: '1'
+      EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Check build environment
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          pod --version
+          node --version
+          node <<'NODE'
+          const value = process.env.EXPO_PUBLIC_API_URL;
+          if (value && !/^https:\/\//i.test(value)) {
+            throw new Error('Use an HTTPS EXPO_PUBLIC_API_URL for the build, or leave it unset and use Change server on the phone.');
+          }
+          if (value) {
+            const url = new URL(value);
+            if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+              throw new Error('EXPO_PUBLIC_API_URL must be a plain server origin.');
+            }
+          }
+          NODE
+
+      - name: Install locked dependencies and run native patches
+        run: npm ci
+
+      - name: Generate the iOS project
+        run: npx --no-install expo prebuild --platform ios --no-install --skip-dependency-update react,react-native
+
+      - name: Install CocoaPods dependencies
+        run: pod install --project-directory=ios
+
+      - name: Build unsigned Release for physical devices
+        run: |
+          xcodebuild \
+            -workspace ios/SORA.xcworkspace \
+            -scheme SORA \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/sora-derived" \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            build 2>&1 | tee "$RUNNER_TEMP/sora-xcodebuild.log"
+
+      - name: Verify and package the IPA
+        run: |
+          app="$RUNNER_TEMP/sora-derived/Build/Products/Release-iphoneos/SORA.app"
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")
+          /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$app/Info.plist"
+          [[ "$(xcrun lipo -archs "$app/$executable")" == arm64 ]]
+          xcrun vtool -show-build "$app/$executable" | grep -E 'platform[[:space:]]+IOS[[:space:]]*$'
+          test -s "$app/main.jsbundle"
+          test -d "$app/assets"
+          test ! -e "$app/embedded.mobileprovision"
+
+          package="$RUNNER_TEMP/sora-ipa"
+          mkdir -p "$package/Payload"
+          ditto "$app" "$package/Payload/Sora.app"
+          cd "$package"
+          /usr/bin/zip -q -r -y Sora.ipa Payload
+          /usr/bin/unzip -tq Sora.ipa
+
+      - name: Upload unsigned Sora.ipa
+        uses: actions/upload-artifact@v7
+        with:
+          name: Sora-ios-unsigned
+          path: ${{ runner.temp }}/sora-ipa/Sora.ipa
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
