@@ -46,6 +46,9 @@ class LiveState:
     history_worker: asyncio.Task | None = None
     obstacle_worker: asyncio.Task | None = None
     obstacle_error: str | None = None
+    stop_sign_worker: asyncio.Task | None = None
+    stop_sign_error: str | None = None
+    stop_sign_alert_at: float = float("-inf")
     detection_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=1))
     history_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=32))
     last_detection_sampled: float = float("-inf")
@@ -89,6 +92,7 @@ class Streams:
         state.detector_worker = asyncio.create_task(self.detect(session_id, state))
         state.history_worker = asyncio.create_task(self.persist_alerts(session_id, state))
         state.obstacle_worker = asyncio.create_task(self.detect_obstacles(session_id, state))
+        state.stop_sign_worker = asyncio.create_task(self.detect_stop_signs(session_id, state))
         events.publish(session_id, {"type": "stream_started", "source": source})
         return state
 
@@ -221,6 +225,60 @@ class Streams:
                     self.enqueue_sample(state, content, timestamp)
             finally:
                 state.detection_queue.task_done()
+
+    async def detect_stop_signs(self, session_id, state):
+        # OCR runs independently of obstacle detection, storage admission and
+        # captioning. Await each bounded OCR call; never accumulate a backlog.
+        while True:
+            started = monotonic()
+            try:
+                await self.check_stop_sign(session_id, state)
+                state.stop_sign_error = None
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                state.stop_sign_error = getattr(exc, "code", "stop_sign_ocr_unavailable")
+                logger.warning("Stop-sign OCR failed for session %s: %s", session_id, state.stop_sign_error)
+            await asyncio.sleep(max(0, settings.stop_sign_ocr_interval_seconds - (monotonic() - started)))
+
+    async def check_stop_sign(self, session_id, state):
+        from app.services.alerts import stop_sign_message
+        from app.services.frames.processing import prepare_image, read_text
+        from app.services.sessions import get_session
+
+        if self.states.get(session_id) is not state:
+            return
+        snapshot = self.fresh_snapshot(session_id)
+        if snapshot is None:
+            return
+        await get_session(session_id, active=True)
+        content, timestamp = snapshot
+        # Face redaction and image preparation must precede all OCR, including
+        # frames rejected as duplicates by the separate memory pipeline.
+        prepared = await asyncio.to_thread(prepare_image, content)
+        text, confidence = await asyncio.to_thread(read_text, prepared)
+        session = await get_session(session_id, active=True)
+        expires_at = timestamp + timedelta(seconds=settings.stop_sign_ocr_max_age_seconds)
+        if self.states.get(session_id) is not state or now() >= expires_at:
+            return
+        message = stop_sign_message(text, confidence, session.language)
+        current = monotonic()
+        if not message or current - state.stop_sign_alert_at < settings.alert_cooldown_seconds:
+            return
+        state.stop_sign_alert_at = current
+        alert = {
+            "type": "alert", "id": str(uuid4()), "frame_id": None,
+            "label": "ocr_stop_sign", "message": message, "language": session.language,
+            "captured_at": timestamp.isoformat(), "expires_at": expires_at.isoformat(),
+            "created_at": now().isoformat(),
+            "latency_ms": round((now() - timestamp).total_seconds() * 1000, 1),
+        }
+        events.publish(session_id, alert)
+        if state.history_queue.full():
+            state.history_queue.get_nowait()
+            state.history_queue.task_done()
+            state.alert_history_dropped += 1
+        state.history_queue.put_nowait(alert)
 
     async def detect_obstacles(self, session_id, state):
         from app.services.ai import gemini
@@ -400,6 +458,8 @@ class Streams:
             "processing_error": state.error,
             "detection_error": state.detection_error,
             "obstacle_error": state.obstacle_error,
+            "stop_sign_error": state.stop_sign_error,
+            "stop_sign_ocr_interval_seconds": settings.stop_sign_ocr_interval_seconds,
             "gemini_obstacle_interval_seconds": settings.gemini_obstacle_interval_seconds,
             "detection_interval_seconds": settings.detection_interval_seconds,
             "detection_frames_dropped": state.detection_dropped,
@@ -445,7 +505,7 @@ class Streams:
             task
             for task in [
                 state.worker, state.detector_worker, state.history_worker,
-                state.obstacle_worker, *state.readers,
+                state.obstacle_worker, state.stop_sign_worker, *state.readers,
             ]
             if task and task is not asyncio.current_task()
         ]

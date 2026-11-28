@@ -1123,3 +1123,19 @@ for (const [language, question] of [['ar', 'ما الذي أمامي؟'], ['fr',
     assert.ok(update, 'The session language must follow Settings for automatic alerts');
   });
 }
+
+for (const detectionEnabled of [true, false]) {
+  test(`OCR stop alerts use server speech with obstacle detection ${detectionEnabled ? 'on' : 'off'}`, async () => {
+    const event = { type: 'alert', id: 'stop-text', label: 'ocr_stop_sign', message: 'A stop sign is visible.', language: 'en', expires_at: new Date(Date.now() + 5000).toISOString() };
+    const app = await voiceStartCamera(true, { active: true, detectionEnabled, event });
+    assert.equal(app.alerts.length, 1);
+    assert.equal(app.alerts[0][1], event.message);
+    assert.equal(app.alerts[0][4], true);
+  });
+}
+
+test('paused streams do not speak OCR stop alerts', async () => {
+  const event = { type: 'alert', id: 'stop-paused', label: 'ocr_stop_sign', message: 'A stop sign is visible.', expires_at: new Date(Date.now() + 5000).toISOString() };
+  const app = await voiceStartCamera(true, { active: true, paused: true, detectionEnabled: false, event });
+  assert.equal(app.alerts.length, 0);
+});

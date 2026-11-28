@@ -68,9 +68,9 @@ function Capture() {
       if (event.type === 'obstacle_status') setObstacleUnavailable(false);
       if (event.type === 'ready') void api.request<CaptureSession>(`/sessions/${session.id}`).then(updated => { if (updated.status !== 'active') receiveSession(updated); }).catch(() => {});
       if (event.type === 'ready') void api.request<{ obstacle_error?: string }>(`/sessions/${session.id}/stream/status`).then(status => { if (!cancelled) setObstacleUnavailable(!!status.obstacle_error); }).catch(() => {});
-      if (!streamPaused && session.alerts_enabled && event.type === 'alert' && event.message && event.id && event.expires_at && Date.parse(event.expires_at) > Date.now()) {
+      if (!streamPaused && (session.alerts_enabled || event.label === 'ocr_stop_sign') && event.type === 'alert' && event.message && event.id && event.expires_at && Date.parse(event.expires_at) > Date.now()) {
         setObstacleAlert({ message: event.message, expiresAt: event.expires_at });
-        void speech.alert(event.id, event.message, event.language || session.language, event.expires_at, event.label === 'remembered_detection').catch(() => {});
+        void speech.alert(event.id, event.message, event.language || session.language, event.expires_at, event.label === 'remembered_detection' || event.label === 'ocr_stop_sign').catch(() => {});
       }
     }, () => {});
     return () => { cancelled = true; live.close(); setObstacleAlert(null); };
@@ -235,7 +235,7 @@ function Capture() {
             <Label bold size={14} style={{ color: controlColor }}>Detect obstacles · {session.alerts_enabled ? 'On' : 'Off'}</Label>
             <Switch accessibilityLabel="Detect obstacles" value={session.alerts_enabled} disabled={busy || session.status !== 'active'} trackColor={{ false: colors.trackOff, true: colors.primary }} onValueChange={enabled => void run(() => setDetectionEnabled(enabled))} />
           </View>
-          <Label size={11} style={{ color: controlColor }}>Checks every 2 seconds when on. Off pauses all automatic detection and saved alerts.</Label>
+          <Label size={11} style={{ color: controlColor }}>Checks every 2 seconds when on. Stop-sign text alerts stay on when obstacle detection is off.</Label>
         </View>}
         {!!obstacleAlert && <Label accessibilityRole="alert" style={{ color: controlColor }} size={14}>{obstacleAlert.message}</Label>}
         {session.alerts_enabled && obstacleUnavailable && <Label accessibilityRole="alert" style={{ color: colors.danger }} size={14}>Advanced obstacle detection unavailable. Using limited local object warnings; saved alert requests are paused.</Label>}

@@ -1,10 +1,23 @@
 from datetime import timedelta
+import re
+import unicodedata
 from sqlalchemy import select
 from app.core.config import settings
 from app.db.models import Alert
 from app.db.models.frame import now
 from app.db.session import SessionFactory
 from app.services.events import events
+
+
+def stop_sign_message(text, confidence, language):
+    text = unicodedata.normalize("NFKC", text)
+    if not confidence >= settings.ocr_min_word_confidence or not re.search(r"\bstop\b", text, re.I):
+        return None
+    return {
+        "en": "A stop sign is visible.",
+        "fr": "Un panneau stop est visible.",
+        "ar": "توجد علامة توقف.",
+    }[language]
 
 
 def alert_candidates(frame, language):

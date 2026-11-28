@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     live_defer_enrichment: bool = True
     detection_interval_seconds: float = Field(default=0.25, ge=0.1, le=5)
     detection_max_age_seconds: float = Field(default=2.0, ge=0.25, le=10)
+    stop_sign_ocr_interval_seconds: float = Field(default=2, ge=1, le=60)
+    stop_sign_ocr_max_age_seconds: float = Field(default=6, ge=1, le=15)
     detection_image_size: int = Field(default=320, ge=192, le=1280)
     detector_threads: int = Field(default=2, ge=1, le=8)
     depth_estimation_enabled: bool = True
