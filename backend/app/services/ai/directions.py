@@ -94,9 +94,9 @@ def describe_route(route, name, language):
             steps.append(f"{len(steps) + 1}. {instruction}{distance}.")
     # Required by Google's walking-route policy; keep it in spoken answers too.
     warning = {
-        "en": "Walking routes may be missing sidewalks or pedestrian paths. This is a route overview; it does not track your progress.",
-        "fr": "Des trottoirs ou passages piétons peuvent manquer. Cet aperçu ne suit pas votre progression.",
-        "ar": "قد تفتقر مسارات المشي إلى أرصفة أو ممرات للمشاة. هذه نظرة عامة ولا تتتبع تقدمك.",
+        "en": "Walking routes may be missing sidewalks or pedestrian paths.",
+        "fr": "Des trottoirs ou passages piétons peuvent manquer.",
+        "ar": "قد تفتقر مسارات المشي إلى أرصفة أو ممرات للمشاة.",
     }[language]
     advisories = " ".join(plain_text(value) for value in route.warnings)
     return "\n".join([intro, *steps, *([advisories] if advisories else []), warning])

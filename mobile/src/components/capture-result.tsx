@@ -22,7 +22,7 @@ function Result({ text }: { text: boolean }) {
   const [frame, setFrame] = useState<Frame | null>(null); const [headers, setHeaders] = useState<Record<string, string>>();
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [answer, setAnswer] = useState(''); const [playing, setPlaying] = useState(false);
   const [attempt, setAttempt] = useState(0); const [focused, setFocused] = useState(true);
-  const [language, setLanguage] = useState<Language>('en');
+  const [language, setLanguage] = useState<Language>(preferences.language);
   const [uncertain, setUncertain] = useState(false); const [warnings, setWarnings] = useState<string[]>([]);
   const spoken = useRef('');
   const pendingDescription = useRef<number | null>(null);
@@ -33,9 +33,9 @@ function Result({ text }: { text: boolean }) {
     if (!focused || text || !sessionId || !frameId) return;
     let cancelled = false;
     function receive(value: Answer) {
-      if (cancelled || value.question !== descriptionQuestion || !value.evidence_frame_ids.includes(frameId!)) return;
+      if (cancelled || value.language !== preferences.language || value.question !== descriptionQuestion || !value.evidence_frame_ids.includes(frameId!)) return;
       if (pendingDescription.current && Date.parse(value.created_at) < pendingDescription.current - 1000) return;
-      setAnswer(value.answer); setUncertain(value.uncertain); setWarnings(value.processing_warnings);
+      setLanguage(value.language); setAnswer(value.answer); setUncertain(value.uncertain); setWarnings(value.processing_warnings);
       pendingDescription.current = null; setBusy(false); setError('');
     }
     // Reuse session events so a slow local model can still deliver the answer
@@ -45,7 +45,7 @@ function Result({ text }: { text: boolean }) {
       if (event.type === 'ready') void api.request<Answer[]>(`/sessions/${sessionId}/questions?limit=20`).then(values => { const latest = values.find(value => value.question === descriptionQuestion && value.evidence_frame_ids.includes(frameId!)); if (latest) receive(latest); }).catch(() => {});
     }, () => {});
     return () => { cancelled = true; live.close(); };
-  }, [api, sessionId, frameId, focused, text]);
+  }, [api, sessionId, frameId, focused, text, preferences.language]);
   useEffect(() => {
     if (!focused || !sessionId || !frameId) return;
     let cancelled = false; let timer: ReturnType<typeof setTimeout>; let polls = 0; let sessionLanguage: Language | undefined; let answerLoaded = false;
@@ -59,9 +59,9 @@ function Result({ text }: { text: boolean }) {
           const result = await api.request<Answer>(`/sessions/${sessionId}/questions/${answerId}`);
           if (cancelled) return;
           if (!result.evidence_frame_ids.includes(frameId!)) throw new Error('This description does not reference the selected image.');
-          setAnswer(result.answer); setUncertain(result.uncertain); setWarnings(result.processing_warnings); answerLoaded = true;
+          setLanguage(result.language); setAnswer(result.answer); setUncertain(result.uncertain); setWarnings(result.processing_warnings); answerLoaded = true;
         }
-        setHeaders({ Authorization: `Bearer ${token}` }); setLanguage(sessionLanguage); setFrame(value); setError('');
+        setHeaders({ Authorization: `Bearer ${token}` }); if (!answerLoaded) setLanguage(sessionLanguage); setFrame(value); setError('');
         if (text) timer = setTimeout(() => void load(), 5000);
         else if (['pending', 'processing'].includes(value.enrichment_status || '') && ++polls < 90) timer = setTimeout(() => void load(), 2000);
         else if (['pending', 'processing'].includes(value.enrichment_status || '')) setError('Processing is taking longer than expected. Tap refresh to check again.');
@@ -73,7 +73,7 @@ function Result({ text }: { text: boolean }) {
   const content = text ? frame?.ocr_text : answer || frame?.caption;
   const resultCopy = content || (error && !frame ? 'Refresh or capture another image to continue.' : processing ? 'Your image is being analyzed.' : frame ? text ? 'No readable text detected. Try a closer, well-lit image.' : 'No scene description available. Try describing again.' : 'Loading your result…');
   const viewTip = !text && frame ? cameraFeedback(uncertain || frame.processing_warnings.includes('scene_uncertain'), content || '', [...warnings, ...frame.processing_warnings], true, language) : null;
-  const spokenContent = content && viewTip ? `${content} ${viewTip}` : content;
+  const spokenContent = content;
   useEffect(() => {
     if (!spokenContent || !focused) return;
     speech.rememberAnswer(spokenContent, language);
@@ -85,13 +85,13 @@ function Result({ text }: { text: boolean }) {
     if (busy) throw new Error('Please wait for the current description to finish, then ask again.');
     setBusy(true); setError('');
     try {
-      const reply = await api.request<Answer>(`/sessions/${sessionId}/questions`, 'POST', { question, scope: 'memory', since: frame.captured_at, until: frame.captured_at, language });
+      const reply = await api.request<Answer>(`/sessions/${sessionId}/questions`, 'POST', { question, scope: 'memory', since: frame.captured_at, until: frame.captured_at, language: preferences.language });
       // The global voice listener reads this reply once, even with automatic speech enabled.
       spoken.current = reply.answer;
-      setAnswer(reply.answer); setUncertain(reply.uncertain); setWarnings(reply.processing_warnings);
+      setLanguage(reply.language); setAnswer(reply.answer); setUncertain(reply.uncertain); setWarnings(reply.processing_warnings);
       return reply;
     } finally { setBusy(false); }
-  }, `${sessionId}:${frameId}`);
+  }, `${sessionId}:${frameId}:${preferences.language}`);
   async function play() {
     if (playing) { await speech.stop(); setPlaying(false); return; }
     if (spokenContent) { speech.rememberAnswer(spokenContent, language); await speech.answer(spokenContent, language, () => setPlaying(false)); setPlaying(true); }
@@ -102,8 +102,8 @@ function Result({ text }: { text: boolean }) {
     pendingDescription.current = Date.now();
     setBusy(true); setError('');
     try {
-      const value = await api.request<Answer>(`/sessions/${sessionId}/questions`, 'POST', { question: descriptionQuestion, scope: 'memory', since: frame.captured_at, until: frame.captured_at, language });
-      setAnswer(value.answer);
+      const value = await api.request<Answer>(`/sessions/${sessionId}/questions`, 'POST', { question: descriptionQuestion, scope: 'memory', since: frame.captured_at, until: frame.captured_at, language: preferences.language });
+      setLanguage(value.language); setAnswer(value.answer);
       setUncertain(value.uncertain); setWarnings(value.processing_warnings);
       pendingDescription.current = null;
     } catch (e) { if (pendingDescription.current !== null) setError(e instanceof Error ? e.message : 'Description unavailable. Please try again.'); }

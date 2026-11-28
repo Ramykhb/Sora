@@ -68,9 +68,9 @@ def position(horizontal, vertical, language):
 
 def unknown(language):
     return {
-        "en": "I can't identify the requested object confidently in this camera view. Try a clearer, well-lit view.",
-        "fr": "Je ne peux pas identifier cet objet avec certitude dans cette image. Essayez une vue plus claire et mieux éclairée.",
-        "ar": "لا أستطيع تحديد الجسم المطلوب بثقة في هذه الصورة. جرّب صورة أوضح وبإضاءة أفضل.",
+        "en": "I can't identify the requested object confidently in this camera view.",
+        "fr": "Je ne peux pas identifier cet objet avec certitude dans cette image.",
+        "ar": "لا أستطيع تحديد الجسم المطلوب بثقة في هذه الصورة.",
     }[language]
 
 
@@ -128,9 +128,9 @@ def detection_answer(finding, objects, width, height, language, quality_uncertai
         ))
     if not matches:
         return {
-            "en": "I can't identify the requested object in this camera view. It may be obscured or outside the image.",
-            "fr": "Je ne repère pas l’objet demandé dans cette image. Il peut être masqué ou hors champ.",
-            "ar": "لا أستطيع تحديد الجسم المطلوب في هذه الصورة؛ قد يكون محجوباً أو خارجها.",
+            "en": "I can't identify the requested object in this camera view.",
+            "fr": "Je ne repère pas l’objet demandé dans cette image.",
+            "ar": "لا أستطيع تحديد الجسم المطلوب في هذه الصورة.",
         }[language], True
     matches.sort(key=lambda match: match[0], reverse=True)
     label = LABELS[finding.detector_label][language]

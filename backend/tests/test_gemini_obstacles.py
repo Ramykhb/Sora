@@ -25,7 +25,7 @@ def test_obstacle_settings_preserve_one_second_storage_and_accept_lowercase_keys
     assert config.gemini_api_key_2.get_secret_value() == 'second-test-key'
     assert config.gemini_api_key_12.get_secret_value() == 'twelfth-test-key'
     assert config.sample_interval_seconds == 1
-    assert config.gemini_obstacle_interval_seconds == 1
+    assert config.gemini_obstacle_interval_seconds == 2
 
 
 def test_questions_and_automatic_obstacles_select_from_same_key_pool(monkeypatch):
@@ -234,7 +234,7 @@ def test_disabled_or_missing_fresh_camera_does_not_upload(obstacle_scene, monkey
     asyncio.run(manager.check_obstacles(sid, state))
 
 
-def test_worker_checks_every_second_and_survives_failure(obstacle_scene, monkeypatch):
+def test_worker_checks_every_two_seconds_and_survives_failure(obstacle_scene, monkeypatch):
     manager, sid, state, _ = obstacle_scene
     clock = [0.0]
     checks, sleeps = [], []
@@ -247,7 +247,7 @@ def test_worker_checks_every_second_and_survives_failure(obstacle_scene, monkeyp
 
     async def check(*args):
         checks.append(clock[0])
-        clock[0] += .4  # Inference time counts toward the one-second interval.
+        clock[0] += .4  # Inference time counts toward the two-second interval.
         if len(checks) == 1:
             raise BackendError('Provider unavailable', code='gemini_unavailable')
 
@@ -256,8 +256,8 @@ def test_worker_checks_every_second_and_survives_failure(obstacle_scene, monkeyp
     monkeypatch.setattr(manager, 'check_obstacles', check)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(manager.detect_obstacles(sid, state))
-    assert checks == pytest.approx([1, 2, 3])
-    assert sleeps == pytest.approx([1, .6, .6, .6])
+    assert checks == pytest.approx([2, 4, 6])
+    assert sleeps == pytest.approx([2, 1.6, 1.6, 1.6])
     assert state.obstacle_error == 'gemini_unavailable'
 
 

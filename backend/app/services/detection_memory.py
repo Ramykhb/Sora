@@ -91,9 +91,9 @@ async def remember(session_id, target, language, requester_id=None):
             db.add(DetectionWatch(owner_id=session.owner_id, target=target, target_key=key))
             await db.commit()
     confirmation = {
-        "en": f"I'll alert you once when I detect {target}, then remove that request from memory.",
-        "fr": f"Je vous alerterai une fois lorsque je détecterai {target}, puis j’effacerai cette demande de la mémoire.",
-        "ar": f"سأنبهك مرة واحدة عندما أكتشف {target}، ثم سأحذف هذا الطلب من الذاكرة.",
+        "en": f"Okay, I'll alert you when I detect {target}.",
+        "fr": f"D’accord, je vous alerterai lorsque je détecterai {target}.",
+        "ar": f"حسناً، سأنبهك عندما أكتشف {target}.",
     }[language]
     if not session.alerts_enabled:
         confirmation += " " + {
@@ -101,11 +101,6 @@ async def remember(session_id, target, language, requester_id=None):
             "fr": "La détection est désactivée. Activez Détecter les obstacles pour lancer les vérifications.",
             "ar": "الكشف متوقف. فعّل كشف العوائق لبدء الفحص.",
         }[language]
-    confirmation += " " + {
-        "en": f"Manage requests in Settings. Unmatched requests expire after {settings.detection_watch_retention_days} days.",
-        "fr": f"Gérez les demandes dans les réglages. Elles expirent après {settings.detection_watch_retention_days} jours sans détection.",
-        "ar": f"أدر الطلبات من الإعدادات. تنتهي الطلبات غير المطابقة بعد {settings.detection_watch_retention_days} أيام.",
-    }[language]
     return confirmation, False, [], []
 
 

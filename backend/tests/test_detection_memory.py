@@ -77,7 +77,7 @@ def test_registration_is_persistent_deduplicated_and_needs_no_frame_or_question_
 
     monkeypatch.setattr(gemini, 'ask_image', forbidden)
     result = ask(api, sid, 'alert me when you detect a stop sign')
-    assert "I'll alert you once" in result['answer']
+    assert result['answer'] == "Okay, I'll alert you when I detect a stop sign."
     assert not result['uncertain'] and not result['evidence_frame_ids']
     ask(api, sid, 'alert me when you detect a car')
     ask(api, sid, 'alert me when you detect THE CAR')
@@ -525,7 +525,7 @@ def test_phone_transcript_variations_create_a_watch_instead_of_an_image_answer(m
 
     monkeypatch.setattr(gemini, 'ask_image', forbidden)
     result = ask(api, sid, question)
-    assert "I'll alert you once when I detect a laptop" in result['answer']
+    assert result['answer'] == "Okay, I'll alert you when I detect a laptop."
     assert [watch['target'] for watch in api.portal.call(detection_memory.pending, owner)] == ['a laptop']
 
 

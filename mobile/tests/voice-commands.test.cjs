@@ -638,7 +638,7 @@ test('pause, resume and stop dispatch to stream controls and never become questi
 test('stream controls give spoken guidance when no stream is open', async () => {
   const app = mount(); await flush(); app.tick();
   app.emit('result', { results: [{ transcript: 'hey sora resume stream' }], isFinal: true });
-  await flush(); assert.match(app.spoken[0], /no stream open/);
+  await flush(); assert.match(app.spoken[0], /no active stream/);
   app.cleanup();
 });
 
@@ -1112,3 +1112,14 @@ test('reconnection checks for closure missed while disconnected', async () => {
   assert.ok(app.requests.some(request => request[0] === '/sessions/voice-session'));
   assert.ok(app.sessionUpdates.includes(null));
 });
+
+for (const [language, question] of [['ar', 'ما الذي أمامي؟'], ['fr', 'Que vois-tu devant moi ?']]) {
+  test(`an existing English camera session sends questions in selected ${language} and updates alert language`, async () => {
+    const app = await voiceStartCamera(true, { active: true, language, question });
+    const request = app.requests.find(([path]) => path.endsWith('/questions'));
+    assert.equal(request[2].language, language);
+    assert.equal(request[2].question, question);
+    const update = app.requests.find(([path, method, body]) => method === 'PATCH' && body.language === language);
+    assert.ok(update, 'The session language must follow Settings for automatic alerts');
+  });
+}

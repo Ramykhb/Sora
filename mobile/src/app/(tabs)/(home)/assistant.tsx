@@ -30,8 +30,7 @@ function Assistant() {
   const [session, setSession] = useState<CaptureSession | null>(null);
   const [sessions, setSessions] = useState<CaptureSession[]>([]);
   const [consent, setConsent] = useState(false);
-  const [languageChoice, setLanguageChoice] = useState<Language | null>(null);
-  const language = languageChoice ?? session?.language ?? appPreferences.language;
+  const language = appPreferences.language;
   const [scope, setScope] = useState<Scope>('auto');
   const [alerts, setAlerts] = useState(true);
   const speak = appPreferences.speak;
@@ -55,13 +54,21 @@ function Assistant() {
   const select = useCallback((value: CaptureSession | null) => {
     selectedId.current = value?.id || null;
     setActive(false); setAnswers([]); setFrame(null); setObservation(null); setSession(value);
-    if (value) { setLanguageChoice(value.language); setAlerts(value.alerts_enabled); }
+    if (value) { setAlerts(value.alerts_enabled); }
     void speech.stop();
   }, []);
   const fail = useCallback((e: unknown) => {
     setError(e instanceof Error ? e.message : 'Request failed.');
     if (e instanceof ApiError && e.status === 404) select(null);
   }, [select]);
+  useEffect(() => {
+    if (!session || session.status !== 'active' || session.language === language) return;
+    let cancelled = false;
+    void api.request<CaptureSession>(`/sessions/${session.id}`, 'PATCH', { language }).then(updated => {
+      if (!cancelled) setSession(updated);
+    }).catch(error => { if (!cancelled) fail(error); });
+    return () => { cancelled = true; };
+  }, [api, session, language, fail]);
   const listSessions = useCallback(() => {
     void api.request<CaptureSession[]>('/sessions?limit=50').then(setSessions).catch(fail);
   }, [api, fail]);
@@ -106,7 +113,7 @@ function Assistant() {
     const live = connectLive(api, `${path}/events`, event => {
       if (event.type === 'ready') sync();
       if (event.type === 'session_updated' && event.session) {
-        setSession(event.session); setLanguageChoice(event.session.language); setAlerts(event.session.alerts_enabled);
+        setSession(event.session); setAlerts(event.session.alerts_enabled);
         if (event.session.status !== 'active') setActive(false);
       }
       if (event.frame) {
@@ -173,12 +180,12 @@ function Assistant() {
     try {
       setSession(await api.request<CaptureSession>(`/sessions/${session.id}/close`, 'POST'));
       listSessions();
-      return 'Stream stopped. Your saved moments are still available.';
+      return voiceText('stopConfirm', language);
     } finally { closingStream.current = false; }
   }, !!session && session.status === 'active', !active);
   async function preferences(nextLanguage: Language, nextAlerts: boolean) {
     if (session) setSession(await api.request<CaptureSession>(`/sessions/${session.id}`, 'PATCH', { language: nextLanguage, alerts_enabled: nextAlerts }));
-    setLanguageChoice(nextLanguage); setAlerts(nextAlerts);
+    update({ language: nextLanguage }); setAlerts(nextAlerts);
   }
   return <Page title="Ask Sora" footer={<BottomNav active="Assist" />}>
     <ScreenIntro eyebrow="Voice & vision" title={`Hello, ${tokens?.user.display_name || 'there'}.`} subtitle="Ask a question. Get a little more clarity." />

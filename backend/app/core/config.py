@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     gemini_api_key_10: SecretStr = SecretStr("")
     gemini_api_key_11: SecretStr = SecretStr("")
     gemini_api_key_12: SecretStr = SecretStr("")
-    gemini_obstacle_interval_seconds: float = Field(default=1, ge=1, le=60)
+    gemini_obstacle_interval_seconds: float = Field(default=2, ge=1, le=60)
     gemini_model: str = Field(default="gemini-3.5-flash-lite", pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]{1,100}$")
     gemini_thinking_level: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH"] = "MINIMAL"
     gemini_deadline_seconds: float = Field(default=5, ge=1, le=10)

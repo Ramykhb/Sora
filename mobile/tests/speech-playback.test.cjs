@@ -232,10 +232,28 @@ test('unreachable server speech reads English and French with the phone voice', 
   assert.equal(app.spoken[0].options.voice, undefined);
 });
 
-test('English and French warnings never wait for the server', async () => {
+test('immediate English and French obstacle warnings never wait for the server', async () => {
   const app = setup(undefined, { async speak() { throw new Error('Alerts must not wait on the server'); } });
   const expires = new Date(Date.now() + 5000).toISOString();
   await app.speech.alert('en-warning', 'Obstacle ahead.', 'en', expires);
-  await app.speech.alert('fr-target', 'Détecté : panneau stop.', 'fr', expires, true);
-  assert.deepEqual(app.spoken.map(item => item.text), ['Obstacle ahead.', 'Détecté : panneau stop.']);
+  await app.speech.alert('fr-warning', 'Obstacle devant vous.', 'fr', expires);
+  assert.deepEqual(app.spoken.map(item => item.text), ['Obstacle ahead.', 'Obstacle devant vous.']);
 });
+
+for (const [language, text] of [['en-US', 'Detected: a laptop.'], ['fr-FR', 'Détection : un ordinateur.'], ['ar-SA', 'تم اكتشاف: حاسوب.']]) {
+  test(`requested object alerts use server speech for ${language} and release playback on completion`, async () => {
+    const calls = [];
+    let callbacks;
+    const app = setup(undefined, { async speak(text, options, _, language) {
+      calls.push([text, language]); callbacks = options; return true;
+    } });
+    await app.speech.alert('remembered-target', text, language, new Date(Date.now() + 5000).toISOString(), true);
+    assert.deepEqual(calls, [[text, language.split('-')[0]]]);
+    assert.equal(app.spoken.length, 0);
+    assert.equal(app.recordings.length, 0);
+    callbacks.onDone();
+    assert.equal(app.gate.playing, false);
+    await app.speech.answer('Next answer.', language);
+    assert.equal(calls.length, 2);
+  });
+}

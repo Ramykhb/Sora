@@ -84,6 +84,14 @@ function Capture() {
   useFocusEffect(useCallback(() => { setFocused(true); return () => { setFocused(false); void speech.stop(); }; }, []));
   useEffect(() => { const sub = AppState.addEventListener('change', value => { setForeground(value === 'active'); }); return () => sub.remove(); }, []);
   useEffect(() => { if (!session) return; const timer = setTimeout(() => { setSession(null); setError('This session expired. Start a new session.'); }, Math.max(0, Date.parse(session.expires_at) - Date.now())); return () => clearTimeout(timer); }, [session]);
+  useEffect(() => {
+    if (!session || session.status !== 'active' || session.language === language) return;
+    let cancelled = false;
+    void api.request<CaptureSession>(`/sessions/${session.id}`, 'PATCH', { language }).then(updated => {
+      if (!cancelled) setSession(updated);
+    }).catch(error => { if (!cancelled) setError(error instanceof Error ? error.message : 'Unable to update language.'); });
+    return () => { cancelled = true; };
+  }, [api, session, language]);
   const changingStream = useRef(false);
   const starting = useRef(false);
   const consumedVoiceStart = useRef<string | undefined>(undefined);
@@ -122,13 +130,13 @@ function Capture() {
     if (busy || starting.current) throw new Error('Please wait for the current request to finish, then ask again.');
     setBusy(true); setError('');
     try {
-      const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope: 'auto', language: session.language, location: await questionLocation(question) });
+      const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question, scope: 'auto', language, location: await questionLocation(question) });
       setVoiceAnswer(answer.answer);
-      const tip = cameraFeedback(answer.uncertain, answer.answer, answer.processing_warnings, !isHistoricalQuestion(question), session.language);
+      const tip = cameraFeedback(answer.uncertain, answer.answer, answer.processing_warnings, !isHistoricalQuestion(question), language);
       setViewTip(tip);
-      return tip ? { ...answer, answer: `${answer.answer} ${tip}` } : answer;
+      return answer;
     } finally { setBusy(false); }
-  }, `${session?.id}:${streamPaused}`);
+  }, `${session?.id}:${streamPaused}:${language}`);
   async function controlStream(command: StreamCommand) {
     if (changingStream.current || starting.current) throw new Error('Please wait for the stream to finish changing, then try again.');
     if (!session || mode !== 'live') throw new Error('There is no live stream open. Say Hey Sora, start stream first.');
@@ -194,7 +202,7 @@ function Capture() {
     if (mode === 'live') {
       // The existing current-view question path saves a fresh WebRTC snapshot
       // and returns its retained evidence IDs. Keep that capture policy on the server.
-      const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question: 'Describe the current scene', scope: 'recent', language: session.language });
+      const answer = await api.request<Answer>(`/sessions/${session.id}/questions`, 'POST', { question: 'Describe the current scene', scope: 'recent', language });
       if (!answer.evidence_frame_ids[0]) throw new Error(answer.answer || 'Waiting for a fresh scene. Keep the camera steady and try again.');
       const frame = await api.request<Frame>(`/sessions/${session.id}/frames/${answer.evidence_frame_ids[0]}`);
       result(frame, answer.id); return;
@@ -227,14 +235,14 @@ function Capture() {
             <Label bold size={14} style={{ color: controlColor }}>Detect obstacles · {session.alerts_enabled ? 'On' : 'Off'}</Label>
             <Switch accessibilityLabel="Detect obstacles" value={session.alerts_enabled} disabled={busy || session.status !== 'active'} trackColor={{ false: colors.trackOff, true: colors.primary }} onValueChange={enabled => void run(() => setDetectionEnabled(enabled))} />
           </View>
-          <Label size={11} style={{ color: controlColor }}>Checks every 5 seconds when on. Off pauses all automatic detection and saved alerts.</Label>
+          <Label size={11} style={{ color: controlColor }}>Checks every 2 seconds when on. Off pauses all automatic detection and saved alerts.</Label>
         </View>}
         {!!obstacleAlert && <Label accessibilityRole="alert" style={{ color: controlColor }} size={14}>{obstacleAlert.message}</Label>}
         {session.alerts_enabled && obstacleUnavailable && <Label accessibilityRole="alert" style={{ color: colors.danger }} size={14}>Advanced obstacle detection unavailable. Using limited local object warnings; saved alert requests are paused.</Label>}
         {!!error && <Label accessibilityRole="alert" style={{ color: colors.danger, backgroundColor: colors.surface, padding: 12, borderRadius: 12 }}>{error}</Label>}
         {preferences.voiceCommands && <Label style={{ color: controlColor, textAlign: 'center' }} size={12}>{voice.status}</Label>}
         {mode === 'live' && routePlayback && routePlayback.text !== voiceAnswer && <RouteAnswer text={routePlayback.text} language={routePlayback.language} color={controlColor} onError={setError} />}
-        {!!voiceAnswer && <RouteAnswer text={voiceAnswer} language={session?.language ?? preferences.language} color={controlColor} onError={setError} />}
+        {!!voiceAnswer && <RouteAnswer text={voiceAnswer} language={language} color={controlColor} onError={setError} />}
         {!!viewTip && <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}><Icon name="camera-outline" size={18} color={controlColor} /><Label accessibilityLiveRegion="polite" style={{ color: controlColor, flex: 1 }} size={12}>{viewTip}</Label></View>}
         {busy && <Label accessibilityLiveRegion="polite" style={{ color: controlColor, textAlign: 'center' }}>Processing your request…</Label>}
         </ScrollView>

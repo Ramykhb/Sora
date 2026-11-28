@@ -40,9 +40,9 @@ export const speech = new SpeechController({
       })();
       const language = options.language.toLowerCase().split('-')[0];
       let deviceVoice: Speech.Voice | undefined;
-      // Answers use the server's natural voice. Urgent French and English warnings
-      // stay on the phone voice so that they never wait for the network.
-      if (language === 'ar' || (!options.urgent && (language === 'en' || language === 'fr'))) {
+      // Answers and requested object alerts use Supertonic on the server.
+      // Immediate obstacle warnings keep their low-latency local playback.
+      if (language === 'ar' || ((!options.urgent || options.dynamicAlert) && (language === 'en' || language === 'fr'))) {
         const callbacks = {
           onDone: () => done(options.onDone),
           onError: (error: Error) => done(() => options.onError?.(error)),
