@@ -1,5 +1,5 @@
 Run modules from backend with the virtual environment active:
-- `python -m scripts.prepare_models`: download YOLO, Whisper and Ollama weights.
+- `python -m scripts.prepare_models`: download YOLO, Whisper, Supertonic, PaddleOCR (when enabled) and Ollama weights. Use `--speech-only` to prepare just Supertonic, including when upgrading an existing Docker installation with `docker compose exec api python -m scripts.prepare_models --speech-only`.
 - `python -m scripts.prepare_ocr --install-runtime`: install the isolated CPU runtime and download the lightweight PP-OCRv5 detector plus English, Latin/French and Arabic recognizers into `models/paddleocr`, with a SHA-256 manifest.
 - `python -m scripts.check_ocr`: verify those models with generated local text images; use an environment installed from `requirements-ocr.txt`. PaddleOCR is the default API engine; restart the API after first-time runtime/model preparation.
 - `python -m scripts.process_image /path/to/image.jpg`: process and persist a test image.

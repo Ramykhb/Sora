@@ -59,10 +59,19 @@ To avoid object-storage setup during development, set `STORAGE_BACKEND=local`. F
 
 ```sh
 docker compose --profile app up --build -d
-# Prepare YOLO/Whisper/PaddleOCR and pull the Ollama models before the demo:
+# Prepare YOLO/Whisper/Supertonic/PaddleOCR and pull the Ollama models before the demo:
 docker compose exec api python -m scripts.prepare_models
 docker compose restart api
 ```
+
+When upgrading an existing installation for local speech only, rebuild the API and prepare just Supertonic in its persistent model volume:
+
+```sh
+docker compose --profile app up --build -d
+docker compose exec api python -m scripts.prepare_models --speech-only
+```
+
+For native development, install the updated requirements in the existing virtual environment and run `python -m scripts.prepare_models --speech-only`. Native and Docker installations use separate model directories. Speech defaults to enabled with voice `F1` and eight synthesis steps; no new environment settings are required.
 
 The API container applies migrations automatically. PaddleOCR models and its isolated CPU runtime are prepared explicitly in the persistent model volume. Its image also includes eSpeak and legacy Tesseract language packs. Weights and database/image data use named volumes. On Docker Desktop, WebSocket/HTTP frame ingestion works through the published port; WebRTC needs reachable ICE candidates or a configured TURN relay. For Docker WebRTC, configure and start the optional TURN service as described in [WebRTC networking](docs/environment.md#webrtc-networking). This is a single-process server: run exactly one API worker because live peer connections, bounded queues and event subscriptions are held in memory. Stored sessions, images, history and the deletion outbox survive API restarts. A restart disconnects live clients; they reconnect and renegotiate.
 
