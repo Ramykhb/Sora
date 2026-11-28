@@ -19,7 +19,7 @@ Open `http://127.0.0.1:5173`. Vite proxies `/api/v1` (including WebSockets), `/h
 4. Use **Live session** to see the mobile camera, saved scene descriptions, OCR, detections, processing counters and alerts. Dashboard preview pause affects only the viewer. **End mobile capture** closes the shared session; retained memory remains until expiry.
 5. Ask by text or record a voice question on either device. Both devices receive the shared answer and history through authenticated events. Conversations provides WAV playback, evidence images, uncertainty, warnings and feedback.
 
-The dashboard is a viewer of the mobile producer. It does not take over the camera or start another producer. The server must run one worker, as required by its live stream architecture. Model preparation, Whisper and eSpeak installation are backend prerequisites. Automatic audio can be blocked by the browser; use **Play spoken answer** when prompted.
+The dashboard is a viewer of the mobile producer. It does not take over the camera or start another producer. The server must run one worker, as required by its live stream architecture. Model preparation (including Supertonic speech), Whisper and eSpeak installation are backend prerequisites. Automatic audio can be blocked by the browser; use **Play spoken answer** when prompted.
 
 ## Connected features
 

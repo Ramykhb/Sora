@@ -121,7 +121,7 @@ flowchart LR
 | Dashboard | React 19, Vite 7, authenticated HTTP/WebSocket clients, receive-only WebRTC video. |
 | API and persistence | FastAPI, Pydantic, asynchronous SQLAlchemy, Alembic, PostgreSQL 16, pgvector, RustFS S3-compatible storage. |
 | Image processing | OpenCV, Pillow, contrast enhancement, denoising, sharpening, quality checks, and perceptual-hash deduplication. |
-| Local AI | YOLO11 nano, PaddleOCR PP-OCRv5, Qwen2.5-VL 3B, Qwen3 Embedding 0.6B, faster-whisper base, and eSpeak NG. |
+| Local AI | YOLO11 nano, PaddleOCR PP-OCRv5, Qwen2.5-VL 3B, Qwen3 Embedding 0.6B, faster-whisper base, Supertonic 3 speech, and eSpeak NG as a backup voice. |
 | Live transport | aiortc, bounded media queues, authenticated signaling, and optional coturn relay. |
 | External integrations | Gemini for current images; Google Places and Routes for location queries; Groq for place-query interpretation; Brevo for SOS email. |
 

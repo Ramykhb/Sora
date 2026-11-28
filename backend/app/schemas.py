@@ -126,7 +126,7 @@ class FeedbackRequest(BaseModel):
 class SpeechRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
     language: Language = "en"
-    provider: Literal["default", "gemini"] = "default"
+    provider: Literal["default", "gemini", "fast"] = "default"
 
 
 class Offer(BaseModel):

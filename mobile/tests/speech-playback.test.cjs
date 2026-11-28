@@ -90,14 +90,15 @@ test('Arabic start prompts supply pronunciation vowels without changing other wo
   await speech.answer('اِبْدَأْ البث، ابدأنا، أبدان، أبدا، أبداً، ابدا.', 'ar');
   assert.equal(cloud[1], 'اِبْدَأْ البث، ابدأنا، أبدان، أبدا، أبداً، ابدا.');
   await speech.answer('ابدأ', 'en-US');
-  assert.equal(spoken[0].text, 'ابدأ');
+  assert.equal(cloud[2], 'ابدأ');
+  assert.equal(spoken.length, 0);
 });
 
 test('stopping while audio config is pending prevents a delayed answer from speaking', async () => {
   let ready;
   const app = setup(() => new Promise(resolve => { ready = resolve; }));
   const pending = app.speech.answer('Old answer.', 'en');
-  for (let i = 0; i < 10; i++) await Promise.resolve();
+  for (let i = 0; i < 30 && !ready; i++) await Promise.resolve();
   assert.equal(app.gate.paused, false);
   assert.equal(app.gate.playing, true);
   await app.speech.stop();
@@ -209,4 +210,32 @@ test('Arabic remembered-target alerts speak the target instead of a generic obst
   assert.equal(app.recordings.length, 0);
   callbacks.onDone();
   assert.equal(app.gate.playing, false);
+});
+
+test('English and French answers use the server voice in their base language', async () => {
+  const cloud = [];
+  let callbacks;
+  const app = setup(undefined, { async speak(text, options, _, language) { cloud.push([text, language]); callbacks = options; return true; } });
+  await app.speech.answer('A chair is ahead.', 'en-US');
+  await app.speech.answer('Une chaise est devant vous.', 'fr-FR');
+  assert.deepEqual(cloud, [['A chair is ahead.', 'en'], ['Une chaise est devant vous.', 'fr']]);
+  assert.equal(app.spoken.length, 0);
+  callbacks.onDone();
+  assert.equal(app.gate.playing, false);
+});
+
+test('unreachable server speech reads English and French with the phone voice', async () => {
+  const app = setup(undefined, { async speak() { throw new Error('Offline'); } });
+  await app.speech.answer('Une chaise.', 'fr-FR');
+  assert.equal(app.spoken[0].text, 'Une chaise.');
+  assert.equal(app.spoken[0].options.language, 'fr-FR');
+  assert.equal(app.spoken[0].options.voice, undefined);
+});
+
+test('English and French warnings never wait for the server', async () => {
+  const app = setup(undefined, { async speak() { throw new Error('Alerts must not wait on the server'); } });
+  const expires = new Date(Date.now() + 5000).toISOString();
+  await app.speech.alert('en-warning', 'Obstacle ahead.', 'en', expires);
+  await app.speech.alert('fr-target', 'Détecté : panneau stop.', 'fr', expires, true);
+  assert.deepEqual(app.spoken.map(item => item.text), ['Obstacle ahead.', 'Détecté : panneau stop.']);
 });

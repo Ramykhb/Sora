@@ -25,7 +25,8 @@ Do not form public S3 URLs. Images are served through the authenticated API. Inp
 - `GET /sessions/{id}/questions/{question_id}/audio`: WAV of that answer.
 - `POST /sessions/{id}/questions/{question_id}/feedback`: JSON `rating` (correct/incorrect/unsure), optional notes.
 - `POST /speech/transcriptions`: multipart audio and optional language; transcript and detected language.
-- `POST /speech/synthesis`: JSON `text`, `language`; WAV response. The mobile client can also use its native TTS.
+- `POST /speech/synthesis`: JSON `text`, `language`, optional `provider` (`default`, `gemini`, or `fast` to skip Supertonic); WAV response. The mobile client can also use its native TTS.
+- `POST /speech/stream`: JSON `text`, `language`; newline-delimited WAV frames (`{"type":"audio","data":...}`) followed by `{"type":"done"}`.
 
 Current-view questions select the newest retained frame without a semantic embedding request. While streaming, a question can save a fresh received snapshot even when ordinary sampling rejects stationary duplicates. The original timestamps of old frames are never changed. Evidence must still be fresh after inference. Explicit text-reading questions use retained OCR as model context; visual appearance/location questions use actual camera images. Multiple views are combined into one bounded, numbered contact sheet, with panel-to-frame mapping and full-resolution OCR in the context.
 

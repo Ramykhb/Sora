@@ -9,7 +9,7 @@ let client: Pick<ApiClient, 'response'> | null = null;
 let generation = 0;
 let dispose: (() => void) | undefined;
 
-// Queue small WAV segments as Gemini generates them. Native HTTP media players
+// Queue small WAV segments as the server generates them. Native HTTP media players
 // otherwise buffer a complete short answer before playing it.
 export const serverSpeech = {
   configure(api: Pick<ApiClient, 'response'> | null) {
@@ -24,7 +24,7 @@ export const serverSpeech = {
     dispose = undefined;
     cleanup?.();
   },
-  async speak(text: string, callbacks: Callbacks, beforePlay: () => Promise<void> = async () => {}): Promise<boolean> {
+  async speak(text: string, callbacks: Callbacks, beforePlay: () => Promise<void> = async () => {}, language = 'ar'): Promise<boolean> {
     if (!client) return false;
     const api = client;
     serverSpeech.stop();
@@ -41,8 +41,14 @@ export const serverSpeech = {
     let queued = 0;
     let resolveStart: (handled: boolean) => void = () => {};
     const start = new Promise<boolean>(resolve => { resolveStart = resolve; });
-    const startupTimer = setTimeout(() => fail(new Error('Arabic speech startup timed out')), 8000);
-    const networkTimer = setTimeout(() => fail(new Error('Arabic speech stream timed out')), 22000);
+    const startupTimer = setTimeout(() => fail(new Error('Speech startup timed out')), 8000);
+    // Long answers are generated sentence by sentence, so only a stalled stream times out.
+    let networkTimer: ReturnType<typeof setTimeout>;
+    const awaitNetwork = () => {
+      clearTimeout(networkTimer);
+      networkTimer = setTimeout(() => fail(new Error('Speech stream timed out')), 22000);
+    };
+    awaitNetwork();
     const subscription = playlist.addListener('playlistStatusUpdate', status => {
       if (settled) return;
       if (status.playing) { started = true; clearTimeout(startupTimer); resolveStart(true); }
@@ -69,6 +75,7 @@ export const serverSpeech = {
 
     async function frame(line: string) {
       if (settled || current !== generation || !line.trim()) return;
+      awaitNetwork();
       const value: { type: string; data?: string } = JSON.parse(line);
       if (value.type === 'done') { completed = true; if (drained) finish(); return; }
       if (completed || value.type !== 'audio' || !value.data || value.data.length > 100000) throw new Error('Invalid audio frame');
@@ -94,7 +101,7 @@ export const serverSpeech = {
       try {
         const response = await api.response('/speech/stream', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, language: 'ar', provider: 'gemini' }), signal: controller.signal,
+          body: JSON.stringify({ text, language }), signal: controller.signal,
         }, streamingFetch);
         if (settled || current !== generation) return;
         const reader = response.body?.getReader();
@@ -117,7 +124,7 @@ export const serverSpeech = {
         if (!completed || !queued) throw new Error('Incomplete audio stream');
         clearTimeout(networkTimer);
       } catch (error) {
-        if (!settled && current === generation) fail(error instanceof Error ? error : new Error('Arabic speech failed'));
+        if (!settled && current === generation) fail(error instanceof Error ? error : new Error('Speech failed'));
       }
     }
     void consume();

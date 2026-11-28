@@ -19,7 +19,8 @@ function setup({ response, write, platform = 'ios', autoStart = true } = {}) {
     return response ? response() : { body: new ReadableStream({ start(controller) { network = controller; } }) };
   } };
   vm.runInNewContext(source, {
-    exports, Date, Error, setTimeout, clearTimeout, AbortController, TextDecoder,
+    exports, Date, Error, AbortController, TextDecoder,
+    setTimeout: (...args) => setTimeout(...args), clearTimeout: (...args) => clearTimeout(...args),
     require(name) {
       if (name === 'react-native') return { Platform: { OS: platform } };
       if (name === 'expo/fetch') return { fetch: async () => { throw new Error('Mock API should handle the transport'); } };
@@ -59,7 +60,7 @@ test('first audio starts before the rest is generated, through authenticated str
   assert.equal(await start(app, { onDone() { completed++; } }), true);
   assert.equal(app.requests[0].path, '/speech/stream');
   assert.equal(typeof app.requests[0].fetcher, 'function');
-  assert.deepEqual(JSON.parse(app.requests[0].options.body), { text: 'اِبْدَأْ البث', language: 'ar', provider: 'gemini' });
+  assert.deepEqual(JSON.parse(app.requests[0].options.body), { text: 'اِبْدَأْ البث', language: 'ar' });
   assert.equal(app.players[0].sources.length, 1);
   assert.equal(app.files[0].encoding, 'base64');
   assert.equal(completed, 0);
@@ -150,4 +151,29 @@ test('web streams playable data URLs without native temporary files', async () =
   assert.equal(app.players[0].sources[0].uri, 'data:audio/wav;base64,UklGRg==');
   assert.equal(app.files.length, 0);
   app.speech.stop();
+});
+
+test('French and English answers are requested in their own language', async () => {
+  for (const language of ['fr', 'en']) {
+    const app = setup();
+    app.speech.configure(app.api);
+    const pending = app.speech.speak('Bonjour', {}, undefined, language);
+    await flush(); app.send(audio);
+    assert.equal(await pending, true);
+    assert.deepEqual(JSON.parse(app.requests[0].options.body), { text: 'Bonjour', language });
+    app.speech.stop();
+  }
+});
+
+test('a long answer keeps streaming while frames keep arriving, and times out when they stop', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const app = setup();
+  let errors = 0;
+  // The harness captured the real timers, so hand it the mocked ones.
+  await start(app, { onError() { errors++; } });
+  for (let i = 0; i < 4; i++) { t.mock.timers.tick(15000); app.send(audio); await flush(); }
+  assert.equal(errors, 0);
+  assert.equal(app.players[0].sources.length, 5);
+  t.mock.timers.tick(22000);
+  assert.equal(errors, 1);
 });

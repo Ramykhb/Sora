@@ -40,24 +40,32 @@ export const speech = new SpeechController({
       })();
       const language = options.language.toLowerCase().split('-')[0];
       let deviceVoice: Speech.Voice | undefined;
-      if (language === 'ar') {
+      // Answers use the server's natural voice. Urgent French and English warnings
+      // stay on the phone voice so that they never wait for the network.
+      if (language === 'ar' || (!options.urgent && (language === 'en' || language === 'fr'))) {
         const callbacks = {
           onDone: () => done(options.onDone),
           onError: (error: Error) => done(() => options.onError?.(error)),
         };
         // Urgent camera warnings use bundled recordings of the same female
         // voice. They must not wait for a cloud request or change to device TTS.
-        if (options.urgent && !options.dynamicAlert) {
+        if (language === 'ar' && options.urgent && !options.dynamicAlert) {
           await prepareAudio();
           if (generation !== audioGeneration) { done(); return; }
           arabicRecordings.speak(arabicAlertRecording(text), callbacks);
           return;
         }
         let handled = false;
-        try { handled = await serverSpeech.speak(speechText(text, options.language), callbacks, prepareAudio); }
-        catch { /* A failure before playback may still use the device's Arabic voice. */ }
+        try { handled = await serverSpeech.speak(speechText(text, options.language), callbacks, prepareAudio, language); }
+        catch { /* A failure before playback may still use the device voice. */ }
         if (generation !== audioGeneration) { done(); return; }
         if (handled) return;
+      }
+      if (language === 'ar') {
+        const callbacks = {
+          onDone: () => done(options.onDone),
+          onError: (error: Error) => done(() => options.onError?.(error)),
+        };
         const voices = await Speech.getAvailableVoicesAsync().catch(() => []);
         if (generation !== audioGeneration) { done(); return; }
         const preferred = options.language.toLowerCase();

@@ -4,19 +4,35 @@ import argparse
 from pathlib import Path
 import httpx
 from app.core.config import settings
-from app.services.frames.processing import detector
-from app.services.ai.speech import whisper
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-ollama", action="store_true")
+    parser.add_argument(
+        "--speech-only", action="store_true", help="Prepare only local Supertonic TTS weights"
+    )
     args = parser.parse_args()
+    if args.speech_only:
+        from app.services.ai.supertonic_speech import prepare
+
+        print("Downloading/loading Supertonic speech weights (about 400 MB)...", flush=True)
+        prepare()
+        print("Speech model prepared.")
+        return
+    from app.services.frames.processing import detector
+    from app.services.ai.speech import whisper
+
     Path(settings.yolo_model).parent.mkdir(parents=True, exist_ok=True)
     print("Downloading/loading YOLO weights...")
     detector()
     print("Downloading/loading multilingual Whisper weights...")
     whisper()
+    if settings.supertonic_enabled:
+        from app.services.ai.supertonic_speech import prepare as prepare_speech
+
+        print("Downloading/loading Supertonic speech weights (about 400 MB)...", flush=True)
+        prepare_speech()
     if settings.ocr_engine == "paddleocr":
         from scripts.prepare_ocr import prepare, install_runtime
 
